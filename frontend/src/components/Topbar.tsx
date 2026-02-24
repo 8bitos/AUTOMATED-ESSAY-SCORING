@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { useRouter } from 'next/navigation'; // Import useRouter
+import { useTheme } from '@/context/ThemeContext';
 import {
   fetchStudentNotifications,
   loadStudentNotificationPrefs,
@@ -136,6 +137,8 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const hydrateStudentNotifPrefs = () => {
     setStudentNotifPrefs(loadStudentNotificationPrefs());
   };
+
+  const { theme, toggleTheme } = useTheme();
 
   const notificationPageByRole = (role?: string) => {
     if (role === 'teacher') return '/dashboard/teacher/notifikasi';
@@ -400,6 +403,15 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                 </svg>
               </div>
             </div>
+            
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Toggle dark mode"
+            >
+              {theme === "dark" ? "🌙" : "☀️"}
+            </button>
             
             {/* User Avatar / Profile */}
             {user && (

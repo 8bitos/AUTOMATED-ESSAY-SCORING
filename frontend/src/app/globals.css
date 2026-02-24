@@ -21,6 +21,11 @@
     background: #f5f7fb;
     min-height: 100vh;
   }
+
+  html[data-theme='dark'] body {
+    background: #020617;
+    color: #e2e8f0;
+  }
 }
 
 @layer components {
