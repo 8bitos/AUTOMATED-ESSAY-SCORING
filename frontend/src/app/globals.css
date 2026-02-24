@@ -20,6 +20,17 @@
     color: #0f172a;
     background: #f5f7fb;
     min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at top right, rgba(30, 64, 175, 0.35), transparent 40%),
+      radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.25), transparent 42%);
+    z-index: -1;
   }
 
   html[data-theme='dark'] body {
@@ -33,6 +44,11 @@
     --ink-500: #94a3b8;
     --gold-500: #fcd34d;
     --navy-900: #111827;
+  }
+  html[data-theme='dark'] *,
+  html[data-theme='dark'] *::before,
+  html[data-theme='dark'] *::after {
+    color: inherit;
   }
 }
 
@@ -62,38 +78,57 @@
   }
 }
 
-html[data-theme='dark'] .sage-card,
-html[data-theme='dark'] .sage-panel,
-html[data-theme='dark'] .bg-white {
-  background-color: rgba(15, 23, 42, 0.85) !important;
-  color: #e2e8f0 !important;
-}
+  html[data-theme='dark'] .sage-card,
+  html[data-theme='dark'] .sage-panel,
+  html[data-theme='dark'] .bg-white {
+    background-color: rgba(15, 23, 42, 0.95) !important;
+    color: #e2e8f0;
+  }
 
-html[data-theme='dark'] .bg-white\/5 {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-}
+  html[data-theme='dark'] :is(.bg-white\/5, .bg-white\/10, .bg-white\/20) {
+    background-color: rgba(15, 23, 42, 0.4) !important;
+  }
 
-html[data-theme='dark'] .text-slate-900,
-html[data-theme='dark'] .text-slate-700,
-html[data-theme='dark'] .text-slate-500 {
-  color: #e2e8f0 !important;
-}
+  html[data-theme='dark'] :is(.text-slate-900, .text-slate-700, .text-slate-500, .text-slate-600) {
+    color: #e2e8f0 !important;
+  }
 
-html[data-theme='dark'] .border-slate-200 {
-  border-color: rgba(255, 255, 255, 0.1) !important;
-}
+  html[data-theme='dark'] .border-slate-200 {
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
 
-html[data-theme='dark'] .bg-slate-900\/60 {
-  background-color: rgba(15, 23, 42, 0.8) !important;
-}
+  html[data-theme='dark'] :is(.bg-slate-900\/60, .bg-slate-900\/90) {
+    background-color: rgba(15, 23, 42, 0.8) !important;
+  }
 
-html[data-theme='dark'] input,
-html[data-theme='dark'] textarea,
-html[data-theme='dark'] select {
-  background-color: #0f172a;
-  border-color: rgba(148, 163, 184, 0.4);
-  color: #e2e8f0;
-}
+  html[data-theme='dark'] input,
+  html[data-theme='dark'] textarea,
+  html[data-theme='dark'] select {
+    background-color: #111827;
+    border-color: rgba(148, 163, 184, 0.4);
+    color: #e2e8f0;
+  }
+
+  html[data-theme='dark'] #sidebar {
+    background-color: rgba(5, 6, 26, 0.9);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  html[data-theme='dark'] #sidebar .px-3.py-2\.5,
+  html[data-theme='dark'] #sidebar .rounded-xl.bg-white {
+    background-color: rgba(15, 23, 42, 0.75) !important;
+    color: #e2e8f0;
+  }
+
+  html[data-theme='dark'] #sidebar .text-slate-600,
+  html[data-theme='dark'] #sidebar .text-slate-500 {
+    color: #cbd5f5;
+  }
+
+  html[data-theme='dark'] #sidebar .bg-slate-100 {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
 
 .animate-blob {
   animation: blob 9s ease-in-out infinite;
