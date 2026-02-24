@@ -75,8 +75,3 @@ Kalau ingin akurasi tambah tinggi: pastikan rubrik punya deskripsi skor jelas, s
    ```
    - Gunakan `docker compose up -d` untuk background; `down` untuk hentikan.  
    - File `.env` tetap dibaca, jadi atur di root repo sebelum `docker compose` dijalankan.
-
-### Hal lain
-- Upload folder ada di `backend/uploads` dan `frontend/public/uploads`; tidak perlu commit karena `.gitignore`.  
-- Kalau ingin menambah environment baru, tambahkan di `env.example` dan `.env` lokal saja.  
-- Gunakan `git status` untuk memastikan artefak seperti `node_modules` atau `uploads` tidak ter-track.

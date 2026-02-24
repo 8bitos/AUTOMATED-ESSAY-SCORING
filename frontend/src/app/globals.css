@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sage-800: #0b1120;
+    --sage-700: #0f172a;
+    --sage-500: #334155;
+    --sand-100: #f1f5f9;
+    --sand-50: #f8fafc;
+    --ink-900: #0f172a;
+    --ink-700: #1f2937;
+    --ink-500: #64748b;
+    --gold-500: #94a3b8;
+    --navy-900: #0f172a;
+  }
+  body {
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #0f172a;
+    background: #f5f7fb;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .sage-card {
+    @apply rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5;
+  }
+
+  .sage-panel {
+    @apply rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5;
+  }
+
+  .sage-pill {
+    @apply inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500;
+  }
+
+  .sage-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-slate-400 focus:ring-1 focus:ring-slate-300;
+  }
+
+  .sage-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800;
+  }
+
+  .sage-button-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900;
+  }
+}
