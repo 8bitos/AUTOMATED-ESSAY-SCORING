@@ -62,8 +62,8 @@ const formatDateLabel = (value?: string) => {
   if (Number.isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
-    month: "long",
-    year: "numeric",
+    month: "2-digit",
+    year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
@@ -227,7 +227,7 @@ export default function StudentCalendarPage() {
       .slice(0, 8);
   }, [events]);
 
-  const monthLabel = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(monthCursor);
+  const monthLabel = new Intl.DateTimeFormat("id-ID", { month: "2-digit", year: "2-digit" }).format(monthCursor);
   const typeBadgeClass = (type: CalendarEventItem["type"]) => {
     if (type === "approval") return "bg-indigo-100 text-indigo-700";
     if (type === "material") return "bg-sky-100 text-sky-700";

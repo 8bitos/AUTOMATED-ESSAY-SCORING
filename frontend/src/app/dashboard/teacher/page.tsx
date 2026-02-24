@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { FiUsers, FiBookOpen, FiClipboard, FiTrendingUp, FiChevronRight } from "react-icons/fi";
+import { FiUsers, FiBookOpen, FiClipboard, FiTrendingUp, FiChevronRight, FiInfo, FiAlertTriangle, FiAlertCircle, FiBell } from "react-icons/fi";
 
 interface DashboardStats {
   totalClasses: number;
@@ -26,6 +26,21 @@ interface DashboardSummaryResponse {
   latest_material_at?: string;
 }
 
+interface AnnouncementItem {
+  id: string;
+  type: "banner" | "running_text";
+  icon?: "info" | "warning" | "danger" | "bell";
+  title: string;
+  content: string;
+}
+
+const announcementIcon = (icon?: string) => {
+  if (icon === "warning") return <FiAlertTriangle size={14} />;
+  if (icon === "danger") return <FiAlertCircle size={14} />;
+  if (icon === "bell") return <FiBell size={14} />;
+  return <FiInfo size={14} />;
+};
+
 const DashboardPage = () => {
   const { isAuthenticated } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -39,6 +54,7 @@ const DashboardPage = () => {
   const [latestClass, setLatestClass] = useState<{ id: string; name: string; at?: string } | null>(null);
   const [latestMaterial, setLatestMaterial] = useState<{ id: string; name: string; at?: string } | null>(null);
   const [pendingJoinCount, setPendingJoinCount] = useState(0);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
 
   const fetchDashboardData = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -73,6 +89,18 @@ const DashboardPage = () => {
           ? { id: summary.latest_material_id, name: summary.latest_material_name, at: summary.latest_material_at }
           : null
       );
+
+      try {
+        const annRes = await fetch("/api/announcements/active", { credentials: "include" });
+        const annBody = await annRes.json().catch(() => ({}));
+        if (annRes.ok) {
+          setAnnouncements(Array.isArray(annBody?.items) ? annBody.items : []);
+        } else {
+          setAnnouncements([]);
+        }
+      } catch {
+        setAnnouncements([]);
+      }
     } catch (err: any) {
       setError(err.message || "Gagal memuat dashboard.");
     } finally {
@@ -88,12 +116,15 @@ const DashboardPage = () => {
     const now = new Date();
     return now.toLocaleString("id-ID", {
       day: "2-digit",
-      month: "short",
-      year: "numeric",
+      month: "2-digit",
+      year: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
     });
   }, []);
+
+  const runningTexts = announcements.filter((item) => item.type === "running_text");
+  const banners = announcements.filter((item) => item.type === "banner");
 
   return (
     <div className="space-y-10">
@@ -105,6 +136,29 @@ const DashboardPage = () => {
         </div>
         <div className="sage-card px-5 py-3 text-sm text-[color:var(--ink-500)]">Update terakhir: {updateLabel}</div>
       </div>
+
+      {runningTexts.length > 0 && (
+        <div className="sage-panel p-3 overflow-hidden">
+          <div className="announcement-marquee-track">
+            <div className="announcement-marquee-content announcement-marquee-content-right">
+              {runningTexts.map((item) => (
+                <span key={item.id} className="announcement-chip">{announcementIcon(item.icon)} {item.content}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {banners.length > 0 && (
+        <div className="space-y-3">
+          {banners.map((item) => (
+            <div key={item.id} className="announcement-banner rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+              <p className="text-sm font-semibold text-sky-900 inline-flex items-center gap-2">{announcementIcon(item.icon)} {item.title || "Pengumuman"}</p>
+              <p className="text-sm text-sky-800 mt-0.5">{item.content}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
@@ -166,7 +220,7 @@ const StatCard = ({
   href: string;
 }) => (
   <Link href={href} className="sage-card p-5 flex items-center gap-4 hover:shadow-md transition">
-    <div className="p-3 rounded-2xl bg-[color:var(--sand-100)] text-[color:var(--sage-700)] text-xl">{icon}</div>
+    <div className="stat-icon p-3 rounded-2xl bg-[color:var(--sand-100)] text-[color:var(--sage-700)] text-xl">{icon}</div>
     <div>
       <p className="text-sm text-[color:var(--ink-500)]">{title}</p>
       <p className="text-2xl font-semibold text-[color:var(--ink-900)]">{value}</p>
@@ -186,12 +240,12 @@ const ActivityItem = ({
   href: string;
 }) => (
   <li>
-    <Link href={href} className="flex justify-between items-start rounded-lg px-2 py-2 hover:bg-slate-50 transition">
+    <Link href={href} className="activity-link flex justify-between items-start rounded-lg px-2 py-2 hover:bg-slate-50 transition">
       <div>
-        <p className="font-medium text-[color:var(--ink-700)]">{title}</p>
-        <p className="text-sm text-[color:var(--ink-500)]">{desc}</p>
+        <p className="activity-title font-medium text-[color:var(--ink-700)]">{title}</p>
+        <p className="activity-desc text-sm text-[color:var(--ink-500)]">{desc}</p>
       </div>
-      <span className="text-xs text-[color:var(--ink-500)] whitespace-nowrap">{time}</span>
+      <span className="activity-time text-xs text-[color:var(--ink-500)] whitespace-nowrap">{time}</span>
     </Link>
   </li>
 );
@@ -201,8 +255,8 @@ function formatDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
-    month: "short",
-    year: "numeric",
+    month: "2-digit",
+    year: "2-digit",
   }).format(d);
 }
 

@@ -120,7 +120,7 @@ export default function ProfileRequestsPage() {
                 {req.status === "rejected" && <FiXCircle className="text-rose-600" />}
                 <span className="uppercase tracking-wide text-xs">{req.status}</span>
               </div>
-              <span>{new Date(req.created_at).toLocaleString("id-ID")}</span>
+              <span>{new Date(req.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
               <p><strong>Nama:</strong> {req.user_name || "-"}</p>
@@ -156,7 +156,7 @@ export default function ProfileRequestsPage() {
               <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
                 <p><strong>Reviewer:</strong> {req.reviewer_name || "-"}</p>
                 <p><strong>Reason:</strong> {req.reason || "-"}</p>
-                <p><strong>Reviewed At:</strong> {req.reviewed_at ? new Date(req.reviewed_at).toLocaleString("id-ID") : "-"}</p>
+                <p><strong>Reviewed At:</strong> {req.reviewed_at ? new Date(req.reviewed_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}</p>
               </div>
             )}
           </div>

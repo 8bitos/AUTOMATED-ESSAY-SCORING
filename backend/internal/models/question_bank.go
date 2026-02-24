@@ -8,6 +8,7 @@ import (
 type QuestionBankEntry struct {
 	ID               string          `json:"id"`
 	CreatedBy        string          `json:"created_by"`
+	CreatedByName    string          `json:"created_by_name,omitempty"`
 	ClassID          string          `json:"class_id"`
 	ClassName        string          `json:"class_name,omitempty"`
 	Subject          string          `json:"subject,omitempty"`

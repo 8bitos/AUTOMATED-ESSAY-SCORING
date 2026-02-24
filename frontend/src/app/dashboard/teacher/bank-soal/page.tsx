@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiBookOpen, FiEdit, FiLayers, FiPlus, FiRefreshCw, FiTrash2, FiX } from "react-icons/fi";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
 
 interface QuestionBankEntry {
   id: string;
+  created_by?: string;
+  created_by_name?: string;
   class_id: string;
   class_name?: string;
   subject?: string;
@@ -440,6 +443,7 @@ const FormModal = ({
 };
 
 export default function TeacherBankSoalPage() {
+  const { user } = useAuth();
   const [entries, setEntries] = useState<QuestionBankEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -663,6 +667,7 @@ export default function TeacherBankSoalPage() {
               <div className="flex flex-wrap gap-2 text-xs text-slate-600">
                 <span className="sage-pill inline-flex items-center gap-1"><FiLayers size={12} /> {item.class_name || "-"}</span>
                 <span className="sage-pill inline-flex items-center gap-1"><FiBookOpen size={12} /> {item.material_title || "-"}</span>
+                <span className="sage-pill">Dibuat oleh: {item.created_by_name || item.created_by || "-"}</span>
                 {item.subject && <span className="sage-pill">Mapel: {item.subject}</span>}
                 {item.level_kognitif && <span className="sage-pill">Level: {item.level_kognitif}</span>}
                 {typeof item.weight === "number" && <span className="sage-pill">Bobot: {item.weight}</span>}
@@ -673,21 +678,25 @@ export default function TeacherBankSoalPage() {
                   <span className="font-medium">Jawaban ideal:</span> {item.ideal_answer}
                 </p>
               )}
-              <div className="flex justify-end gap-2">
-                <button type="button" className="sage-button-outline inline-flex items-center gap-1" onClick={() => openEditModal(item)}>
-                  <FiEdit size={14} />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="sage-button-outline inline-flex items-center gap-1 text-red-600 border-red-200 hover:bg-red-50"
-                  onClick={() => setPendingDeleteId(item.id)}
-                  disabled={deletingId === item.id}
-                >
-                  <FiTrash2 size={14} />
-                  {deletingId === item.id ? "Menghapus..." : "Hapus"}
-                </button>
-              </div>
+              {item.created_by && item.created_by === user?.id ? (
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="sage-button-outline inline-flex items-center gap-1" onClick={() => openEditModal(item)}>
+                    <FiEdit size={14} />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="sage-button-outline inline-flex items-center gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => setPendingDeleteId(item.id)}
+                    disabled={deletingId === item.id}
+                  >
+                    <FiTrash2 size={14} />
+                    {deletingId === item.id ? "Menghapus..." : "Hapus"}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 text-right">Read-only. Hanya pembuat soal yang bisa edit/hapus.</p>
+              )}
             </div>
           ))}
         </div>

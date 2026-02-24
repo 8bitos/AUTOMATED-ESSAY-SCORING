@@ -685,6 +685,26 @@ func (s *AuthService) ChangePassword(userID, currentPassword, newPassword string
 	return nil
 }
 
+func (s *AuthService) VerifyPassword(userID, password string) error {
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("password is required")
+	}
+
+	var hashed string
+	if err := s.db.QueryRow("SELECT password FROM users WHERE id = $1", userID).Scan(&hashed); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user not found")
+		}
+		return fmt.Errorf("error fetching user password: %w", err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(password)); err != nil {
+		return fmt.Errorf("invalid password")
+	}
+
+	return nil
+}
+
 // ListProfileChangeRequests returns profile change requests by status.
 func (s *AuthService) ListProfileChangeRequests(status string) ([]models.ProfileChangeRequest, error) {
 	if status == "" || status == "pending" {
@@ -1270,6 +1290,67 @@ func (s *AuthService) GetAdminAPIStatistics(days int) (*models.AdminAPIStatistic
 	}
 	if err := rowsRecent.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating AI api recent logs rows: %w", err)
+	}
+
+	return resp, nil
+}
+
+func (s *AuthService) GetAdminAPIHealth() (*models.AdminAPIHealthResponse, error) {
+	resp := &models.AdminAPIHealthResponse{
+		TopErrorTypes: []models.APIErrorTypeCount{},
+	}
+
+	if err := s.db.QueryRow(`
+		SELECT COALESCE(
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms),
+			0
+		)
+		FROM ai_api_usage_logs
+		WHERE created_at >= NOW() - INTERVAL '24 hours'
+	`).Scan(&resp.LatencyP95Ms); err != nil {
+		return nil, fmt.Errorf("error loading AI api p95 latency: %w", err)
+	}
+
+	var (
+		total24h   int64
+		success24h int64
+	)
+	if err := s.db.QueryRow(`
+		SELECT
+			COALESCE(COUNT(*), 0) AS total,
+			COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0) AS success
+		FROM ai_api_usage_logs
+		WHERE created_at >= NOW() - INTERVAL '24 hours'
+	`).Scan(&total24h, &success24h); err != nil {
+		return nil, fmt.Errorf("error loading AI api 24h success rate: %w", err)
+	}
+	if total24h > 0 {
+		resp.ErrorRate24H = (1 - (float64(success24h) / float64(total24h))) * 100
+	}
+
+	rows, err := s.db.Query(`
+		SELECT COALESCE(NULLIF(error_type, ''), 'unknown') AS error_type, COUNT(*) AS count
+		FROM ai_api_usage_logs
+		WHERE created_at >= NOW() - INTERVAL '24 hours'
+		  AND status <> 'success'
+		GROUP BY COALESCE(NULLIF(error_type, ''), 'unknown')
+		ORDER BY count DESC
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("error loading AI api top errors: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item models.APIErrorTypeCount
+		if scanErr := rows.Scan(&item.ErrorType, &item.Count); scanErr != nil {
+			return nil, fmt.Errorf("error scanning AI api top error row: %w", scanErr)
+		}
+		resp.TopErrorTypes = append(resp.TopErrorTypes, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating AI api top error rows: %w", err)
 	}
 
 	return resp, nil

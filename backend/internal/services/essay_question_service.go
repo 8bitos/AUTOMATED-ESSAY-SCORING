@@ -46,9 +46,9 @@ func (s *EssayQuestionService) CreateEssayQuestion(req *models.CreateEssayQuesti
 	}
 
 	query := `
-		INSERT INTO essay_questions (id, material_id, teks_soal, keywords, ideal_answer, weight, rubrics, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, material_id, teks_soal, keywords, ideal_answer, weight, rubrics, created_at, updated_at
+		INSERT INTO essay_questions (id, material_id, teks_soal, keywords, ideal_answer, weight, round_score_to_5, rubrics, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, material_id, teks_soal, keywords, ideal_answer, weight, round_score_to_5, rubrics, created_at, updated_at
 	`
 	var createdQuestion models.EssayQuestion
 	var scannedKeywords pq.StringArray
@@ -61,6 +61,7 @@ func (s *EssayQuestionService) CreateEssayQuestion(req *models.CreateEssayQuesti
 		keywordsArray,
 		req.IdealAnswer,
 		req.Weight,
+		req.RoundScoreTo5,
 		rubricsToStore, // Use rubricsToStore here
 		now,
 		now,
@@ -71,6 +72,7 @@ func (s *EssayQuestionService) CreateEssayQuestion(req *models.CreateEssayQuesti
 		&scannedKeywords,
 		&createdQuestion.IdealAnswer,
 		&createdQuestion.Weight,
+		&createdQuestion.RoundScoreTo5,
 		&createdQuestion.Rubrics, // Use createdQuestion.Rubrics (plural)
 		&createdQuestion.CreatedAt,
 		&createdQuestion.UpdatedAt,
@@ -90,7 +92,7 @@ func (s *EssayQuestionService) CreateEssayQuestion(req *models.CreateEssayQuesti
 // GetEssayQuestionsByMaterialID mengambil semua pertanyaan esai yang terkait dengan materi tertentu.
 func (s *EssayQuestionService) GetEssayQuestionsByMaterialID(materialID string) ([]models.EssayQuestion, error) {
 	query := `
-		SELECT id, material_id, teks_soal, keywords, ideal_answer, weight, rubrics, created_at, updated_at
+		SELECT id, material_id, teks_soal, keywords, ideal_answer, weight, round_score_to_5, rubrics, created_at, updated_at
 		FROM essay_questions
 		WHERE material_id = $1
 		ORDER BY created_at ASC
@@ -105,7 +107,7 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialID(materialID string) 
 	for rows.Next() {
 		var q models.EssayQuestion
 		var keywords pq.StringArray
-		if err := rows.Scan(&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt); err != nil {
+		if err := rows.Scan(&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.RoundScoreTo5, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("error scanning essay question row: %w", err)
 		}
 		if len(keywords) > 0 {
@@ -128,7 +130,7 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialID(materialID string) 
 func (s *EssayQuestionService) GetEssayQuestionsByMaterialIDForStudent(materialID, studentID string) ([]models.EssayQuestion, error) {
 	query := `
 		SELECT 
-			eq.id, eq.material_id, eq.teks_soal, eq.keywords, eq.ideal_answer, eq.weight, eq.rubrics, eq.created_at, eq.updated_at,
+			eq.id, eq.material_id, eq.teks_soal, eq.keywords, eq.ideal_answer, eq.weight, eq.round_score_to_5, eq.rubrics, eq.created_at, eq.updated_at,
 			es.id as submission_id, es.teks_jawaban as student_essay_text,
 			ar.skor_ai, ar.umpan_balik_ai,
 			tr.revised_score, tr.teacher_feedback,
@@ -153,7 +155,7 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialIDForStudent(materialI
 		var logsRAG sql.NullString
 
 		if err := rows.Scan(
-			&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt,
+			&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.RoundScoreTo5, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt,
 			&q.SubmissionID, &q.StudentEssayText, &q.SkorAI, &q.UmpanBalikAI, &q.RevisedScore, &q.TeacherFeedback, &logsRAG,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning essay question row for student: %w", err)
@@ -202,6 +204,11 @@ func (s *EssayQuestionService) UpdateEssayQuestion(questionID string, req *model
 		args = append(args, *req.Weight)
 		argId++
 	}
+	if req.RoundScoreTo5 != nil {
+		updates = append(updates, fmt.Sprintf("round_score_to_5 = $%d", argId))
+		args = append(args, *req.RoundScoreTo5)
+		argId++
+	}
 	if req.Keywords != nil {
 		updates = append(updates, fmt.Sprintf("keywords = $%d", argId))
 		// Menggunakan pq.Array untuk menyimpan slice string sebagai array di PostgreSQL.
@@ -239,14 +246,14 @@ func (s *EssayQuestionService) UpdateEssayQuestion(questionID string, req *model
 // GetEssayQuestionByID mengambil satu pertanyaan esai berdasarkan ID-nya.
 func (s *EssayQuestionService) GetEssayQuestionByID(questionID string) (*models.EssayQuestion, error) {
 	query := `
-		SELECT id, material_id, teks_soal, keywords, ideal_answer, weight, rubrics, created_at, updated_at
+		SELECT id, material_id, teks_soal, keywords, ideal_answer, weight, round_score_to_5, rubrics, created_at, updated_at
 		FROM essay_questions
 		WHERE id = $1
 	`
 	var q models.EssayQuestion
 	var keywords pq.StringArray
 	err := s.db.QueryRowContext(context.Background(), query, questionID).Scan(
-		&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt,
+		&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.RoundScoreTo5, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt,
 	)
 	if len(keywords) > 0 {
 		joined := strings.Join(keywords, ", ")

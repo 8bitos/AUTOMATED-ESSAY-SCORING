@@ -25,6 +25,14 @@ const toDateInput = (value?: string | null): string => {
   return d.toISOString().slice(0, 10);
 };
 
+const formatDateDisplay = (value?: string | null): string => {
+  if (!value) return "-";
+  const normalized = value.includes("T") ? value : `${value}T00:00:00`;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return "-";
+  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" }).format(d);
+};
+
 export default function StudentProfilePage() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -307,7 +315,7 @@ export default function StudentProfilePage() {
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-slate-500 inline-flex items-center gap-1"><FiCalendar size={14} /> Tanggal Lahir</p>
-                <p className="text-slate-900 font-medium">{tanggalLahirInput || "-"}</p>
+                <p className="text-slate-900 font-medium">{formatDateDisplay(tanggalLahirInput)}</p>
               </div>
             </div>
           </div>

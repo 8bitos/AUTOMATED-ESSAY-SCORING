@@ -240,7 +240,7 @@ export default function TeacherPenilaianPage() {
 
                   <div className="text-right space-y-1 md:min-w-[140px]">
                     <p className="text-xs text-slate-500 whitespace-nowrap">
-                      {item.submittedAt ? new Date(item.submittedAt).toLocaleString("id-ID") : "-"}
+                      {item.submittedAt ? new Date(item.submittedAt).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}
                     </p>
                     <p className="text-xs text-slate-600 whitespace-nowrap">AI: {item.aiScore ?? "-"}</p>
                     <p className="text-xs text-slate-600 whitespace-nowrap">Guru: {item.revisedScore ?? "-"}</p>

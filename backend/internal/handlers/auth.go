@@ -17,11 +17,12 @@ import (
 type AuthHandlers struct {
 	AuthService    *services.AuthService
 	SettingService *services.SystemSettingService
+	AuditService   *services.AdminAuditService
 }
 
 // NewAuthHandlers creates a new instance of AuthHandlers.
-func NewAuthHandlers(authService *services.AuthService, settingService *services.SystemSettingService) *AuthHandlers {
-	return &AuthHandlers{AuthService: authService, SettingService: settingService}
+func NewAuthHandlers(authService *services.AuthService, settingService *services.SystemSettingService, auditService *services.AdminAuditService) *AuthHandlers {
+	return &AuthHandlers{AuthService: authService, SettingService: settingService, AuditService: auditService}
 }
 
 // respondWithJSON is a helper to write JSON responses.
@@ -294,6 +295,11 @@ func (h *AuthHandlers) ReviewProfileChangeRequestHandler(w http.ResponseWriter, 
 		return
 	}
 
+	_ = h.AuditService.LogAction(reviewerID, "review_profile_request", "profile_change_request", &requestID, map[string]interface{}{
+		"action": payload.Action,
+		"reason": payload.Reason,
+	})
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Request processed"})
 }
 
@@ -354,7 +360,13 @@ func (h *AuthHandlers) AdminSetGradingModeHandler(w http.ResponseWriter, r *http
 		respondWithError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondWithJSON(w, http.StatusOK, map[string]string{"mode": strings.ToLower(payload.Mode)})
+	actorID, _ := r.Context().Value("userID").(string)
+	modeValue := strings.ToLower(payload.Mode)
+	_ = h.AuditService.LogAction(actorID, "set_grading_mode", "system_setting", nil, map[string]interface{}{
+		"key":   "grading_mode",
+		"value": modeValue,
+	})
+	respondWithJSON(w, http.StatusOK, map[string]string{"mode": modeValue})
 }
 
 func (h *AuthHandlers) AdminListUsersHandler(w http.ResponseWriter, r *http.Request) {
@@ -416,6 +428,9 @@ func (h *AuthHandlers) AdminResetUserPasswordHandler(w http.ResponseWriter, r *h
 		return
 	}
 
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "reset_user_password", "user", &userID, nil)
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Password berhasil direset"})
 }
 
@@ -456,6 +471,11 @@ func (h *AuthHandlers) AdminVerifyTeacherHandler(w http.ResponseWriter, r *http.
 		}
 	}
 
+	_ = h.AuditService.LogAction(reviewerID, "verify_teacher", "user", &userID, map[string]interface{}{
+		"action":   payload.Action,
+		"verified": verified,
+	})
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Teacher verification updated"})
 }
 
@@ -488,6 +508,9 @@ func (h *AuthHandlers) AdminUpdateUserHandler(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "update_user", "user", &userID, req)
+
 	respondWithJSON(w, http.StatusOK, user)
 }
 
@@ -507,6 +530,9 @@ func (h *AuthHandlers) AdminDeleteUserHandler(w http.ResponseWriter, r *http.Req
 		respondWithError(w, http.StatusInternalServerError, "Failed to delete user")
 		return
 	}
+
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "delete_user", "user", &userID, nil)
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "User deleted"})
 }

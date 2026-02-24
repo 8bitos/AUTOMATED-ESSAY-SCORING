@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FiBell, FiZap } from "react-icons/fi";
+import { FiBell, FiSettings, FiSliders, FiZap } from "react-icons/fi";
 
 export default function SuperadminSettingsPage() {
   return (
@@ -32,6 +32,30 @@ export default function SuperadminSettingsPage() {
           </p>
           <p className="mt-2 text-sm text-slate-600">
             Aktifkan perpindahan antara mode penilaian antrian (queued) dan instan.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/superadmin/config"
+          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition"
+        >
+          <p className="text-sm font-semibold text-slate-900 inline-flex items-center gap-2">
+            <FiSettings />
+            Config Center
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            Kelola setting operasional sistem (whitelist) dari panel superadmin.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/superadmin/feature-flags"
+          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition"
+        >
+          <p className="text-sm font-semibold text-slate-900 inline-flex items-center gap-2">
+            <FiSliders />
+            Feature Flags
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            Aktif/nonaktif fitur superadmin seperti impersonation, anomaly alerts, dan report builder.
           </p>
         </Link>
       </div>

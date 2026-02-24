@@ -55,27 +55,10 @@ interface ServiceStatus {
   detail: string;
 }
 
-interface APIStatisticsSummary {
-  requests_today: number;
-  requests_30_days: number;
-  success_rate_30d: number;
-  error_rate_30d: number;
-  avg_response_ms_30d: number;
-  today_total_tokens: number;
-  daily_token_limit: number;
-  tokens_remaining: number;
-  rpm_used: number;
-  rpm_limit: number;
-  tpm_used: number;
-  tpm_limit: number;
-  rpd_used: number;
-  rpd_limit: number;
-  today_prompt_tokens: number;
-  today_output_tokens: number;
-}
-
-interface APIStatisticsResponse {
-  summary: APIStatisticsSummary;
+interface AnomalyAlertItem {
+  level: "critical" | "warning" | "info";
+  title: string;
+  detail: string;
 }
 
 export default function SuperadminDashboardPage() {
@@ -84,8 +67,8 @@ export default function SuperadminDashboardPage() {
   const [approved, setApproved] = useState<ProfileRequestItem[]>([]);
   const [rejected, setRejected] = useState<ProfileRequestItem[]>([]);
   const [users, setUsers] = useState<AdminUserItem[]>([]);
+  const [anomalyAlerts, setAnomalyAlerts] = useState<AnomalyAlertItem[]>([]);
   const [serviceStatuses, setServiceStatuses] = useState<ServiceStatus[]>([]);
-  const [apiStats, setApiStats] = useState<APIStatisticsResponse | null>(null);
   const [reasonById, setReasonById] = useState<Record<string, string>>({});
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,13 +113,13 @@ export default function SuperadminDashboardPage() {
     else setRefreshing(true);
     setError(null);
     try {
-      const [summaryRes, pendingRes, approvedRes, rejectedRes, usersRes, apiStatsRes] = await Promise.all([
+      const [summaryRes, pendingRes, approvedRes, rejectedRes, usersRes, anomalyRes] = await Promise.all([
         fetch("/api/admin/dashboard-summary", { credentials: "include" }),
         fetch("/api/admin/profile-requests?status=pending", { credentials: "include" }),
         fetch("/api/admin/profile-requests?status=approved", { credentials: "include" }),
         fetch("/api/admin/profile-requests?status=rejected", { credentials: "include" }),
         fetch("/api/admin/users?sort=last_login", { credentials: "include" }),
-        fetch("/api/admin/api-statistics?days=7", { credentials: "include" }),
+        fetch("/api/admin/anomaly-alerts?days=7", { credentials: "include" }),
       ]);
 
       if (!summaryRes.ok) throw new Error("Gagal memuat ringkasan dashboard");
@@ -155,8 +138,17 @@ export default function SuperadminDashboardPage() {
       const usersData = usersRes.ok ? await usersRes.json() : [];
       setUsers(Array.isArray(usersData) ? usersData : []);
 
-      const apiStatsData = apiStatsRes.ok ? await apiStatsRes.json() : null;
-      setApiStats(apiStatsData);
+      if (anomalyRes.ok) {
+        const anomalyBody = await anomalyRes.json();
+        const mapped = (Array.isArray(anomalyBody?.items) ? anomalyBody.items : []).map((item: any) => ({
+          level: item?.level === "critical" ? "critical" : item?.level === "warning" ? "warning" : "info",
+          title: String(item?.title || "Anomaly Alert"),
+          detail: String(item?.detail || "-"),
+        })) as AnomalyAlertItem[];
+        setAnomalyAlerts(mapped);
+      } else {
+        setAnomalyAlerts([]);
+      }
     } catch (err: any) {
       setError(err?.message || "Terjadi kesalahan saat memuat dashboard superadmin");
     } finally {
@@ -258,8 +250,13 @@ export default function SuperadminDashboardPage() {
       });
     }
 
-    return items;
-  }, [summary, health]);
+    const merged = [...anomalyAlerts, ...items];
+    merged.sort((a, b) => {
+      const rank = (level: "critical" | "warning" | "info") => (level === "critical" ? 3 : level === "warning" ? 2 : 1);
+      return rank(b.level) - rank(a.level);
+    });
+    return merged;
+  }, [summary, health, anomalyAlerts]);
 
   const activityFeed = useMemo(() => {
     const normalize = (item: ProfileRequestItem, action: "approved" | "rejected") => ({
@@ -286,7 +283,6 @@ export default function SuperadminDashboardPage() {
     "Alerts & Prioritas",
     "Approval Center",
     "User Health Metrics",
-    "API Statistic",
   ];
   const totalSlides = slideTitles.length;
 
@@ -420,7 +416,7 @@ export default function SuperadminDashboardPage() {
                         <div>
                           <p className="text-sm font-medium text-slate-900">{item.user_name || "User"}</p>
                           <p className="text-xs text-slate-500">
-                            {item.user_role || "-"} · {formatRequestType(item.request_type)} · {new Date(item.created_at).toLocaleString("id-ID")}
+                            {item.user_role || "-"} · {formatRequestType(item.request_type)} · {new Date(item.created_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
                           </p>
                         </div>
                         <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px] uppercase">
@@ -496,7 +492,7 @@ export default function SuperadminDashboardPage() {
                       {item.user_name} ({item.user_role})
                     </p>
                     <p className="text-xs text-slate-500">
-                      {new Date(item.at).toLocaleString("id-ID")} · reviewer: {item.reviewer_name} · {formatRequestType((pending.find((p) => p.id === item.id) || approved.find((p) => p.id === item.id) || rejected.find((p) => p.id === item.id))?.request_type)}
+                      {new Date(item.at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })} · reviewer: {item.reviewer_name} · {formatRequestType((pending.find((p) => p.id === item.id) || approved.find((p) => p.id === item.id) || rejected.find((p) => p.id === item.id))?.request_type)}
                     </p>
                   </div>
                 ))}
@@ -518,71 +514,6 @@ export default function SuperadminDashboardPage() {
           <p className="mt-3 text-xs text-slate-500">
             Rasio user aktif 7 hari: <span className="font-semibold text-slate-700">{(health.activeRate * 100).toFixed(1)}%</span>
           </p>
-        </section>
-      )}
-
-      {activeSlide === 4 && (
-        <section className="space-y-4">
-          <section className="sage-panel p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Gemini Rate Limit (Live)</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">RPM</p>
-                <p className="text-xl font-semibold text-slate-900">
-                  {(apiStats?.summary?.rpm_used ?? 0)}/{(apiStats?.summary?.rpm_limit ?? 0)}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">Request per menit</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">TPM</p>
-                <p className="text-xl font-semibold text-slate-900">
-                  {formatCompact(apiStats?.summary?.tpm_used ?? 0)}/{formatCompact(apiStats?.summary?.tpm_limit ?? 0)}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">Token per menit</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-xs text-slate-500">RPD</p>
-                <p className="text-xl font-semibold text-slate-900">
-                  {(apiStats?.summary?.rpd_used ?? 0)}/{(apiStats?.summary?.rpd_limit ?? 0)}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">Request per hari</p>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-slate-500">
-              Reset: RPM/TPM rolling per menit, RPD reset harian (umumnya timezone limit provider).
-            </p>
-          </section>
-
-          <section className="sage-panel p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Data Token yang Bisa Diambil</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p className="text-xs text-slate-500">Prompt Token (hari ini)</p>
-                <p className="text-lg font-semibold text-slate-900">{formatCompact(apiStats?.summary?.today_prompt_tokens ?? 0)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p className="text-xs text-slate-500">Output Token (hari ini)</p>
-                <p className="text-lg font-semibold text-slate-900">{formatCompact(apiStats?.summary?.today_output_tokens ?? 0)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p className="text-xs text-slate-500">Total Token (hari ini)</p>
-                <p className="text-lg font-semibold text-slate-900">{formatCompact(apiStats?.summary?.today_total_tokens ?? 0)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <p className="text-xs text-slate-500">Token Tersisa (estimasi internal)</p>
-                <p className="text-lg font-semibold text-slate-900">{formatCompact(apiStats?.summary?.tokens_remaining ?? 0)}</p>
-              </div>
-            </div>
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 space-y-1">
-              <p className="font-semibold">Field token yang tersedia dari response Gemini (UsageMetadata):</p>
-              <p>1. `prompt_token_count`</p>
-              <p>2. `candidates_token_count`</p>
-              <p>3. `total_token_count`</p>
-              <p className="text-xs text-slate-500 mt-2">
-                Sisa token/quota real-time langsung dari provider tidak selalu tersedia sebagai field API tunggal, jadi ditampilkan sebagai estimasi internal.
-              </p>
-            </div>
-          </section>
         </section>
       )}
 
@@ -609,10 +540,6 @@ function MiniStat({ label, value, danger = false }: { label: string; value: stri
       <p className={`text-xl font-semibold ${danger ? "text-rose-700" : "text-slate-900"}`}>{value}</p>
     </div>
   );
-}
-
-function formatCompact(value: number): string {
-  return new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(value || 0);
 }
 
 function formatRequestType(value?: string | null): string {

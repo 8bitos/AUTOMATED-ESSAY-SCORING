@@ -90,10 +90,10 @@ func (s *QuestionBankService) CreateQuestionBankEntry(req models.CreateQuestionB
 	return &created, nil
 }
 
-func (s *QuestionBankService) ListQuestionBankEntries(userID, userRole string, classID, materialID, q *string) ([]models.QuestionBankEntry, error) {
+func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classID, materialID, q *string) ([]models.QuestionBankEntry, error) {
 	base := `
 		SELECT
-			qb.id, qb.created_by, qb.class_id, COALESCE(c.class_name, '') as class_name,
+			qb.id, qb.created_by, COALESCE(u.nama_lengkap, '') as created_by_name, qb.class_id, COALESCE(c.class_name, '') as class_name,
 			COALESCE(qb.subject, '') as subject,
 			qb.source_material_id, COALESCE(m.judul, '') as material_title, qb.source_question_id,
 			qb.teks_soal, qb.level_kognitif, qb.keywords, qb.ideal_answer, qb.weight, qb.rubrics,
@@ -101,16 +101,12 @@ func (s *QuestionBankService) ListQuestionBankEntries(userID, userRole string, c
 		FROM question_bank_entries qb
 		LEFT JOIN classes c ON c.id = qb.class_id
 		LEFT JOIN materials m ON m.id = qb.source_material_id
+		LEFT JOIN users u ON u.id = qb.created_by
 	`
 	clauses := make([]string, 0, 4)
 	args := make([]interface{}, 0, 4)
 	argPos := 1
 
-	if userRole == "teacher" {
-		clauses = append(clauses, fmt.Sprintf("qb.created_by = $%d", argPos))
-		args = append(args, userID)
-		argPos++
-	}
 	if classID != nil && strings.TrimSpace(*classID) != "" {
 		clauses = append(clauses, fmt.Sprintf("qb.class_id = $%d", argPos))
 		args = append(args, strings.TrimSpace(*classID))
@@ -146,6 +142,7 @@ func (s *QuestionBankService) ListQuestionBankEntries(userID, userRole string, c
 		if err := rows.Scan(
 			&item.ID,
 			&item.CreatedBy,
+			&item.CreatedByName,
 			&item.ClassID,
 			&item.ClassName,
 			&item.Subject,
@@ -266,7 +263,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 
 	getQuery := `
 		SELECT
-			qb.id, qb.created_by, qb.class_id, COALESCE(c.class_name, '') as class_name,
+			qb.id, qb.created_by, COALESCE(u.nama_lengkap, '') as created_by_name, qb.class_id, COALESCE(c.class_name, '') as class_name,
 			COALESCE(qb.subject, '') as subject,
 			qb.source_material_id, COALESCE(m.judul, '') as material_title, qb.source_question_id,
 			qb.teks_soal, qb.level_kognitif, qb.keywords, qb.ideal_answer, qb.weight, qb.rubrics,
@@ -274,6 +271,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 		FROM question_bank_entries qb
 		LEFT JOIN classes c ON c.id = qb.class_id
 		LEFT JOIN materials m ON m.id = qb.source_material_id
+		LEFT JOIN users u ON u.id = qb.created_by
 		WHERE qb.id = $1
 	`
 	var item models.QuestionBankEntry
@@ -281,6 +279,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 	if err := s.db.QueryRowContext(context.Background(), getQuery, entryID).Scan(
 		&item.ID,
 		&item.CreatedBy,
+		&item.CreatedByName,
 		&item.ClassID,
 		&item.ClassName,
 		&item.Subject,

@@ -62,3 +62,14 @@ type AdminAPIStatisticsResponse struct {
 	StatusBreakdown  []APIUsageStatusBreakdown  `json:"status_breakdown"`
 	RecentLogs       []APIUsageRecentLog        `json:"recent_logs"`
 }
+
+type APIErrorTypeCount struct {
+	ErrorType string `json:"error_type"`
+	Count     int64  `json:"count"`
+}
+
+type AdminAPIHealthResponse struct {
+	LatencyP95Ms  float64             `json:"latency_p95_ms"`
+	ErrorRate24H  float64             `json:"error_rate_24h"`
+	TopErrorTypes []APIErrorTypeCount `json:"top_error_types"`
+}

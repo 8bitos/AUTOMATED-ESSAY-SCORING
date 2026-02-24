@@ -8,6 +8,10 @@ import {
   STUDENT_NOTIFICATION_PREFS_KEY,
   StudentNotificationPrefs,
 } from '@/lib/studentNotifications';
+import {
+  DEFAULT_NOTIFICATION_POLL_INTERVAL_MS,
+  loadNotificationPollIntervalMs,
+} from '@/lib/notificationRealtime';
 
 interface TopbarProps {
   sidebarOpen: boolean;
@@ -56,6 +60,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     reviewedScores: true,
     newQuestions: true,
   });
+  const [impersonationActive, setImpersonationActive] = useState(false);
+  const [impersonationBusy, setImpersonationBusy] = useState(false);
+  const [pollIntervalMs, setPollIntervalMs] = useState<number>(DEFAULT_NOTIFICATION_POLL_INTERVAL_MS);
 
   const trigger = useRef<HTMLButtonElement>(null);
   const dropdown = useRef<HTMLDivElement>(null);
@@ -140,6 +147,32 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
 
   const { theme, toggleTheme } = useTheme();
 
+  const loadImpersonationStatus = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch('/api/impersonation/status', { credentials: 'include' });
+      if (!res.ok) {
+        setImpersonationActive(false);
+        return;
+      }
+      const data = await res.json();
+      setImpersonationActive(Boolean(data?.active));
+    } catch {
+      setImpersonationActive(false);
+    }
+  };
+
+  const handleStopImpersonation = async () => {
+    setImpersonationBusy(true);
+    try {
+      const res = await fetch('/api/impersonation/stop', { method: 'POST', credentials: 'include' });
+      if (!res.ok) throw new Error('Gagal menghentikan impersonation');
+      window.location.href = '/dashboard/superadmin';
+    } catch {
+      setImpersonationBusy(false);
+    }
+  };
+
   const notificationPageByRole = (role?: string) => {
     if (role === 'teacher') return '/dashboard/teacher/notifikasi';
     if (role === 'superadmin') return '/dashboard/superadmin/notifikasi';
@@ -154,7 +187,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     return new Intl.DateTimeFormat('id-ID', {
       day: '2-digit',
       month: '2-digit',
-      year: 'numeric',
+      year: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -266,6 +299,18 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   }, [user?.peran, user?.id, user?.nama_lengkap]);
 
   useEffect(() => {
+    if (!user) return;
+    let active = true;
+    (async () => {
+      const next = await loadNotificationPollIntervalMs();
+      if (active) setPollIntervalMs(next);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user?.id, user?.peran]);
+
+  useEffect(() => {
     if (user?.peran !== 'teacher') return;
     const handleStorage = (e: StorageEvent) => {
       if (e.key === TEACHER_NOTIFICATION_PREFS_KEY) loadTeacherNotifPrefs();
@@ -323,6 +368,31 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     studentNotifPrefs.newQuestions,
   ]);
 
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => {
+      loadNotifications();
+    }, pollIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [
+    user,
+    pollIntervalMs,
+    teacherNotifPrefs.classRequests,
+    teacherNotifPrefs.assessmentUpdates,
+    teacherNotifPrefs.systemAnnouncements,
+    superadminNotifPrefs.approvalRequests,
+    studentNotifPrefs.profileApprovals,
+    studentNotifPrefs.classApproved,
+    studentNotifPrefs.classInvited,
+    studentNotifPrefs.newMaterials,
+    studentNotifPrefs.reviewedScores,
+    studentNotifPrefs.newQuestions,
+  ]);
+
+  useEffect(() => {
+    loadImpersonationStatus();
+  }, [user?.id, user?.peran]);
+
   const unreadCount = notifications.filter((item) => !readNotificationIds.includes(item.id)).length;
   const hasNotifications = notifications.length > 0;
 
@@ -363,8 +433,21 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-      <div className="px-4 sm:px-6 lg:px-8">
+    <header className="topbar-shell sticky top-0 z-30 border-b border-slate-200 bg-white">
+      {impersonationActive && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6 lg:px-8 flex items-center justify-between">
+          <span>Mode impersonation aktif. Kamu sedang login sebagai user lain.</span>
+          <button
+            type="button"
+            onClick={handleStopImpersonation}
+            disabled={impersonationBusy}
+            className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100 disabled:opacity-60"
+          >
+            {impersonationBusy ? 'Stopping...' : 'Stop & balik superadmin'}
+          </button>
+        </div>
+      )}
+      <div className="topbar-surface px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 -mb-px">
           {/* Header: Left side */}
           <div className="flex">
@@ -390,7 +473,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
             <div className="relative">
               <input
                 type="search"
-                className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300 md:w-64"
+                className="topbar-input w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300 md:w-64"
                 placeholder="Cari kelas, materi, siswa..."
               />
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -407,7 +490,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
             <button
               type="button"
               onClick={toggleTheme}
-              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50"
+              className="topbar-chip inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50"
               aria-label="Toggle dark mode"
             >
               {theme === "dark" ? "🌙" : "☀️"}
@@ -421,7 +504,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     ref={notifTrigger}
                     type="button"
                     onClick={() => setNotifOpen((prev) => !prev)}
-                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    className="topbar-chip relative inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     aria-label="Notifikasi"
                   >
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -435,7 +518,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                   {notifOpen && (
                     <div
                       ref={notifPanel}
-                      className="absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg"
+                      className="topbar-popover absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg"
                     >
                       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                         <p className="text-sm font-semibold text-slate-900">Notifikasi</p>
@@ -451,7 +534,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                           )}
                           <button
                             type="button"
-                            className="text-xs text-[color:var(--sage-700)] hover:underline"
+                            className="text-xs text-slate-700 hover:text-slate-900 hover:underline"
                             onClick={() => {
                               setNotifOpen(false);
                               router.push(notificationPageByRole(user.peran));
@@ -471,7 +554,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                           notifications.slice(0, 3).map((item) => {
                             const isRead = readNotificationIds.includes(item.id);
                             return (
-                            <div key={item.id} className={`rounded-lg px-2 py-2 hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}>
+                            <div key={item.id} className={`topbar-list-item rounded-lg px-2 py-2 hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}>
                               <p className="text-sm font-medium text-slate-900">{item.title}</p>
                               <p className="mt-0.5 text-xs text-slate-600">{item.message}</p>
                               <p className="mt-1 text-[11px] text-slate-400">{formatNotifDate(item.createdAt)}</p>
@@ -487,7 +570,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                   <button
                     ref={trigger}
                     type="button"
-                    className="inline-flex justify-center items-center gap-x-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="topbar-chip inline-flex justify-center items-center gap-x-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     id="menu-button"
                     aria-expanded={dropdownOpen}
                     aria-haspopup="true"
@@ -506,7 +589,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                   {dropdownOpen && (
                     <div
                       ref={dropdown}
-                      className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                      className="topbar-popover absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
                       role="menu"
                       aria-orientation="vertical"
                       aria-labelledby="menu-button"

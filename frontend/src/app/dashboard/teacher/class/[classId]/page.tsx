@@ -855,8 +855,8 @@ function formatDateLabel(iso?: string): string {
   if (Number.isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
-    month: "short",
-    year: "numeric",
+    month: "2-digit",
+    year: "2-digit",
   }).format(d);
 }
 
@@ -1430,8 +1430,8 @@ function formatDateTimeLabel(iso?: string): string {
   if (Number.isNaN(d.getTime())) return "-";
   return new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
-    month: "short",
-    year: "numeric",
+    month: "2-digit",
+    year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);

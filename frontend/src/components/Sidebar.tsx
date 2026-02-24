@@ -70,6 +70,27 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     { href: '/dashboard/superadmin', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
     ), label: 'Dashboard' },
+    { href: '/dashboard/superadmin/monitoring', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m2-4h.01M4 6h16M4 12h8m-8 6h16"></path></svg>
+    ), label: 'Monitoring' },
+    { href: '/dashboard/superadmin/impersonate', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.121 17.804A9 9 0 1112 21a8.964 8.964 0 01-6.879-3.196zM15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+    ), label: 'Impersonate' },
+    { href: '/dashboard/superadmin/report-builder', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-6m3 6V7m3 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+    ), label: 'Report Builder' },
+    { href: '/dashboard/superadmin/pengumuman', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5l6 3v8l-6 3-6-3V8l6-3zm0 0v14"></path></svg>
+    ), label: 'Pengumuman' },
+    { href: '/dashboard/superadmin/ai-ops', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-6m3 6V7m3 10v-3m-9 7h12a2 2 0 002-2V5a2 2 0 00-2-2H6a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+    ), label: 'AI Ops' },
+    { href: '/dashboard/superadmin/queue-monitor', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h8m-8 4h8m-8 4h5M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"></path></svg>
+    ), label: 'Queue Monitor' },
+    { href: '/dashboard/superadmin/audit-log', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m-7-8h8m3 10H5a2 2 0 01-2-2V6a2 2 0 012-2h9l5 5v9a2 2 0 01-2 2z"></path></svg>
+    ), label: 'Audit Log' },
     { href: '/dashboard/superadmin/profile-requests', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m-6-8h6m-8 12h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
     ), label: 'Approval' },
@@ -160,16 +181,16 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                 return (
                 <li
                   key={item.href}
-                  className={`px-3 py-2.5 rounded-xl mb-1 last:mb-0 transition ${
+                  className={`sidebar-nav-item px-3 py-2.5 rounded-xl mb-1 last:mb-0 transition ${
                     active ? 'bg-slate-100' : 'hover:bg-slate-50'
                   }`}
                 >
                   <Link
                     href={item.href}
-                    className={`flex items-center text-slate-600 ${active && 'text-slate-900 font-semibold'}`}
+                    className={`sidebar-nav-link flex items-center text-slate-600 ${active && 'text-slate-900 font-semibold'}`}
                     onClick={() => setSidebarOpen(false)} // Close sidebar on mobile
                   >
-                    <span className="text-slate-500">{item.icon}</span>
+                    <span className="sidebar-nav-icon text-slate-500">{item.icon}</span>
                     <span className="text-sm font-medium ml-3 lg:opacity-100 duration-200">
                       {item.label}
                     </span>
@@ -181,10 +202,10 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white pt-3 border-t border-slate-200">
+        <div className="sticky bottom-0 pt-3 border-t border-slate-200">
           <Link
             href={settingsLink}
-            className={`flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+            className={`sidebar-settings-link flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition ${
               isSettingsActive ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
             }`}
             onClick={() => setSidebarOpen(false)}

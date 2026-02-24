@@ -27,6 +27,7 @@ type AIService struct {
 	modelName       string
 	dailyTokenLimit int64
 	aiLimiterMu     sync.Mutex
+	modelMu         sync.RWMutex
 	lastRequestAt   time.Time
 	aiMinInterval   time.Duration
 }
@@ -40,18 +41,11 @@ func NewAIService(db *sql.DB) (*AIService, error) {
 		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
 	}
 
-	ctx := context.Background() // Membuat context kosong.
-	// Membuat klien genai baru dengan API Key yang didapat.
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new genai client: %w", err)
-	}
-
-	// Menginisialisasi model Generative AI yang akan digunakan (gemini-3-flash-preview).
 	modelName := "gemini-2.5-flash"
-	model := client.GenerativeModel(modelName)
-	// Mengatur konfigurasi generasi model untuk mengembalikan respons dalam format JSON.
-	model.GenerationConfig.ResponseMIMEType = "application/json"
+	model, err := buildGeminiModel(apiKey, modelName)
+	if err != nil {
+		return nil, err
+	}
 
 	dailyLimit := int64(0)
 	if value := strings.TrimSpace(os.Getenv("GEMINI_DAILY_TOKEN_LIMIT")); value != "" {
@@ -68,6 +62,33 @@ func NewAIService(db *sql.DB) (*AIService, error) {
 	minInterval := time.Minute / time.Duration(rpmLimit)
 
 	return &AIService{client: model, db: db, modelName: modelName, dailyTokenLimit: dailyLimit, aiMinInterval: minInterval}, nil
+}
+
+func buildGeminiModel(apiKey, modelName string) (*genai.GenerativeModel, error) {
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new genai client: %w", err)
+	}
+	model := client.GenerativeModel(modelName)
+	model.GenerationConfig.ResponseMIMEType = "application/json"
+	return model, nil
+}
+
+func (s *AIService) UpdateAPIKey(apiKey string) error {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return fmt.Errorf("api key cannot be empty")
+	}
+	model, err := buildGeminiModel(apiKey, s.modelName)
+	if err != nil {
+		return err
+	}
+
+	s.modelMu.Lock()
+	s.client = model
+	s.modelMu.Unlock()
+	return nil
 }
 
 func detectAIErrorType(err error) string {
@@ -144,7 +165,13 @@ func (s *AIService) generateContentWithRetry(prompt string) (*genai.GenerateCont
 			time.Sleep(delay)
 		}
 		s.waitForAIRateSlot()
-		resp, err := s.client.GenerateContent(ctx, genai.Text(prompt))
+		s.modelMu.RLock()
+		model := s.client
+		s.modelMu.RUnlock()
+		if model == nil {
+			return nil, fmt.Errorf("AI model is unavailable")
+		}
+		resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 		if err == nil {
 			return resp, nil
 		}
@@ -517,7 +544,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 	promptBuilder.WriteString("6) keywords must be concise and relevant (3-6 items).\n")
 	promptBuilder.WriteString("7) weight must be positive number.\n")
 	promptBuilder.WriteString("8) For holistik, rubrics must contain exactly 1 aspect.\n")
-	promptBuilder.WriteString("9) For analitik, rubrics should contain 2 - 3 aspects with clear simple names.\n")
+	promptBuilder.WriteString("9) For analitik, rubrics should contain 2 - 5 aspects with clear simple names.\n")
 	promptBuilder.WriteString("10) Each descriptor description must be plain string, no object.\n")
 	promptBuilder.WriteString("11) If the material is not history-related, return an error JSON: {\"error\":\"MATERI_BUKAN_SEJARAH\"}\n")
 

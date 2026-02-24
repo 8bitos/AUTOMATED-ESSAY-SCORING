@@ -8,15 +8,16 @@ import (
 // EssayQuestion merepresentasikan struktur tabel 'essay_questions' di database.
 // Struktur ini mencerminkan skema setelah penambahan kolom-kolom baru.
 type EssayQuestion struct {
-	ID          string          `json:"id"`                     // ID unik pertanyaan esai, biasanya UUID.
-	MaterialID  string          `json:"material_id"`            // ID materi tempat pertanyaan ini berada (Foreign Key ke tabel materials).
-	TeksSoal    string          `json:"teks_soal"`              // Teks lengkap dari pertanyaan esai.
-	Keywords    *string         `json:"keywords,omitempty"`     // Kata kunci relevan untuk penilaian (opsional, bisa NULL).
-	IdealAnswer *string         `json:"ideal_answer,omitempty"` // Jawaban ideal atau contoh (opsional, bisa NULL).
-	Weight      *float64        `json:"weight,omitempty"`       // Bobot soal untuk kalkulasi nilai akhir (opsional).
-	Rubrics     json.RawMessage `json:"rubrics,omitempty"`      // Rubrik penilaian dalam format JSON mentah.
-	CreatedAt   time.Time       `json:"created_at"`             // Timestamp ketika pertanyaan dibuat.
-	UpdatedAt   time.Time       `json:"updated_at"`             // Timestamp terakhir kali pertanyaan diperbarui.
+	ID            string          `json:"id"`                     // ID unik pertanyaan esai, biasanya UUID.
+	MaterialID    string          `json:"material_id"`            // ID materi tempat pertanyaan ini berada (Foreign Key ke tabel materials).
+	TeksSoal      string          `json:"teks_soal"`              // Teks lengkap dari pertanyaan esai.
+	Keywords      *string         `json:"keywords,omitempty"`     // Kata kunci relevan untuk penilaian (opsional, bisa NULL).
+	IdealAnswer   *string         `json:"ideal_answer,omitempty"` // Jawaban ideal atau contoh (opsional, bisa NULL).
+	Weight        *float64        `json:"weight,omitempty"`       // Bobot soal untuk kalkulasi nilai akhir (opsional).
+	RoundScoreTo5 bool            `json:"round_score_to_5"`       // Jika true, skor AI dibulatkan ke kelipatan 5 (post-processing).
+	Rubrics       json.RawMessage `json:"rubrics,omitempty"`      // Rubrik penilaian dalam format JSON mentah.
+	CreatedAt     time.Time       `json:"created_at"`             // Timestamp ketika pertanyaan dibuat.
+	UpdatedAt     time.Time       `json:"updated_at"`             // Timestamp terakhir kali pertanyaan diperbarui.
 
 	// Fields for student's submission data (denormalized for student view)
 	SubmissionID     *string                 `json:"submission_id,omitempty"`
@@ -49,22 +50,24 @@ type CreateMaterialAndQuestionsRequest struct {
 // untuk sebuah pertanyaan esai. Semua field bersifat opsional (omitempty)
 // karena tidak semua field mungkin diperbarui dalam satu waktu.
 type UpdateEssayQuestionRequest struct {
-	TeksSoal    *string          `json:"teksSoal,omitempty"`    // Pointer ke string untuk teks soal (opsional).
-	Keywords    *[]string        `json:"keywords,omitempty"`    // Pointer ke slice string untuk kata kunci (opsional).
-	IdealAnswer *string          `json:"idealAnswer,omitempty"` // Pointer ke string untuk jawaban ideal (opsional).
-	Weight      *float64         `json:"weight,omitempty"`      // Pointer ke float64 untuk bobot (opsional).
-	Rubrics     *json.RawMessage `json:"rubrics,omitempty"`     // Pointer ke json.RawMessage untuk rubrik (opsional).
+	TeksSoal      *string          `json:"teks_soal,omitempty"`        // Pointer ke string untuk teks soal (opsional).
+	Keywords      *[]string        `json:"keywords,omitempty"`         // Pointer ke slice string untuk kata kunci (opsional).
+	IdealAnswer   *string          `json:"ideal_answer,omitempty"`     // Pointer ke string untuk jawaban ideal (opsional).
+	Weight        *float64         `json:"weight,omitempty"`           // Pointer ke float64 untuk bobot (opsional).
+	RoundScoreTo5 *bool            `json:"round_score_to_5,omitempty"` // Pointer ke bool untuk pembulatan skor AI (opsional).
+	Rubrics       *json.RawMessage `json:"rubrics,omitempty"`          // Pointer ke json.RawMessage untuk rubrik (opsional).
 }
 
 // CreateEssayQuestionRequest mendefinisikan field-field yang dibutuhkan
 // untuk membuat pertanyaan esai baru.
 type CreateEssayQuestionRequest struct {
-	MaterialID  string          `json:"material_id"`            // ID materi tempat pertanyaan ini berada.
-	TeksSoal    string          `json:"teks_soal"`              // Teks lengkap dari pertanyaan esai.
-	Keywords    *[]string       `json:"keywords,omitempty"`     // Kata kunci relevan untuk penilaian (opsional).
-	IdealAnswer *string         `json:"ideal_answer,omitempty"` // Jawaban ideal atau contoh (opsional).
-	Weight      *float64        `json:"weight,omitempty"`       // Bobot soal (opsional).
-	Rubrics     json.RawMessage `json:"rubrics,omitempty"`      // Rubrik penilaian dalam format JSON mentah.
+	MaterialID    string          `json:"material_id"`            // ID materi tempat pertanyaan ini berada.
+	TeksSoal      string          `json:"teks_soal"`              // Teks lengkap dari pertanyaan esai.
+	Keywords      *[]string       `json:"keywords,omitempty"`     // Kata kunci relevan untuk penilaian (opsional).
+	IdealAnswer   *string         `json:"ideal_answer,omitempty"` // Jawaban ideal atau contoh (opsional).
+	Weight        *float64        `json:"weight,omitempty"`       // Bobot soal (opsional).
+	RoundScoreTo5 bool            `json:"round_score_to_5"`       // Aktifkan pembulatan skor AI ke kelipatan 5.
+	Rubrics       json.RawMessage `json:"rubrics,omitempty"`      // Rubrik penilaian dalam format JSON mentah.
 }
 
 // AutoGenerateEssayQuestionRequest adalah payload untuk generate soal otomatis dari materi.

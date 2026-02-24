@@ -42,6 +42,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 
 	// ClassService memerlukan materialService dan essayQuestionService.
 	systemSettingService := services.NewSystemSettingService(db)
+	adminAuditService := services.NewAdminAuditService(db)
 	classService := services.NewClassService(db, materialService, essayQuestionService)
 	essaySubmissionService := services.NewEssaySubmissionService(db, aiService, essayQuestionService, systemSettingService)
 	aiResultService := services.NewAIResultService(db)
@@ -52,7 +53,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 
 	// --- Inisialisasi Handler ---
 	// Handler menerima permintaan HTTP dan memanggil metode dari layanan.
-	authHandlers := handlers.NewAuthHandlers(authService, systemSettingService)
+	authHandlers := handlers.NewAuthHandlers(authService, systemSettingService, adminAuditService)
 	gradeEssayHandlers := handlers.NewGradeEssayHandlers(aiService)
 	classHandlers := handlers.NewClassHandlers(classService)
 	materialHandlers := handlers.NewMaterialHandlers(materialService)
@@ -65,6 +66,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	classTeachingModuleHandlers := handlers.NewClassTeachingModuleHandlers(classTeachingModuleService)
 	questionBankHandlers := handlers.NewQuestionBankHandlers(questionBankService, materialService)
 	uploadHandler := handlers.NewUploadHandler()
+	adminOpsHandlers := handlers.NewAdminOpsHandlers(db, authService, essaySubmissionService, aiService, systemSettingService, adminAuditService, questionBankService)
 
 	// --- Rute Publik (Tanpa Awalan /api) ---
 	// Rute-rute ini dapat diakses langsung tanpa awalan API.
@@ -105,7 +107,11 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	protectedRouter.HandleFunc("/profile", authHandlers.UpdateProfileHandler).Methods("PATCH")
 	protectedRouter.HandleFunc("/profile/password", authHandlers.ChangePasswordHandler).Methods("POST")
 	protectedRouter.HandleFunc("/profile-change-requests", authHandlers.MyProfileChangeRequestsHandler).Methods("GET")
+	protectedRouter.HandleFunc("/announcements/active", adminOpsHandlers.ListActiveAnnouncementsHandler).Methods("GET")
+	protectedRouter.HandleFunc("/settings/notifications", adminOpsHandlers.NotificationConfigHandler).Methods("GET")
 	protectedRouter.HandleFunc("/teachers/{teacherId}/public", authHandlers.PublicTeacherProfileHandler).Methods("GET")
+	protectedRouter.HandleFunc("/impersonation/status", adminOpsHandlers.ImpersonationStatusHandler).Methods("GET")
+	protectedRouter.HandleFunc("/impersonation/stop", adminOpsHandlers.StopImpersonationHandler).Methods("POST")
 	protectedRouter.HandleFunc("/upload", uploadHandler.UploadFileHandler).Methods("POST")                                        // Untuk mengunggah file.
 	protectedRouter.HandleFunc("/essay-questions/{questionId}", essayQuestionHandlers.GetEssayQuestionByIDHandler).Methods("GET") // Mendapatkan pertanyaan esai berdasarkan ID.
 
@@ -184,6 +190,15 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	adminRouter.Use(SuperadminOnlyMiddleware)
 	adminRouter.HandleFunc("/dashboard-summary", authHandlers.AdminDashboardSummaryHandler).Methods("GET")
 	adminRouter.HandleFunc("/api-statistics", authHandlers.AdminAPIStatisticsHandler).Methods("GET")
+	adminRouter.HandleFunc("/api-statistics/health", adminOpsHandlers.AdminAPIHealthHandler).Methods("GET")
+	adminRouter.HandleFunc("/ai-config/gemini-key", adminOpsHandlers.AdminGetGeminiKeyMaskedHandler).Methods("GET")
+	adminRouter.HandleFunc("/ai-config/gemini-key/reveal", adminOpsHandlers.AdminRevealGeminiKeyHandler).Methods("POST")
+	adminRouter.HandleFunc("/ai-config/gemini-key", adminOpsHandlers.AdminUpdateGeminiKeyHandler).Methods("PUT")
+	adminRouter.HandleFunc("/settings", adminOpsHandlers.AdminListSettingsHandler).Methods("GET")
+	adminRouter.HandleFunc("/settings/{key}", adminOpsHandlers.AdminUpdateSettingHandler).Methods("PUT")
+	adminRouter.HandleFunc("/grading-queue/summary", adminOpsHandlers.AdminQueueSummaryHandler).Methods("GET")
+	adminRouter.HandleFunc("/grading-queue/jobs", adminOpsHandlers.AdminQueueJobsHandler).Methods("GET")
+	adminRouter.HandleFunc("/grading-queue/retry", adminOpsHandlers.AdminQueueRetryHandler).Methods("POST")
 	adminRouter.HandleFunc("/settings/grading-mode", authHandlers.AdminGetGradingModeHandler).Methods("GET")
 	adminRouter.HandleFunc("/settings/grading-mode", authHandlers.AdminSetGradingModeHandler).Methods("PUT")
 	adminRouter.HandleFunc("/users", authHandlers.AdminListUsersHandler).Methods("GET")
@@ -194,4 +209,27 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	adminRouter.HandleFunc("/users/{userId}/verify-teacher", authHandlers.AdminVerifyTeacherHandler).Methods("POST")
 	adminRouter.HandleFunc("/profile-requests", authHandlers.ListProfileChangeRequestsHandler).Methods("GET")
 	adminRouter.HandleFunc("/profile-requests/{requestId}/review", authHandlers.ReviewProfileChangeRequestHandler).Methods("POST")
+	adminRouter.HandleFunc("/audit-logs", adminOpsHandlers.AdminAuditLogsHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/submissions", adminOpsHandlers.AdminMonitoringSubmissionsHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/grades", adminOpsHandlers.AdminMonitoringGradesHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/question-bank", adminOpsHandlers.AdminMonitoringQuestionBankHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/classes", adminOpsHandlers.AdminMonitoringClassesHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/materials", adminOpsHandlers.AdminMonitoringMaterialsHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/interactions", adminOpsHandlers.AdminMonitoringInteractionsHandler).Methods("GET")
+	adminRouter.HandleFunc("/monitoring/users-activity", adminOpsHandlers.AdminMonitoringUsersActivityHandler).Methods("GET")
+	adminRouter.HandleFunc("/override/grades/{submissionId}", adminOpsHandlers.AdminOverrideUpdateGradeHandler).Methods("PUT")
+	adminRouter.HandleFunc("/override/grades/{submissionId}", adminOpsHandlers.AdminOverrideDeleteGradeHandler).Methods("DELETE")
+	adminRouter.HandleFunc("/override/question-bank/{entryId}", adminOpsHandlers.AdminOverrideUpdateQuestionBankHandler).Methods("PUT")
+	adminRouter.HandleFunc("/override/question-bank/{entryId}", adminOpsHandlers.AdminOverrideDeleteQuestionBankHandler).Methods("DELETE")
+	adminRouter.HandleFunc("/override/classes/{classId}", adminOpsHandlers.AdminOverrideDeleteClassHandler).Methods("DELETE")
+	adminRouter.HandleFunc("/override/materials/{materialId}", adminOpsHandlers.AdminOverrideDeleteMaterialHandler).Methods("DELETE")
+	adminRouter.HandleFunc("/impersonation/start", adminOpsHandlers.AdminStartImpersonationHandler).Methods("POST")
+	adminRouter.HandleFunc("/feature-flags", adminOpsHandlers.AdminListFeatureFlagsHandler).Methods("GET")
+	adminRouter.HandleFunc("/feature-flags/{key}", adminOpsHandlers.AdminUpdateFeatureFlagHandler).Methods("PUT")
+	adminRouter.HandleFunc("/anomaly-alerts", adminOpsHandlers.AdminAnomalyAlertsHandler).Methods("GET")
+	adminRouter.HandleFunc("/reports/build", adminOpsHandlers.AdminBuildReportHandler).Methods("POST")
+	adminRouter.HandleFunc("/announcements", adminOpsHandlers.AdminListAnnouncementsHandler).Methods("GET")
+	adminRouter.HandleFunc("/announcements", adminOpsHandlers.AdminCreateAnnouncementHandler).Methods("POST")
+	adminRouter.HandleFunc("/announcements/{announcementId}", adminOpsHandlers.AdminUpdateAnnouncementHandler).Methods("PUT")
+	adminRouter.HandleFunc("/announcements/{announcementId}", adminOpsHandlers.AdminDeleteAnnouncementHandler).Methods("DELETE")
 }

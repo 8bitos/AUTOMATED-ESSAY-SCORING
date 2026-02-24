@@ -291,7 +291,7 @@ export default function StudentAssignmentsPage() {
 
               <div className="mt-4 flex items-center justify-between">
                 <p className="text-xs text-slate-500">
-                  Update: {row.updatedAt ? new Date(row.updatedAt).toLocaleString("id-ID") : "-"}
+                  Update: {row.updatedAt ? new Date(row.updatedAt).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}
                 </p>
                 <Link
                   href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`}

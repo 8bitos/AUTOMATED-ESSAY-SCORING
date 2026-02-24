@@ -113,6 +113,7 @@ interface EssayQuestion {
     ideal_answer?: string;
     keywords?: string; // String for the form input, will be parsed to array for backend
     weight?: number;
+    round_score_to_5?: boolean;
     rubrics?: Rubric[]; // Reverted to plural to match backend
 }
 
@@ -142,6 +143,8 @@ interface Submission {
 interface RAGMaterialOption { id: string; judul: string; material_type?: "materi" | "soal" | "tugas"; }
 interface QuestionBankEntry {
   id: string;
+  created_by?: string;
+  created_by_name?: string;
   class_id: string;
   class_name?: string;
   source_material_id?: string;
@@ -152,6 +155,7 @@ interface QuestionBankEntry {
   keywords?: string[];
   ideal_answer?: string;
   weight?: number;
+  round_score_to_5?: boolean;
   rubrics?: any[];
   created_at?: string;
   updated_at?: string;
@@ -166,6 +170,26 @@ const formatDescriptor = (value: any) => {
     return JSON.stringify(value);
   }
   return String(value);
+};
+
+const renderDoubleAsteriskBold = (text?: string): JSX.Element[] => {
+  const safeText = String(text || "");
+  const lines = safeText.split("\n");
+  return lines.map((line, lineIndex) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) => {
+          const isBoldToken = part.startsWith("**") && part.endsWith("**") && part.length > 4;
+          if (isBoldToken) {
+            return <strong key={`part-${lineIndex}-${partIndex}`}>{part.slice(2, -2)}</strong>;
+          }
+          return <span key={`part-${lineIndex}-${partIndex}`}>{part}</span>;
+        })}
+        {lineIndex < lines.length - 1 && <br />}
+      </span>
+    );
+  });
 };
 
 const createBlockId = () => `blk_${Math.random().toString(36).slice(2, 9)}`;
@@ -578,6 +602,7 @@ const QuestionBankPickerModal = ({
               <div className="flex flex-wrap gap-2 text-xs text-slate-600">
                 <span className="sage-pill">Kelas: {entry.class_name || "-"}</span>
                 <span className="sage-pill">Materi: {entry.material_title || "-"}</span>
+                <span className="sage-pill">Pembuat: {entry.created_by_name || entry.created_by || "-"}</span>
                 {entry.level_kognitif && <span className="sage-pill">Level: {entry.level_kognitif}</span>}
                 {typeof entry.weight === "number" && <span className="sage-pill">Bobot: {entry.weight}</span>}
                 <span className="sage-pill">Rubrik: {Array.isArray(entry.rubrics) ? entry.rubrics.length : 0}</span>
@@ -616,6 +641,7 @@ const EssayQuestionFormModal = ({
   const [idealAnswer, setIdealAnswer] = useState('');
   const [keywords, setKeywords] = useState('');
   const [weight, setWeight] = useState<string | number>('');
+  const [roundScoreTo5, setRoundScoreTo5] = useState(false);
   const [selectedRAGMaterialId, setSelectedRAGMaterialId] = useState(materialId);
   const [rubricType, setRubricType] = useState<RubricType>('analitik');
   const [analyticRubrics, setAnalyticRubrics] = useState<EditableRubric[]>([
@@ -644,6 +670,7 @@ const EssayQuestionFormModal = ({
       setIdealAnswer(existingQuestion.ideal_answer || '');
       setKeywords(existingQuestion.keywords || '');
       setWeight(existingQuestion.weight ?? '');
+      setRoundScoreTo5(Boolean(existingQuestion.round_score_to_5));
       setSelectedRAGMaterialId(materialId);
 
       const rubricsArray = Array.isArray(existingQuestion.rubrics)
@@ -687,6 +714,7 @@ const EssayQuestionFormModal = ({
       setIdealAnswer('');
       setKeywords('');
       setWeight('');
+      setRoundScoreTo5(false);
       setSelectedRAGMaterialId(materialId);
       setRubricType('analitik');
       setAnalyticRubrics([{ nama_aspek: '', rubric_type: 'analitik', descriptors: [{ score: '', description: '' }] }]);
@@ -812,6 +840,7 @@ const EssayQuestionFormModal = ({
           ideal_answer: idealAnswer || null,
           keywords: parsedKeywords.length ? parsedKeywords : null,
           weight: parsedWeight,
+          round_score_to_5: roundScoreTo5,
           rubrics: transformedRubrics,
         }),
       });
@@ -851,6 +880,7 @@ const EssayQuestionFormModal = ({
     setIdealAnswer(entry.ideal_answer || '');
     setKeywords(Array.isArray(entry.keywords) ? entry.keywords.join(', ') : '');
     setWeight(typeof entry.weight === 'number' ? entry.weight : '');
+    setRoundScoreTo5(Boolean(entry.round_score_to_5));
 
     const rubricsArray = Array.isArray(entry.rubrics) ? entry.rubrics : [];
     const detectedType = (rubricsArray?.[0] as any)?.rubric_type;
@@ -924,6 +954,7 @@ const EssayQuestionFormModal = ({
         ideal_answer: idealAnswer || null,
         keywords: parsedKeywords.length ? parsedKeywords : null,
         weight: parsedWeight,
+        round_score_to_5: roundScoreTo5,
         rubrics: transformRubricsForSave(),
       };
       const currentSignature = JSON.stringify(payload);
@@ -1096,6 +1127,7 @@ const EssayQuestionFormModal = ({
       ideal_answer: idealAnswer || null,
       keywords: parsedKeywords.length ? parsedKeywords : null,
       weight: parsedWeight,
+      round_score_to_5: roundScoreTo5,
       rubrics: transformRubricsForSave(),
     };
     return JSON.stringify(payload) === lastSavedBankSignature && lastSavedBankSignature !== '';
@@ -1115,34 +1147,35 @@ const EssayQuestionFormModal = ({
     >
       <form onSubmit={handleSubmit} className="h-full flex flex-col gap-4">
         {error && (
-          <div className="p-3 bg-red-50 text-red-600 rounded-md text-sm">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
             {error}
           </div>
         )}
         {bankNotice && (
-          <div className="p-3 bg-emerald-50 text-emerald-700 rounded-md text-sm">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
             {bankNotice}
           </div>
         )}
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm dark:border-slate-700 dark:bg-slate-800">
             <button
               type="button"
               onClick={() => setQuestionMode('manual')}
-              className={`rounded-md px-3 py-1.5 font-medium ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+              className={`rounded-md px-3 py-1.5 font-medium transition ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
             >
               Mode Manual
             </button>
             <button
               type="button"
               onClick={() => setQuestionMode('auto')}
-              className={`rounded-md px-3 py-1.5 font-medium ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+              className={`rounded-md px-3 py-1.5 font-medium transition ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
             >
               Mode Auto (AI)
             </button>
           </div>
           {questionMode === 'auto' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1175,15 +1208,16 @@ const EssayQuestionFormModal = ({
               Panggil Bank Soal
             </button>
           )}
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-sm">
+        <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
           {[1, 2, 3].map((i) => (
             <button
               key={i}
               type="button"
               onClick={() => goToStep(i)}
               className={`rounded-lg px-3 py-2 font-medium transition ${
-                step === i ? 'bg-[color:var(--sage-700)] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                step === i ? 'bg-[color:var(--sage-700)] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
               }`}
             >
               {i}. {i === 1 ? 'Soal' : i === 2 ? 'Rubrik' : 'Preview'}
@@ -1194,13 +1228,13 @@ const EssayQuestionFormModal = ({
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
           {step === 1 && (
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-              <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:col-span-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-semibold text-[color:var(--ink-700)]">Soal Inti</h3>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">Wajib</span>
+                  <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Soal Inti</h3>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-200">Wajib</span>
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Teks Soal</label>
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Teks Soal</label>
                   <textarea
                     value={teksSoal}
                     onChange={(e) => setTeksSoal(e.target.value)}
@@ -1211,34 +1245,37 @@ const EssayQuestionFormModal = ({
                 </div>
               </div>
 
-              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm lg:col-span-2">
-                <h3 className="font-semibold text-[color:var(--ink-700)]">Parameter Soal</h3>
-                <div>
-                  <label className="text-sm font-medium flex items-center gap-2">
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Parameter Soal</h3>
+                  <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">Opsional</span>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
                     Materi Acuan RAG
                     <span
-                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-600 cursor-help"
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-600 dark:border-slate-600 dark:text-slate-300 cursor-help"
                       title="Default memakai materi saat ini. Bisa diganti ke materi lain dalam kelas. Jika pilih Semua materi kelas, RAG akan memakai gabungan konten seluruh materi di kelas."
                     >
                       ?
                     </span>
                   </label>
-                  <select value={selectedRAGMaterialId} onChange={(e) => setSelectedRAGMaterialId(e.target.value)} className="sage-input mt-1 bg-white">
+                  <select value={selectedRAGMaterialId} onChange={(e) => setSelectedRAGMaterialId(e.target.value)} className="sage-input mt-1">
                     <option value="__all__">Semua materi di kelas (RAG umum)</option>
                     {ragMaterials.map((m) => (
                       <option key={m.id} value={m.id}>{m.judul}</option>
                     ))}
                   </select>
                   {ragMaterials.length === 0 && (
-                    <p className="mt-1 text-xs text-slate-500">Daftar materi kelas belum tersedia. Default tetap materi saat ini.</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Daftar materi kelas belum tersedia. Default tetap materi saat ini.</p>
                   )}
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Level Kognitif</label>
+                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Level Kognitif</label>
                   <select
                     value={levelKognitif}
                     onChange={(e) => setLevelKognitif(e.target.value)}
-                    className="sage-input mt-1 bg-white"
+                    className="sage-input mt-1"
                   >
                     <option value="">Opsional</option>
                     {cognitiveLevels.map((c) => (
@@ -1248,29 +1285,44 @@ const EssayQuestionFormModal = ({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Bobot Soal</label>
+                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Bobot Soal</label>
                   <input
                     type="number"
                     step="0.01"
                     value={weight}
                     onChange={(e) => setWeight(e.target.value)}
-                    className="sage-input mt-1 bg-white"
+                    className="sage-input mt-1"
                     placeholder="Contoh: 20"
                   />
                 </div>
 
+                <label className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-100">Bulatkan Nilai (kelipatan 5)</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+                      Post-processing skor AI ke kelipatan 5 terdekat. Contoh: 67 jadi 65, 68 jadi 70, 72 jadi 70.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={roundScoreTo5}
+                    onChange={(e) => setRoundScoreTo5(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-900"
+                  />
+                </label>
+
                 <button
                   type="button"
                   onClick={() => setShowAdvanced((prev) => !prev)}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--sage-700)]"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--sage-700)] dark:text-slate-200"
                 >
                   {showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
                   Jawaban Ideal & Kata Kunci
                 </button>
 
                 {showAdvanced && (
-                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
                     <textarea
                       placeholder="Jawaban ideal (opsional)"
                       value={idealAnswer}
@@ -1293,39 +1345,39 @@ const EssayQuestionFormModal = ({
 
           {step === 2 && (
             <section className="space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h3 className="font-semibold text-[color:var(--ink-700)] mb-2">Tipe Rubrik</h3>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100 mb-2">Tipe Rubrik</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => handleRubricTypeChange('analitik')}
                     className={`rounded-xl border p-3 text-left transition ${
                       rubricType === 'analitik'
-                        ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                        ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <p className="font-semibold text-slate-900">Analitik</p>
-                    <p className="text-xs text-slate-600">Skor per aspek (mis. relevansi, pemahaman, analisis).</p>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">Analitik</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">Skor per aspek (mis. relevansi, pemahaman, analisis).</p>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleRubricTypeChange('holistik')}
                     className={`rounded-xl border p-3 text-left transition ${
                       rubricType === 'holistik'
-                        ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                        ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <p className="font-semibold text-slate-900">Holistik</p>
-                    <p className="text-xs text-slate-600">Satu aspek penilaian untuk kualitas jawaban secara keseluruhan.</p>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">Holistik</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">Satu aspek penilaian untuk kualitas jawaban secara keseluruhan.</p>
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-semibold text-[color:var(--ink-700)]">Rubrik Penilaian</h3>
+                  <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Rubrik Penilaian</h3>
                   {rubricType === 'analitik' && (
                     <button
                       type="button"
@@ -1347,7 +1399,7 @@ const EssayQuestionFormModal = ({
                 </div>
 
                 {activeRubrics.length === 0 && (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-slate-500 dark:text-slate-300">
                     {rubricType === 'analitik'
                       ? 'Belum ada rubrik. Klik "Tambah Rubrik" untuk menambah skor-deskripsi.'
                       : 'Belum ada rubrik holistik. Tambahkan minimal satu deskriptor.'}
@@ -1356,7 +1408,7 @@ const EssayQuestionFormModal = ({
 
                 {rubricType === 'analitik' &&
                   analyticRubrics.map((rubric, i) => (
-                    <div key={i} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div key={i} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                       <div className="flex items-center gap-2">
                         <input
                           value={rubric.nama_aspek}
@@ -1391,7 +1443,7 @@ const EssayQuestionFormModal = ({
                           <button
                             type="button"
                             onClick={() => removeAnalyticScoreRow(i, j)}
-                            className="rounded-md border border-slate-200 px-2 text-red-500 hover:bg-red-50"
+                            className="rounded-md border border-slate-200 px-2 text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
                             aria-label="Hapus skor"
                           >
                             <FiTrash2 />
@@ -1410,7 +1462,7 @@ const EssayQuestionFormModal = ({
                   ))}
 
                 {rubricType === 'holistik' && (
-                  <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                     <input
                       value={holisticAspectName}
                       onChange={(e) => setHolisticAspectName(e.target.value)}
@@ -1443,7 +1495,7 @@ const EssayQuestionFormModal = ({
                         <button
                           type="button"
                           onClick={() => removeHolisticScoreRow(j)}
-                          className="rounded-md border border-slate-200 px-2 text-red-500 hover:bg-red-50"
+                          className="rounded-md border border-slate-200 px-2 text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
                           aria-label="Hapus skor holistik"
                         >
                           <FiTrash2 />
@@ -1465,9 +1517,9 @@ const EssayQuestionFormModal = ({
           )}
 
           {step === 3 && (
-            <section className="space-y-4 border rounded-lg p-4">
-              <h3 className="font-semibold text-[color:var(--ink-700)]">Preview Soal</h3>
-              <div className="sage-card p-4 space-y-3 border border-slate-200 shadow-sm">
+            <section className="space-y-4 border rounded-lg p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Preview Soal</h3>
+              <div className="sage-card p-4 space-y-3 border border-slate-200 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                 <p className="text-sm text-slate-500">Langkah: {stepLabel}</p>
                 <p className="font-semibold text-slate-900 text-lg">{teksSoal || '-'}</p>
                 <div className="flex flex-wrap gap-2 text-xs">
@@ -1478,6 +1530,7 @@ const EssayQuestionFormModal = ({
                   </span>
                   <span className="sage-pill">Level: {levelKognitif || '-'}</span>
                   <span className="sage-pill">Bobot: {weight || '-'}</span>
+                  <span className="sage-pill">Bulatkan Nilai: {roundScoreTo5 ? 'Aktif' : 'Nonaktif'}</span>
                   <span className="sage-pill">Tipe Rubrik: {rubricType === 'holistik' ? 'Holistik' : 'Analitik'}</span>
                   <span className="sage-pill">Aspek Rubrik: {activeRubrics.length}</span>
                   <span className="sage-pill">Skor Maks Total: {totalRubricMax}</span>
@@ -1486,23 +1539,29 @@ const EssayQuestionFormModal = ({
                   <div>
                     <p className="text-sm font-medium text-slate-700 mb-1">Kata Kunci</p>
                     <div className="flex flex-wrap gap-2">
-                      {parsedKeywords.map((k, idx) => <span key={idx} className="sage-pill">{k}</span>)}
+                      {parsedKeywords.map((k, idx) => (
+                        <span key={idx} className="sage-pill question-keyword-chip">
+                          {k}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
                 {idealAnswer && (
                   <div>
-                    <p className="text-sm font-medium text-slate-700 mb-1">Jawaban Ideal</p>
-                    <p className="text-sm text-slate-600 whitespace-pre-line">{idealAnswer}</p>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-100 mb-1">Jawaban Ideal</p>
+                    <div className="rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-sm text-slate-600 dark:text-slate-200">{renderDoubleAsteriskBold(idealAnswer)}</p>
+                    </div>
                   </div>
                 )}
               </div>
 
               <div className="space-y-2">
                 {activeRubrics.map((r, idx) => (
-                  <div key={idx} className="border border-slate-200 rounded-lg p-3 bg-white shadow-sm">
-                    <p className="font-semibold text-slate-800">{r.nama_aspek || `Aspek ${idx + 1}`}</p>
-                    <ul className="mt-2 text-sm text-slate-600 space-y-1">
+                  <div key={idx} className="border border-slate-200 rounded-lg p-3 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">{r.nama_aspek || `Aspek ${idx + 1}`}</p>
+                    <ul className="mt-2 text-sm text-slate-600 dark:text-slate-300 space-y-1">
                       {r.descriptors.map((d, i) => (
                         <li key={i}><strong>{d.score || '-'}</strong>: {d.description || '-'}</li>
                       ))}
@@ -1514,7 +1573,7 @@ const EssayQuestionFormModal = ({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+        <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
           <button type="button" onClick={onClose} className="sage-button-outline">Batal</button>
           <div className="flex gap-2">
             <button
@@ -1972,7 +2031,7 @@ const QuestionsListSection = ({
             const rubrics = Array.isArray(q.rubrics) ? q.rubrics : [];
 
             return (
-              <div key={q.id} className="sage-card border border-slate-200 shadow-sm transition hover:shadow-md">
+              <div key={q.id} className="sage-card border border-slate-200 shadow-sm transition hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
                 <div
                   className="grid gap-4 p-5 cursor-pointer sm:grid-cols-[1fr_auto]"
                   onClick={() => setExpandedId(isOpen ? null : q.id)}
@@ -2020,16 +2079,18 @@ const QuestionsListSection = ({
 
                 {/* DROPDOWN CONTENT */}
                 {isOpen && (
-                  <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/70 space-y-4 text-sm">
+                  <div className="border-t border-slate-200 px-6 py-4 bg-slate-100 dark:border-slate-700 dark:bg-slate-950 space-y-4 text-sm">
                     {/* IDEAL ANSWER */}
                     {q.ideal_answer && (
                       <div>
-                        <p className="font-semibold text-[color:var(--ink-700)] mb-1">
+                        <p className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100 mb-1">
                           Jawaban Ideal
                         </p>
-                        <p className="text-[color:var(--ink-500)] whitespace-pre-line">
-                          {q.ideal_answer}
-                        </p>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-600 dark:bg-slate-900">
+                          <p className="text-[color:var(--ink-500)] dark:text-slate-200">
+                            {renderDoubleAsteriskBold(q.ideal_answer)}
+                          </p>
+                        </div>
                       </div>
                     )}
 
@@ -2043,7 +2104,7 @@ const QuestionsListSection = ({
                           {normalizedKeywords.map((k, i) => (
                             <span
                               key={i}
-                              className="px-2 py-1 bg-[color:var(--sand-100)] text-[color:var(--sage-800)] rounded text-xs"
+                              className="px-2 py-1 bg-[color:var(--sand-100)] text-[color:var(--sage-800)] rounded text-xs question-keyword-chip"
                             >
                               {k}
                             </span>
@@ -2343,7 +2404,7 @@ const StudentSubmissionsList = ({
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-xs text-slate-500">
-                                                    <span>{new Date(sub.submitted_at).toLocaleString()}</span>
+                                                    <span>{new Date(sub.submitted_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                                                     {isOpenSub ? <FiChevronUp /> : <FiChevronDown />}
                                                 </div>
                                             </button>

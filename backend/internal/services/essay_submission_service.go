@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt" // Mengimpor package fmt untuk format string dan error.
 	"log"
+	"math"
 	"os"
 	"sort" // Mengimpor package sort untuk mengurutkan kriteria rubrik.
 	"strconv"
@@ -35,6 +36,23 @@ type essayGradingJob struct {
 	QuestionID   string
 	StudentID    string
 	TeksJawaban  string
+}
+
+func roundToNearestFive(score float64) float64 {
+	return math.Round(score/5.0) * 5.0
+}
+
+func (s *EssaySubmissionService) shouldRoundScore(questionID string) bool {
+	var enabled bool
+	err := s.db.QueryRowContext(
+		context.Background(),
+		"SELECT COALESCE(round_score_to_5, FALSE) FROM essay_questions WHERE id = $1",
+		questionID,
+	).Scan(&enabled)
+	if err != nil {
+		return false
+	}
+	return enabled
 }
 
 // NewEssaySubmissionService membuat instance baru dari EssaySubmissionService.
@@ -273,6 +291,10 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 	if parseErr != nil {
 		skorAI = 0.0
 	}
+	if s.shouldRoundScore(job.QuestionID) {
+		skorAI = roundToNearestFive(skorAI)
+		gradeResp.Score = strconv.FormatFloat(skorAI, 'f', 0, 64)
+	}
 	feedbackAI := gradeResp.Feedback
 	var logsRAG *string
 	if len(gradeResp.AspectScores) > 0 {
@@ -312,6 +334,15 @@ func (s *EssaySubmissionService) runGradingWorker() {
 		if _, err := s.gradeJob(job); err != nil {
 			log.Printf("WARNING: AI grading worker failed for submission %s: %v", job.SubmissionID, err)
 		}
+	}
+}
+
+func (s *EssaySubmissionService) enqueueGradingJob(job essayGradingJob) error {
+	select {
+	case s.jobQueue <- job:
+		return nil
+	default:
+		return errors.New("grading queue is full")
 	}
 }
 
@@ -502,6 +533,245 @@ func (s *EssaySubmissionService) UpdateEssaySubmission(submissionID string, upda
 	}
 
 	return &es, nil
+}
+
+func (s *EssaySubmissionService) GetAdminQueueSummary() (*models.AdminQueueSummary, error) {
+	summary := &models.AdminQueueSummary{}
+	if err := s.db.QueryRow(`
+		SELECT
+			COALESCE(SUM(CASE WHEN ai_grading_status = 'queued' THEN 1 ELSE 0 END), 0) AS queued,
+			COALESCE(SUM(CASE WHEN ai_grading_status = 'processing' THEN 1 ELSE 0 END), 0) AS processing,
+			COALESCE(SUM(CASE WHEN ai_grading_status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+			COALESCE(SUM(CASE WHEN ai_grading_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+			COUNT(*) AS total
+		FROM essay_submissions
+	`).Scan(&summary.Queued, &summary.Processing, &summary.Completed, &summary.Failed, &summary.Total); err != nil {
+		return nil, fmt.Errorf("failed to load queue summary: %w", err)
+	}
+	return summary, nil
+}
+
+func (s *EssaySubmissionService) ListAdminQueueJobs(status, classID string, from, to *time.Time, page, size int) (*models.AdminQueueJobListResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+
+	clauses := []string{}
+	args := []interface{}{}
+	argPos := 1
+
+	if trimmed := strings.TrimSpace(status); trimmed != "" {
+		clauses = append(clauses, fmt.Sprintf("es.ai_grading_status = $%d", argPos))
+		args = append(args, trimmed)
+		argPos++
+	}
+	if trimmed := strings.TrimSpace(classID); trimmed != "" {
+		clauses = append(clauses, fmt.Sprintf("c.id = $%d", argPos))
+		args = append(args, trimmed)
+		argPos++
+	}
+	if from != nil {
+		clauses = append(clauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
+		args = append(args, *from)
+		argPos++
+	}
+	if to != nil {
+		clauses = append(clauses, fmt.Sprintf("es.submitted_at < $%d", argPos))
+		args = append(args, *to)
+		argPos++
+	}
+
+	baseFrom := `
+		FROM essay_submissions es
+		JOIN essay_questions eq ON eq.id = es.soal_id
+		JOIN materials m ON m.id = eq.material_id
+		JOIN classes c ON c.id = m.class_id
+		JOIN users u ON u.id = es.siswa_id
+		LEFT JOIN ai_results ar ON ar.submission_id = es.id
+	`
+	whereSQL := ""
+	if len(clauses) > 0 {
+		whereSQL = " WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	var total int64
+	countQuery := "SELECT COUNT(*) " + baseFrom + whereSQL
+	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count queue jobs: %w", err)
+	}
+
+	offset := (page - 1) * size
+	dataQuery := `
+		SELECT
+			es.id,
+			es.soal_id,
+			eq.teks_soal,
+			es.siswa_id,
+			u.nama_lengkap,
+			c.id,
+			c.class_name,
+			m.id,
+			m.judul,
+			es.ai_grading_status,
+			es.ai_grading_error,
+			es.submitted_at,
+			es.ai_graded_at,
+			ar.skor_ai,
+			ar.umpan_balik_ai
+	` + baseFrom + whereSQL + fmt.Sprintf(`
+		ORDER BY es.submitted_at DESC
+		LIMIT $%d OFFSET $%d
+	`, argPos, argPos+1)
+
+	queryArgs := append(args, size, offset)
+	rows, err := s.db.Query(dataQuery, queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list queue jobs: %w", err)
+	}
+	defer rows.Close()
+
+	result := &models.AdminQueueJobListResponse{
+		Items: []models.AdminQueueJob{},
+		Total: total,
+		Page:  page,
+		Size:  size,
+	}
+
+	for rows.Next() {
+		var item models.AdminQueueJob
+		var score sql.NullFloat64
+		var feedback sql.NullString
+		var gradingErr sql.NullString
+		if err := rows.Scan(
+			&item.SubmissionID,
+			&item.QuestionID,
+			&item.QuestionText,
+			&item.StudentID,
+			&item.StudentName,
+			&item.ClassID,
+			&item.ClassName,
+			&item.MaterialID,
+			&item.MaterialTitle,
+			&item.Status,
+			&gradingErr,
+			&item.SubmittedAt,
+			&item.AIGradedAt,
+			&score,
+			&feedback,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan queue job row: %w", err)
+		}
+		if score.Valid {
+			item.Score = &score.Float64
+		}
+		if gradingErr.Valid {
+			errText := gradingErr.String
+			item.GradingError = &errText
+		}
+		if feedback.Valid {
+			trimmed := strings.TrimSpace(feedback.String)
+			if len(trimmed) > 180 {
+				trimmed = trimmed[:180] + "..."
+			}
+			preview := trimmed
+			item.FeedbackPreview = &preview
+		}
+		result.Items = append(result.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error while iterating queue jobs: %w", err)
+	}
+
+	return result, nil
+}
+
+func (s *EssaySubmissionService) RetryQueueSubmissions(submissionIDs []string) (*models.RetryQueueResponse, error) {
+	resp := &models.RetryQueueResponse{
+		Details: []models.RetryQueueItemResult{},
+	}
+
+	if s.aiService == nil {
+		return nil, fmt.Errorf("AI service is unavailable")
+	}
+
+	seen := map[string]struct{}{}
+	for _, submissionID := range submissionIDs {
+		submissionID = strings.TrimSpace(submissionID)
+		if submissionID == "" {
+			continue
+		}
+		if _, exists := seen[submissionID]; exists {
+			continue
+		}
+		seen[submissionID] = struct{}{}
+
+		var (
+			job    essayGradingJob
+			status string
+		)
+		err := s.db.QueryRow(`
+			SELECT id, soal_id, siswa_id, teks_jawaban, ai_grading_status
+			FROM essay_submissions
+			WHERE id = $1
+		`, submissionID).Scan(&job.SubmissionID, &job.QuestionID, &job.StudentID, &job.TeksJawaban, &status)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				resp.Skipped++
+				resp.Details = append(resp.Details, models.RetryQueueItemResult{
+					SubmissionID: submissionID,
+					Status:       "skipped",
+					Message:      "Submission tidak ditemukan",
+				})
+				continue
+			}
+			return nil, fmt.Errorf("failed to load submission %s: %w", submissionID, err)
+		}
+
+		if status == "processing" {
+			resp.Skipped++
+			resp.Details = append(resp.Details, models.RetryQueueItemResult{
+				SubmissionID: submissionID,
+				Status:       "skipped",
+				Message:      "Submission sedang diproses",
+			})
+			continue
+		}
+
+		if _, err := s.db.Exec(`
+			UPDATE essay_submissions
+			SET ai_grading_status = 'queued',
+			    ai_grading_error = NULL,
+			    ai_graded_at = NULL
+			WHERE id = $1
+		`, submissionID); err != nil {
+			return nil, fmt.Errorf("failed to reset submission %s: %w", submissionID, err)
+		}
+
+		if err := s.enqueueGradingJob(job); err != nil {
+			_ = s.updateSubmissionGradingStatus(submissionID, "failed", "Grading queue penuh. Coba lagi beberapa saat.", nil)
+			resp.Skipped++
+			resp.Details = append(resp.Details, models.RetryQueueItemResult{
+				SubmissionID: submissionID,
+				Status:       "skipped",
+				Message:      "Queue penuh",
+			})
+			continue
+		}
+
+		resp.Accepted++
+		resp.Details = append(resp.Details, models.RetryQueueItemResult{
+			SubmissionID: submissionID,
+			Status:       "queued",
+		})
+	}
+
+	return resp, nil
 }
 
 // DeleteEssaySubmissionWithDependencies menghapus submission esai beserta hasil AI dan review guru yang terkait.

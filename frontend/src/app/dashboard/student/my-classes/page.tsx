@@ -158,7 +158,7 @@ export default function StudentMyClassesPage() {
                 </p>
                 <p className="mt-2 text-xs text-amber-800">Status: Menunggu persetujuan</p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Requested: {new Date(item.requested_at).toLocaleString()}
+                  Requested: {new Date(item.requested_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
             ))}
@@ -193,7 +193,7 @@ export default function StudentMyClassesPage() {
                 </Link>
               </div>
               <p className="text-slate-500 text-xs mt-4">
-                Joined: {new Date(cls.created_at).toLocaleDateString()}
+                Joined: {new Date(cls.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" })}
               </p>
             </div>
           ))}

@@ -380,7 +380,7 @@ export default function StudentGradesPage() {
                       <td className="px-3 py-3">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${status.cls}`}>{status.label}</span>
                       </td>
-                      <td className="px-3 py-3 text-slate-500">{row.updatedAt ? new Date(row.updatedAt).toLocaleString("id-ID") : "-"}</td>
+                      <td className="px-3 py-3 text-slate-500">{row.updatedAt ? new Date(row.updatedAt).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}</td>
                       <td className="px-3 py-3">
                         <Link
                           href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`}
