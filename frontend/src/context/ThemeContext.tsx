@@ -24,6 +24,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     if (stored === "dark" || stored === "light") {
       setTheme(stored);
       document.documentElement.dataset.theme = stored;
+      document.documentElement.classList.toggle("dark", stored === "dark");
       return;
     }
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -36,6 +37,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_KEY, theme);
     document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
   const value = useMemo(
