@@ -1,0 +1,58 @@
+### Global ###
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+
+### Node/Next ###
+/frontend/node_modules/
+/frontend/.next/
+/web-frontend/node_modules/
+/web-frontend/.next/
+node_modules/
+.npm/
+.yarn/
+package-lock.json
+yarn.lock
+
+### Go ###
+/backend/bin/
+/backend/.cache/
+.gocache
+*.exe
+*.out
+
+### Environment ###
+.env
+.env.*
+config.local.json
+
+### Docker ###
+/docker-compose.override.yml
+/docker-compose.*.yml
+Dockerfile*
+
+### IDE ###
+.idea/
+.vscode/
+*.iml
+
+### Uploads & generated ###
+/backend/uploads/
+/frontend/public/uploads/
+/web-frontend/public/uploads/
+*.mp4
+*.tmp
+
+### Database ###
+*.sqlite
+*.db
+*.sql
+
+### Misc ###
+/tmp/
+/.sass-cache/
+coverage/
+dist/
+build/
+*.tgz

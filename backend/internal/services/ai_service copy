@@ -1,0 +1,222 @@
+package services
+
+import (
+	"api-backend/internal/models" // Mengimpor definisi model yang diperlukan (misalnya, GradeEssayRequest, GradeEssayResponse).
+	"bytes"                                // Mengimpor package bytes untuk membangun string prompt secara efisien.
+	"context"                              // Mengimpor package context untuk mengelola batas waktu dan pembatalan.
+	"encoding/json"                        // Mengimpor package encoding/json untuk bekerja dengan JSON.
+	"fmt"                                  // Mengimpor package fmt untuk format string dan error.
+	"log"                                  // Mengimpor package log untuk logging.
+	"os"                                   // Mengimpor package os untuk berinteraksi dengan sistem operasi (variabel lingkungan).
+
+	"github.com/google/generative-ai-go/genai" // Mengimpor klien Google Generative AI.
+	"google.golang.org/api/option"             // Mengimpor package option untuk konfigurasi klien Google API.
+)
+
+// AIService menangani logika untuk berinteraksi dengan model AI Gemini.
+type AIService struct {
+	client *genai.GenerativeModel // Klien model Gemini yang akan digunakan untuk generate konten.
+}
+
+// NewAIService membuat instance baru dari AIService, menginisialisasi klien Gemini.
+// Ini membaca GEMINI_API_KEY dari variabel lingkungan.
+func NewAIService() (*AIService, error) {
+	// Mendapatkan GEMINI_API_KEY dari variabel lingkungan.
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+	}
+
+	ctx := context.Background() // Membuat context kosong.
+	// Membuat klien genai baru dengan API Key yang didapat.
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new genai client: %w", err)
+	}
+
+	// Menginisialisasi model Generative AI yang akan digunakan (gemini-3-flash-preview).
+	model := client.GenerativeModel("gemini-3-flash-preview")
+	// Mengatur konfigurasi generasi model untuk mengembalikan respons dalam format JSON.
+	model.GenerationConfig.ResponseMIMEType = "application/json"
+
+	return &AIService{client: model}, nil
+}
+
+// --- Struktur Internal untuk Parsing Rubrik dan Respons AI ---
+
+// AIAspectScore merepresentasikan skor yang diberikan oleh AI untuk satu aspek.
+type AIAspectScore struct {
+	Aspek          string `json:"aspek"`          // Nama aspek yang dinilai.
+	SkorDiperoleh int    `json:"skor_diperoleh"` // Skor numerik yang diberikan AI untuk aspek ini.
+}
+
+// AIResponse merepresentasikan struktur respons JSON yang diharapkan dari model AI.
+type AIResponse struct {
+	SkorAspek         []AIAspectScore `json:"skor_aspek"`         // Daftar skor untuk setiap aspek.
+	FeedbackKeseluruhan string          `json:"feedback_keseluruhan"` // Umpan balik keseluruhan dari AI.
+}
+
+// formatRubricForPrompt mengubah struktur rubrik menjadi format string yang mudah dibaca
+// dan digunakan sebagai bagian dari prompt yang dikirim ke AI.
+func formatRubricForPrompt(structuredRubric []models.RubricAspect) string {
+	var rubricBuilder bytes.Buffer // Menggunakan Buffer untuk membangun string secara efisien.
+	for _, aspect := range structuredRubric {
+		rubricBuilder.WriteString(fmt.Sprintf("Aspek: %s\n", aspect.Aspek))
+		for _, criterion := range aspect.Kriteria {
+			rubricBuilder.WriteString(fmt.Sprintf("- Skor %d: %s\n", criterion.Skor, criterion.Deskripsi))
+		}
+		rubricBuilder.WriteString("\n")
+	}
+	return rubricBuilder.String()
+}
+
+// GradeEssay membangun prompt, memanggil API Gemini, menghitung skor akhir, dan mem-parsing respons.
+// Ini adalah metode utama untuk penilaian esai menggunakan AI.
+func (s *AIService) GradeEssay(req models.GradeEssayRequest) (*models.GradeEssayResponse, error) {
+	var structuredRubric []models.RubricAspect
+	// Mengubah JSON rubrik mentah dari request menjadi struktur data Go.
+	if err := json.Unmarshal(req.Rubric, &structuredRubric); err != nil {
+		return nil, fmt.Errorf("invalid rubric JSON format: %w", err)
+	}
+	formattedRubric := formatRubricForPrompt(structuredRubric) // Memformat rubrik untuk prompt.
+
+	prompt := buildPrompt(req, formattedRubric) // Membangun prompt lengkap.
+	log.Println("--- SENDING PROMPT TO GEMINI API ---")
+
+	ctx := context.Background()
+	log.Println("DEBUG: Calling s.client.GenerateContent now...")
+	// Memanggil Gemini API untuk generate konten berdasarkan prompt.
+	resp, err := s.client.GenerateContent(ctx, genai.Text(prompt))
+	
+	// Logging tambahan untuk membantu debug jika ada kegagalan.
+	if err != nil {
+		log.Printf("DEBUG: GenerateContent returned an error: %v", err)
+	} else {
+		log.Println("DEBUG: GenerateContent call successful, no error returned.")
+	}
+
+	if err != nil {
+		log.Printf("ERROR: Gemini API call failed: %v", err)
+		return nil, fmt.Errorf("failed to generate content from AI service")
+	}
+
+	aiResponse, err := parseAIResponse(resp) // Mem-parsing respons mentah dari AI.
+	if err != nil {
+		return nil, err
+	}
+
+	// Menghitung skor akhir berdasarkan rubrik dan skor aspek dari AI.
+	finalScore, err := calculateFinalScore(structuredRubric, aiResponse.SkorAspek)
+	if err != nil {
+		return nil, err
+	}
+
+	// Membentuk respons akhir untuk client.
+	finalResponse := &models.GradeEssayResponse{
+		Score:    fmt.Sprintf("%.0f", finalScore), // Skor dibulatkan dan diformat sebagai string.
+		Feedback: aiResponse.FeedbackKeseluruhan,
+	}
+
+	return finalResponse, nil
+}
+
+// buildPrompt menyusun prompt lengkap yang akan dikirim ke model AI Gemini.
+// Prompt ini mencakup pertanyaan esai, rubrik, jawaban ideal (jika ada), dan esai siswa.
+func buildPrompt(req models.GradeEssayRequest, formattedRubric string) string {
+	var promptBuilder bytes.Buffer
+	
+	// Role dan instruksi RAG sesuai PDF
+	promptBuilder.WriteString("You are an expert academic grader. You must evaluate the student's essay STRICTLY based on the provided reference materials and rubric (Retrieval-Augmented Generation approach).\n\n")
+
+	promptBuilder.WriteString(fmt.Sprintf("ESSAY QUESTION:\n\"%s\"\n\n", req.Question))
+	
+	promptBuilder.WriteString(fmt.Sprintf("GRADING RUBRIC:\n%s\n", formattedRubric))
+
+	if req.IdealAnswer != "" {
+		promptBuilder.WriteString(fmt.Sprintf("IDEAL ANSWER (Reference for reasoning):\n\"%s\"\n\n", req.IdealAnswer))
+	}
+
+	promptBuilder.WriteString(fmt.Sprintf("STUDENT'S ESSAY TO GRADE:\n\"%s\"\n\n", req.Essay))
+
+	// Keyword hanya untuk validasi sesuai Hal. 53 PDF
+	if req.Keywords != "" {
+		promptBuilder.WriteString(fmt.Sprintf("KEYWORDS (Use ONLY for concept validation, NOT for scoring):\n\"%s\"\n\n", req.Keywords))
+	}
+	
+	promptBuilder.WriteString("INSTRUCTIONS:\n" +
+	"1. Evaluate the essay ONLY using the criteria in the GRADING RUBRIC.\n" +
+	"2. Use the REFERENCE MATERIAL to ensure factual consistency and reduce hallucinations.\n" +
+	"3. Check if KEYWORDS are present for your validation, but they must NOT affect the numerical score.\n" +
+	"4. Provide constructive feedback that traces back to specific passages in the reference material.\n" +
+	"5. You MUST return ONLY a single valid JSON object:\n" +
+	"{ \"skor_aspek\": [{\"aspek\": \"...\", \"skor_diperoleh\": <int>}], \"feedback_keseluruhan\": \"...\" }")
+
+	return promptBuilder.String()
+
+}
+
+// parseAIResponse mem-parsing respons dari model AI Gemini.
+// Ia mengekstrak bagian teks dari respons dan mencoba mendekode JSON-nya.
+func parseAIResponse(resp *genai.GenerateContentResponse) (*AIResponse, error) {
+	// Memeriksa apakah respons tidak kosong.
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("received an empty response from AI service")
+	}
+	
+	// Mengambil bagian konten dari respons AI.
+	aiResponsePart := resp.Candidates[0].Content.Parts[0]
+	// Memastikan bagian konten adalah teks.
+	aiResponseJSON, ok := aiResponsePart.(genai.Text)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type from AI service")
+	}
+
+	var parsedResponse AIResponse
+	// Mendekode respons JSON dari AI ke dalam struktur AIResponse.
+	if err := json.Unmarshal([]byte(aiResponseJSON), &parsedResponse); err != nil {
+		log.Printf("ERROR: Failed to unmarshal AI JSON response: %v. Raw response: %s", err, aiResponseJSON)
+		return nil, fmt.Errorf("failed to parse JSON response from AI")
+	}
+
+	return &parsedResponse, nil
+}
+
+// calculateFinalScore menghitung skor akhir esai berdasarkan rubrik terstruktur
+// dan skor aspek yang diberikan oleh AI.
+func calculateFinalScore(rubric []models.RubricAspect, aspectScores []AIAspectScore) (float64, error) {
+	var totalScoreObtained float64 = 0
+	var totalMaxScore float64 = 0
+
+	obtainedScoresMap := make(map[string]int)
+	for _, as := range aspectScores {
+		obtainedScoresMap[as.Aspek] = as.SkorDiperoleh
+	}
+
+	for _, aspect := range rubric {
+		// M = Skor Maksimal Rubrik (Hal. 55 PDF)
+		maxScoreInAspect := 0
+		for _, criterion := range aspect.Kriteria {
+			if criterion.Skor > maxScoreInAspect {
+				maxScoreInAspect = criterion.Skor
+			}
+		}
+		totalMaxScore += float64(maxScoreInAspect)
+
+		// S = Total skor yang diperoleh (Hal. 55 PDF)
+		obtainedScore, ok := obtainedScoresMap[aspect.Aspek]
+		if !ok {
+			continue
+		}
+		totalScoreObtained += float64(obtainedScore)
+	}
+
+	if totalMaxScore == 0 {
+		return 0, fmt.Errorf("maximum possible score is zero")
+	}
+	
+	// Rumus sesuai Hal. 55: (S / M) * 100
+	// Kita hilangkan pembulatan kelipatan 5 agar presisi sesuai dokumen (e.g., 66.6)
+	finalScore := (totalScoreObtained / totalMaxScore) * 100
+
+	return finalScore, nil
+}

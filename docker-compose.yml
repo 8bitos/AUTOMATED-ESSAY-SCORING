@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: essay_scoring
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  # elasticsearch:
+  #   image: elastic/elasticsearch:8.11.0
+  #   restart: always
+  #   environment:
+  #     - xpack.security.enabled=false
+  #     - discovery.type=single-node
+  #   ports:
+  #     - "9200:9200"
+  #     - "9300:9300"
+  #   volumes:
+  #     - es_data:/usr/share/elasticsearch/data
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+
+  web-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+    restart: always
+
+volumes:
+  db_data:
+  es_data:
+  redis_data:
