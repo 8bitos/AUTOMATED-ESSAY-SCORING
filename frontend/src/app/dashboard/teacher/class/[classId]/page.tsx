@@ -4,7 +4,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } fr
 import { useParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
-import { TeacherPenilaianView } from "@/app/dashboard/teacher/penilaian/page";
+import { TeacherPenilaianView } from "@/app/dashboard/teacher/penilaian/TeacherPenilaianView";
 import {
   FiArrowLeft,
   FiMail,
