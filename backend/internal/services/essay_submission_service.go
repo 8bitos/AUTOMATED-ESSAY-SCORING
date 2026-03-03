@@ -38,21 +38,62 @@ type essayGradingJob struct {
 	TeksJawaban  string
 }
 
-func roundToNearestFive(score float64) float64 {
-	return math.Round(score/5.0) * 5.0
+func (s *EssaySubmissionService) isTaskQuestion(questionID string) (bool, error) {
+	isTaskSubmission := false
+	if err := s.db.QueryRowContext(
+		context.Background(),
+		`SELECT EXISTS(
+			SELECT 1
+			FROM essay_questions
+			WHERE id = $1
+			  AND keywords IS NOT NULL
+			  AND 'tugas_submission' = ANY(keywords)
+		)`,
+		questionID,
+	).Scan(&isTaskSubmission); err != nil {
+		return false, fmt.Errorf("failed to determine question type: %w", err)
+	}
+	return isTaskSubmission, nil
 }
 
-func (s *EssaySubmissionService) shouldRoundScore(questionID string) bool {
-	var enabled bool
+func (s *EssaySubmissionService) isTaskSubmissionByID(submissionID string) (bool, error) {
+	var submissionType string
 	err := s.db.QueryRowContext(
 		context.Background(),
-		"SELECT COALESCE(round_score_to_5, FALSE) FROM essay_questions WHERE id = $1",
-		questionID,
-	).Scan(&enabled)
+		"SELECT submission_type FROM essay_submissions WHERE id = $1",
+		submissionID,
+	).Scan(&submissionType)
 	if err != nil {
-		return false
+		if err == sql.ErrNoRows {
+			return false, fmt.Errorf("essay submission not found")
+		}
+		return false, fmt.Errorf("failed to load submission type: %w", err)
 	}
-	return enabled
+	return submissionType == "task", nil
+}
+
+func roundToNearestStep(score float64, step float64) float64 {
+	if step <= 0 {
+		return score
+	}
+	return math.Round(score/step) * step
+}
+
+func (s *EssaySubmissionService) shouldRoundScore(questionID string) (bool, float64) {
+	var enabled bool
+	var step float64
+	err := s.db.QueryRowContext(
+		context.Background(),
+		"SELECT COALESCE(round_score_to_5, FALSE), COALESCE(round_score_step, 5) FROM essay_questions WHERE id = $1",
+		questionID,
+	).Scan(&enabled, &step)
+	if err != nil {
+		return false, 5
+	}
+	if step <= 0 {
+		step = 5
+	}
+	return enabled, step
 }
 
 // NewEssaySubmissionService membuat instance baru dari EssaySubmissionService.
@@ -164,27 +205,39 @@ func (s *EssaySubmissionService) buildGradeRequest(questionID, teksJawaban strin
 }
 
 func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, teksJawaban string) (*models.EssaySubmission, *models.GradeEssayResponse, error) {
+	isTaskSubmission, err := s.isTaskQuestion(questionID)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// Membuat objek EssaySubmission baru.
 	newSubmission := &models.EssaySubmission{
 		QuestionID:      questionID,
 		StudentID:       studentID,
+		SubmissionType:  "essay",
 		TeksJawaban:     teksJawaban,
 		SubmittedAt:     time.Now(),
 		AIGradingStatus: "queued",
 	}
+	if isTaskSubmission {
+		// Tugas dinilai/review manual oleh guru, tidak masuk pipeline AI.
+		newSubmission.SubmissionType = "task"
+		newSubmission.AIGradingStatus = "completed"
+	}
 
 	// Query INSERT untuk menambahkan submission esai baru.
 	query := `
-		INSERT INTO essay_submissions (soal_id, siswa_id, teks_jawaban, submitted_at, ai_grading_status)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO essay_submissions (soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`
 
 	// Menjalankan query dan memindai ID yang dikembalikan ke newSubmission.ID.
-	err := s.db.QueryRow(
+	err = s.db.QueryRow(
 		query,
 		newSubmission.QuestionID,
 		newSubmission.StudentID,
+		newSubmission.SubmissionType,
 		newSubmission.TeksJawaban,
 		newSubmission.SubmittedAt,
 		newSubmission.AIGradingStatus,
@@ -192,6 +245,9 @@ func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, te
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("error inserting new essay submission: %w", err)
+	}
+	if isTaskSubmission {
+		return newSubmission, nil, nil
 	}
 
 	if s.aiService == nil {
@@ -291,9 +347,9 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 	if parseErr != nil {
 		skorAI = 0.0
 	}
-	if s.shouldRoundScore(job.QuestionID) {
-		skorAI = roundToNearestFive(skorAI)
-		gradeResp.Score = strconv.FormatFloat(skorAI, 'f', 0, 64)
+	if shouldRound, roundStep := s.shouldRoundScore(job.QuestionID); shouldRound {
+		skorAI = roundToNearestStep(skorAI, roundStep)
+		gradeResp.Score = strconv.FormatFloat(skorAI, 'f', -1, 64)
 	}
 	feedbackAI := gradeResp.Feedback
 	var logsRAG *string
@@ -365,14 +421,14 @@ func (s *EssaySubmissionService) updateSubmissionGradingStatus(submissionID, sta
 // GetEssaySubmissionByID mengambil satu submission esai berdasarkan ID-nya.
 func (s *EssaySubmissionService) GetEssaySubmissionByID(submissionID string) (*models.EssaySubmission, error) {
 	query := `
-		SELECT id, soal_id, siswa_id, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
+		SELECT id, soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
 		FROM essay_submissions
 		WHERE id = $1
 	`
 
 	var es models.EssaySubmission
 	err := s.db.QueryRow(query, submissionID).Scan(
-		&es.ID, &es.QuestionID, &es.StudentID, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
+		&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
 	)
 
 	if err != nil {
@@ -389,7 +445,7 @@ func (s *EssaySubmissionService) GetEssaySubmissionByID(submissionID string) (*m
 func (s *EssaySubmissionService) GetEssaySubmissionsByQuestionID(questionID string) ([]models.EssaySubmission, error) {
 	query := `
 		SELECT 
-            es.id, es.soal_id, es.siswa_id, es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
+            es.id, es.soal_id, es.siswa_id, es.submission_type, es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
             u.nama_lengkap AS student_name, u.email AS student_email,
             ar.skor_ai, ar.umpan_balik_ai,
             tr.id AS review_id, tr.revised_score, tr.teacher_feedback,
@@ -418,7 +474,7 @@ func (s *EssaySubmissionService) GetEssaySubmissionsByQuestionID(questionID stri
 		var teacherFeedbackDB sql.NullString // Use a distinct name for scanning
 		var logsRAG sql.NullString
 		if err := rows.Scan(
-			&es.ID, &es.QuestionID, &es.StudentID, &es.TeksJawaban, &es.SubmittedAt,
+			&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt,
 			&es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
 			&es.StudentName, &es.StudentEmail,
 			&skorAI, &umpanBalikAI,
@@ -461,10 +517,207 @@ func (s *EssaySubmissionService) GetEssaySubmissionsByQuestionID(questionID stri
 	return submissions, nil
 }
 
+func (s *EssaySubmissionService) ListMaterialStudentSubmissionSummaries(materialID, teacherID, query, sortBy string, page, size int) (*models.MaterialStudentSubmissionSummaryListResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 10
+	}
+	if size > 20 {
+		size = 20
+	}
+
+	whereClauses := []string{"m.id = $1", "c.teacher_id = $2"}
+	args := []interface{}{materialID, teacherID}
+	argPos := 3
+
+	if trimmed := strings.TrimSpace(query); trimmed != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
+		args = append(args, "%"+trimmed+"%")
+		argPos++
+	}
+
+	baseCTE := `
+		WITH grouped AS (
+			SELECT
+				es.siswa_id AS student_id,
+				u.nama_lengkap AS student_name,
+				u.email AS student_email,
+				COUNT(es.id)::int AS total_submissions,
+				SUM(CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END)::int AS reviewed_submissions,
+				MAX(es.submitted_at) AS latest_submitted_at,
+				AVG(COALESCE(tr.revised_score, ar.skor_ai)) AS average_final_score
+			FROM essay_submissions es
+			JOIN essay_questions eq ON eq.id = es.soal_id
+			JOIN materials m ON m.id = eq.material_id
+			JOIN classes c ON c.id = m.class_id
+			JOIN users u ON u.id = es.siswa_id
+			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+			LEFT JOIN ai_results ar ON ar.submission_id = es.id
+			WHERE ` + strings.Join(whereClauses, " AND ") + `
+			GROUP BY es.siswa_id, u.nama_lengkap, u.email
+		)
+	`
+
+	countQuery := baseCTE + `SELECT COUNT(*) FROM grouped`
+	var total int64
+	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count material student summaries: %w", err)
+	}
+
+	totalSubmissionsQuery := baseCTE + `SELECT COALESCE(SUM(total_submissions), 0) FROM grouped`
+	var totalSubmissions int64
+	if err := s.db.QueryRow(totalSubmissionsQuery, args...).Scan(&totalSubmissions); err != nil {
+		return nil, fmt.Errorf("failed to sum material submissions: %w", err)
+	}
+
+	orderBy := "latest_submitted_at DESC, student_name ASC"
+	switch strings.TrimSpace(sortBy) {
+	case "alpha":
+		orderBy = "student_name ASC"
+	case "pending_desc":
+		orderBy = "(total_submissions - reviewed_submissions) DESC, latest_submitted_at DESC"
+	case "pending_asc":
+		orderBy = "(total_submissions - reviewed_submissions) ASC, latest_submitted_at DESC"
+	}
+
+	offset := (page - 1) * size
+	dataQuery := baseCTE + fmt.Sprintf(`
+		SELECT
+			student_id,
+			student_name,
+			student_email,
+			total_submissions,
+			reviewed_submissions,
+			(total_submissions - reviewed_submissions) AS pending_submissions,
+			average_final_score,
+			latest_submitted_at
+		FROM grouped
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d
+	`, orderBy, argPos, argPos+1)
+
+	queryArgs := append(args, size, offset)
+	rows, err := s.db.Query(dataQuery, queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query material student summaries: %w", err)
+	}
+	defer rows.Close()
+
+	result := &models.MaterialStudentSubmissionSummaryListResponse{
+		Items:            []models.MaterialStudentSubmissionSummary{},
+		Total:            total,
+		Page:             page,
+		Size:             size,
+		TotalSubmissions: totalSubmissions,
+	}
+	for rows.Next() {
+		var item models.MaterialStudentSubmissionSummary
+		var avgScore sql.NullFloat64
+		var latestSubmitted sql.NullTime
+		if err := rows.Scan(
+			&item.StudentID,
+			&item.StudentName,
+			&item.StudentEmail,
+			&item.TotalSubmissions,
+			&item.ReviewedSubmissions,
+			&item.PendingSubmissions,
+			&avgScore,
+			&latestSubmitted,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan material student summary: %w", err)
+		}
+		if avgScore.Valid {
+			item.AverageFinalScore = &avgScore.Float64
+		}
+		if latestSubmitted.Valid {
+			ts := latestSubmitted.Time
+			item.LatestSubmittedAt = &ts
+		}
+		result.Items = append(result.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during material student summaries iteration: %w", err)
+	}
+	return result, nil
+}
+
+func (s *EssaySubmissionService) GetMaterialSubmissionsByStudent(materialID, teacherID, studentID string) ([]models.EssaySubmission, error) {
+	query := `
+		SELECT
+			es.id, es.soal_id, es.siswa_id, es.submission_type, es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
+			u.nama_lengkap AS student_name, u.email AS student_email,
+			ar.skor_ai, ar.umpan_balik_ai,
+			tr.id AS review_id, tr.revised_score, tr.teacher_feedback,
+			ar.logs_rag
+		FROM essay_submissions es
+		JOIN essay_questions eq ON eq.id = es.soal_id
+		JOIN materials m ON m.id = eq.material_id
+		JOIN classes c ON c.id = m.class_id
+		JOIN users u ON u.id = es.siswa_id
+		LEFT JOIN ai_results ar ON ar.submission_id = es.id
+		LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+		WHERE m.id = $1 AND c.teacher_id = $2 AND es.siswa_id = $3
+		ORDER BY es.submitted_at DESC
+	`
+	rows, err := s.db.Query(query, materialID, teacherID, studentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query student submissions by material: %w", err)
+	}
+	defer rows.Close()
+
+	result := []models.EssaySubmission{}
+	for rows.Next() {
+		var es models.EssaySubmission
+		var skorAI sql.NullFloat64
+		var umpanBalikAI sql.NullString
+		var reviewID sql.NullString
+		var revisedScoreDB sql.NullFloat64
+		var teacherFeedbackDB sql.NullString
+		var logsRAG sql.NullString
+		if err := rows.Scan(
+			&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt,
+			&es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
+			&es.StudentName, &es.StudentEmail,
+			&skorAI, &umpanBalikAI,
+			&reviewID, &revisedScoreDB, &teacherFeedbackDB, &logsRAG,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan student material submission: %w", err)
+		}
+		if skorAI.Valid {
+			es.SkorAI = &skorAI.Float64
+		}
+		if umpanBalikAI.Valid {
+			es.UmpanBalikAI = &umpanBalikAI.String
+		}
+		if reviewID.Valid {
+			es.ReviewID = &reviewID.String
+		}
+		if revisedScoreDB.Valid {
+			es.RevisedScore = &revisedScoreDB.Float64
+		}
+		if teacherFeedbackDB.Valid {
+			es.TeacherFeedback = &teacherFeedbackDB.String
+		}
+		if logsRAG.Valid && strings.TrimSpace(logsRAG.String) != "" {
+			var parsedScores []models.GradeEssayAspectScore
+			if unmarshalErr := json.Unmarshal([]byte(logsRAG.String), &parsedScores); unmarshalErr == nil {
+				es.RubricScores = parsedScores
+			}
+		}
+		result = append(result, es)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during student material submissions iteration: %w", err)
+	}
+	return result, nil
+}
+
 // GetEssaySubmissionsByStudentID mengambil semua submission esai oleh siswa tertentu.
 func (s *EssaySubmissionService) GetEssaySubmissionsByStudentID(studentID string) ([]models.EssaySubmission, error) {
 	query := `
-		SELECT id, soal_id, siswa_id, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
+		SELECT id, soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
 		FROM essay_submissions
 		WHERE siswa_id = $1
 		ORDER BY submitted_at DESC
@@ -479,7 +732,7 @@ func (s *EssaySubmissionService) GetEssaySubmissionsByStudentID(studentID string
 	var submissions []models.EssaySubmission
 	for rows.Next() {
 		var es models.EssaySubmission
-		if err := rows.Scan(&es.ID, &es.QuestionID, &es.StudentID, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt); err != nil {
+		if err := rows.Scan(&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt); err != nil {
 			return nil, fmt.Errorf("error scanning essay submission row: %w", err)
 		}
 		submissions = append(submissions, es)
@@ -516,13 +769,13 @@ func (s *EssaySubmissionService) UpdateEssaySubmission(submissionID string, upda
 		i++
 	}
 
-	query := fmt.Sprintf("UPDATE essay_submissions SET %s WHERE id = $%d RETURNING id, soal_id, siswa_id, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at",
+	query := fmt.Sprintf("UPDATE essay_submissions SET %s WHERE id = $%d RETURNING id, soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at",
 		strings.Join(setClauses, ", "), i)
 	args = append(args, submissionID)
 
 	var es models.EssaySubmission
 	err := s.db.QueryRow(query, args...).Scan(
-		&es.ID, &es.QuestionID, &es.StudentID, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
+		&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
 	)
 
 	if err != nil {
@@ -545,6 +798,7 @@ func (s *EssaySubmissionService) GetAdminQueueSummary() (*models.AdminQueueSumma
 			COALESCE(SUM(CASE WHEN ai_grading_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
 			COUNT(*) AS total
 		FROM essay_submissions
+		WHERE submission_type = 'essay'
 	`).Scan(&summary.Queued, &summary.Processing, &summary.Completed, &summary.Failed, &summary.Total); err != nil {
 		return nil, fmt.Errorf("failed to load queue summary: %w", err)
 	}
@@ -595,6 +849,7 @@ func (s *EssaySubmissionService) ListAdminQueueJobs(status, classID string, from
 		JOIN users u ON u.id = es.siswa_id
 		LEFT JOIN ai_results ar ON ar.submission_id = es.id
 	`
+	clauses = append(clauses, "es.submission_type = 'essay'")
 	whereSQL := ""
 	if len(clauses) > 0 {
 		whereSQL = " WHERE " + strings.Join(clauses, " AND ")
@@ -712,14 +967,15 @@ func (s *EssaySubmissionService) RetryQueueSubmissions(submissionIDs []string) (
 		seen[submissionID] = struct{}{}
 
 		var (
-			job    essayGradingJob
-			status string
+			job            essayGradingJob
+			status         string
+			submissionType string
 		)
 		err := s.db.QueryRow(`
-			SELECT id, soal_id, siswa_id, teks_jawaban, ai_grading_status
+			SELECT id, soal_id, siswa_id, submission_type, teks_jawaban, ai_grading_status
 			FROM essay_submissions
 			WHERE id = $1
-		`, submissionID).Scan(&job.SubmissionID, &job.QuestionID, &job.StudentID, &job.TeksJawaban, &status)
+		`, submissionID).Scan(&job.SubmissionID, &job.QuestionID, &job.StudentID, &submissionType, &job.TeksJawaban, &status)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				resp.Skipped++
@@ -739,6 +995,15 @@ func (s *EssaySubmissionService) RetryQueueSubmissions(submissionIDs []string) (
 				SubmissionID: submissionID,
 				Status:       "skipped",
 				Message:      "Submission sedang diproses",
+			})
+			continue
+		}
+		if submissionType != "essay" {
+			resp.Skipped++
+			resp.Details = append(resp.Details, models.RetryQueueItemResult{
+				SubmissionID: submissionID,
+				Status:       "skipped",
+				Message:      "Submission tugas tidak diproses AI queue",
 			})
 			continue
 		}
@@ -807,4 +1072,106 @@ func (s *EssaySubmissionService) DeleteEssaySubmissionWithDependencies(submissio
 	}
 
 	return tx.Commit() // Commit transaksi jika semua berhasil.
+}
+
+func (s *EssaySubmissionService) CreateTaskSubmission(questionID, studentID, teksJawaban string) (*models.EssaySubmission, error) {
+	newSubmission := &models.EssaySubmission{
+		QuestionID:      questionID,
+		StudentID:       studentID,
+		SubmissionType:  "task",
+		TeksJawaban:     teksJawaban,
+		SubmittedAt:     time.Now(),
+		AIGradingStatus: "completed",
+	}
+	err := s.db.QueryRowContext(
+		context.Background(),
+		`INSERT INTO essay_submissions (soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status)
+		 VALUES ($1, $2, 'task', $3, $4, 'completed')
+		 ON CONFLICT (soal_id, siswa_id) DO UPDATE
+		 SET submission_type = 'task',
+		     teks_jawaban = EXCLUDED.teks_jawaban,
+		     submitted_at = EXCLUDED.submitted_at,
+		     ai_grading_status = 'completed',
+		     ai_grading_error = NULL,
+		     ai_graded_at = NULL
+		 RETURNING id`,
+		newSubmission.QuestionID,
+		newSubmission.StudentID,
+		newSubmission.TeksJawaban,
+		newSubmission.SubmittedAt,
+	).Scan(&newSubmission.ID)
+	if err != nil {
+		return nil, fmt.Errorf("error creating task submission: %w", err)
+	}
+
+	// Pastikan submission tugas bersih dari jejak AI jika sebelumnya pernah dinilai sebagai essay.
+	if _, cleanupErr := s.db.ExecContext(context.Background(), "DELETE FROM ai_results WHERE submission_id = $1", newSubmission.ID); cleanupErr != nil {
+		return nil, fmt.Errorf("error cleaning AI result for task submission: %w", cleanupErr)
+	}
+
+	return newSubmission, nil
+}
+
+func (s *EssaySubmissionService) GetTaskSubmissionByID(submissionID string) (*models.EssaySubmission, error) {
+	isTask, err := s.isTaskSubmissionByID(submissionID)
+	if err != nil {
+		return nil, err
+	}
+	if !isTask {
+		return nil, fmt.Errorf("task submission not found")
+	}
+	return s.GetEssaySubmissionByID(submissionID)
+}
+
+func (s *EssaySubmissionService) UpdateTaskSubmission(submissionID string, updateReq *models.UpdateEssaySubmissionRequest) (*models.EssaySubmission, error) {
+	isTask, err := s.isTaskSubmissionByID(submissionID)
+	if err != nil {
+		return nil, err
+	}
+	if !isTask {
+		return nil, fmt.Errorf("task submission not found")
+	}
+	return s.UpdateEssaySubmission(submissionID, updateReq)
+}
+
+func (s *EssaySubmissionService) DeleteTaskSubmissionWithDependencies(submissionID string) error {
+	isTask, err := s.isTaskSubmissionByID(submissionID)
+	if err != nil {
+		return err
+	}
+	if !isTask {
+		return fmt.Errorf("task submission not found")
+	}
+	return s.DeleteEssaySubmissionWithDependencies(submissionID)
+}
+
+func (s *EssaySubmissionService) GetTaskSubmissionsByStudentID(studentID string) ([]models.EssaySubmission, error) {
+	query := `
+		SELECT id, soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
+		FROM essay_submissions
+		WHERE siswa_id = $1 AND submission_type = 'task'
+		ORDER BY submitted_at DESC
+	`
+
+	rows, err := s.db.Query(query, studentID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying task submissions by student %s: %w", studentID, err)
+	}
+	defer rows.Close()
+
+	var submissions []models.EssaySubmission
+	for rows.Next() {
+		var es models.EssaySubmission
+		if err := rows.Scan(&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt); err != nil {
+			return nil, fmt.Errorf("error scanning task submission row: %w", err)
+		}
+		submissions = append(submissions, es)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during task rows iteration: %w", err)
+	}
+	if submissions == nil {
+		submissions = []models.EssaySubmission{}
+	}
+	return submissions, nil
 }

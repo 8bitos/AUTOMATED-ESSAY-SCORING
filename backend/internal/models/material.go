@@ -11,6 +11,7 @@ type Material struct {
 	ClassID             string          `json:"class_id"`                       // ID kelas tempat materi ini berada (Foreign Key ke tabel classes).
 	UploaderID          string          `json:"uploader_id"`                    // ID pengguna yang mengunggah materi ini (Foreign Key ke tabel users).
 	Judul               string          `json:"judul"`                          // Judul materi pembelajaran.
+	DisplayOrder        int             `json:"display_order"`                  // Urutan tampil materi dalam kelas.
 	MaterialType        string          `json:"material_type"`                  // Tipe konten: materi/soal/tugas.
 	IsiMateri           *string         `json:"isi_materi,omitempty"`           // Isi atau deskripsi materi (opsional, bisa NULL).
 	FileUrl             *string         `json:"file_url,omitempty"`             // URL ke file terkait materi (opsional).
@@ -42,4 +43,8 @@ type UpdateMaterialRequest struct {
 	FileUrl             *string  `json:"file_url,omitempty"`             // Pointer ke string untuk URL file (opsional).
 	CapaianPembelajaran *string  `json:"capaian_pembelajaran,omitempty"` // Pointer ke string untuk capaian pembelajaran (opsional).
 	KataKunci           []string `json:"kata_kunci,omitempty"`           // Slice string untuk kata kunci (opsional).
+}
+
+type ReorderMaterialsRequest struct {
+	OrderedMaterialIDs []string `json:"ordered_material_ids"`
 }

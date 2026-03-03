@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { FiUploadCloud, FiCalendar } from "react-icons/fi";
 
@@ -30,7 +30,15 @@ const formatDateDisplay = (value?: string | null): string => {
   const normalized = value.includes("T") ? value : `${value}T00:00:00`;
   const d = new Date(normalized);
   if (Number.isNaN(d.getTime())) return "-";
-  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+};
+
+const formatDateDisplayLong = (value?: string | null): string => {
+  if (!value) return "";
+  const normalized = value.includes("T") ? value : `${value}T00:00:00`;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 };
 
 export default function StudentProfilePage() {
@@ -45,6 +53,7 @@ export default function StudentProfilePage() {
   const [tanggalLahirInput, setTanggalLahirInput] = useState("");
   const [kelasLevel, setKelasLevel] = useState<"10" | "11" | "12">("10");
   const [kelasParalel, setKelasParalel] = useState("A");
+  const dobInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -201,11 +210,49 @@ export default function StudentProfilePage() {
               <div>
                 <label className="text-sm text-slate-600">Tanggal Lahir</label>
                 <input
+                  ref={dobInputRef}
                   type="date"
-                  className="sage-input mt-1"
+                  className="sr-only"
                   value={tanggalLahirInput}
                   onChange={(e) => setTanggalLahirInput(e.target.value)}
+                  lang="id-ID"
                 />
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="text"
+                    className="sage-input"
+                    value={formatDateDisplayLong(tanggalLahirInput)}
+                    placeholder="DD/MM/YYYY"
+                    readOnly
+                  />
+                  <button
+                    type="button"
+                    className="sage-button-outline !px-3"
+                    onClick={() => {
+                      const el = dobInputRef.current;
+                      if (!el) return;
+                      if (typeof el.showPicker === "function") {
+                        el.showPicker();
+                        return;
+                      }
+                      el.focus();
+                      el.click();
+                    }}
+                    aria-label="Pilih tanggal lahir"
+                  >
+                    <FiCalendar />
+                  </button>
+                  {tanggalLahirInput && (
+                    <button
+                      type="button"
+                      className="sage-button-outline !px-3"
+                      onClick={() => setTanggalLahirInput("")}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Format tampilan: DD/MM/YYYY</p>
               </div>
 
               <div>

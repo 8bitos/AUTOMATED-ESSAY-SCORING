@@ -1,0 +1,3 @@
+-- No meaningful DOWN migration for this. Reverting would mean losing data consistency.
+-- If a revert is absolutely necessary, manual inspection and data restoration would be required.
+-- For now, this migration is considered irreversible.

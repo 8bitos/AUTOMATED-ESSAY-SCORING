@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   RadarChart,
@@ -10,6 +10,13 @@ import {
   PolarRadiusAxis,
   Radar,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  LabelList,
 } from "recharts";
 
 interface RubricScore {
@@ -32,6 +39,8 @@ interface EssayQuestion {
   id: string;
   teks_soal: string;
   weight?: number;
+  created_at?: string;
+  updated_at?: string;
   rubrics?: QuestionRubric[];
   submission_id?: string;
   student_essay_text?: string;
@@ -59,6 +68,7 @@ interface ClassDetail {
 
 type ActiveSection = "overview" | "questions" | "results";
 type QuestionSort = "default" | "weight_desc" | "alphabet" | "unanswered_first";
+type ResultSort = "default" | "score_high" | "score_low" | "latest_score" | "newly_reviewed";
 
 type MaterialBlockType = "heading" | "paragraph" | "video" | "image" | "link" | "pdf" | "ppt" | "bullet_list" | "number_list";
 type BlockAlign = "left" | "center" | "right" | "justify";
@@ -69,6 +79,47 @@ interface MaterialContentBlock {
   value: string;
   align?: BlockAlign;
   size?: MediaSize;
+}
+
+interface SectionTaskMeta {
+  tugas_instruction?: string;
+  tugas_due_at?: string;
+  tugas_max_score?: number;
+  tugas_submission_type?: "teks" | "file" | "keduanya";
+  tugas_allowed_formats?: string[];
+  tugas_max_file_mb?: number;
+  tugas_attachment_url?: string;
+  tugas_attachment_name?: string;
+}
+
+interface SectionTaskCard {
+  id: string;
+  type: string;
+  title?: string;
+  body?: string;
+  questionIds?: string[];
+  meta?: SectionTaskMeta;
+}
+
+interface SectionSoalCard {
+  id: string;
+  type: "soal" | "tugas";
+  title: string;
+  body: string;
+  questionIds: string[];
+  meta?: SectionTaskMeta;
+}
+
+interface SectionContentCardData {
+  id: string;
+  type: "materi" | "soal" | "tugas" | "penilaian" | "gambar" | "video" | "upload";
+  title: string;
+  body: string;
+  meta?: {
+    materi_mode?: "singkat" | "lengkap";
+    materi_description?: string;
+    description?: string;
+  };
 }
 
 const parseMaterialBlocks = (raw?: string): MaterialContentBlock[] | null => {
@@ -90,6 +141,90 @@ const parseMaterialBlocks = (raw?: string): MaterialContentBlock[] | null => {
   }
 };
 
+const parseTaskCardConfig = (raw?: string): SectionTaskCard | null => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { format?: string; items?: unknown[] };
+    if (parsed?.format !== "sage_section_cards_v1" || !Array.isArray(parsed?.items)) return null;
+    for (const item of parsed.items) {
+      if (typeof item !== "object" || item === null) continue;
+      const row = item as Record<string, unknown>;
+      if (row.type !== "tugas") continue;
+      const ids =
+        typeof row.meta === "object" && row.meta !== null ? (row.meta as { question_ids?: unknown }).question_ids : undefined;
+      const questionIds = Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        : [];
+      return {
+        id: typeof row.id === "string" ? row.id : "",
+        type: "tugas",
+        title: typeof row.title === "string" ? row.title : "",
+        body: typeof row.body === "string" ? row.body : "",
+        questionIds,
+        meta: (typeof row.meta === "object" && row.meta !== null ? row.meta : {}) as SectionTaskMeta,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const parseSectionQuestionCards = (raw?: string): SectionSoalCard[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as { format?: string; items?: unknown[] };
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    const out: SectionSoalCard[] = [];
+    items.forEach((item) => {
+      if (typeof item !== "object" || item === null) return;
+      const row = item as Record<string, unknown>;
+      const type = row.type === "soal" || row.type === "tugas" ? (row.type as "soal" | "tugas") : null;
+      if (!type) return;
+      const ids = typeof row.meta === "object" && row.meta !== null ? (row.meta as { question_ids?: unknown }).question_ids : undefined;
+      const questionIds = Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        : [];
+      out.push({
+        id: typeof row.id === "string" ? row.id : "",
+        type,
+        title: typeof row.title === "string" ? row.title : "",
+        body: typeof row.body === "string" ? row.body : "",
+        questionIds,
+        meta: (typeof row.meta === "object" && row.meta !== null ? row.meta : {}) as SectionTaskMeta,
+      });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+};
+
+const parseSectionContentCards = (raw?: string): SectionContentCardData[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as { format?: string; items?: unknown[] };
+    if (parsed?.format !== "sage_section_cards_v1" || !Array.isArray(parsed?.items)) return [];
+    const out: SectionContentCardData[] = [];
+    parsed.items.forEach((item) => {
+      if (typeof item !== "object" || item === null) return;
+      const row = item as Record<string, unknown>;
+      const rawType = typeof row.type === "string" ? row.type : "";
+      if (!["materi", "soal", "tugas", "penilaian", "gambar", "video", "upload"].includes(rawType)) return;
+      out.push({
+        id: typeof row.id === "string" ? row.id : "",
+        type: rawType as SectionContentCardData["type"],
+        title: typeof row.title === "string" ? row.title : "",
+        body: typeof row.body === "string" ? row.body : "",
+        meta: (typeof row.meta === "object" && row.meta !== null ? row.meta : undefined) as SectionContentCardData["meta"],
+      });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+};
+
 const containsHtmlTag = (value?: string): boolean => /<([a-z][\w-]*)\b[^>]*>/i.test(value || "");
 
 const normalizeEmbedUrl = (url: string): string => {
@@ -100,6 +235,16 @@ const normalizeEmbedUrl = (url: string): string => {
   const ytShortsMatch = trimmed.match(/youtube\.com\/shorts\/([^&?/]+)/i);
   if (ytShortsMatch?.[1]) return `https://www.youtube.com/embed/${ytShortsMatch[1]}`;
   return trimmed;
+};
+
+const parseDueDate = (value?: string): Date | null => {
+  if (!value) return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(`${raw}T23:59:59`);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
 };
 
 const isImageLikeUrl = (url: string): boolean =>
@@ -117,6 +262,16 @@ const getMediaWidthClass = (size?: MediaSize) => {
   if (size === "large") return "w-full md:w-5/6";
   if (size === "full") return "w-full";
   return "w-full md:w-2/3";
+};
+
+const resolveTaskSubmissionQuestion = (
+  pool: EssayQuestion[],
+  explicitIds?: string[] | null
+): EssayQuestion | null => {
+  if (!Array.isArray(pool) || pool.length === 0) return null;
+  const ids = Array.isArray(explicitIds) ? explicitIds.filter((id) => typeof id === "string" && id.trim().length > 0) : [];
+  if (ids.length === 0) return null;
+  return pool.find((q) => ids.includes(q.id)) || null;
 };
 
 const PdfBlockCard = ({ url }: { url: string }) => {
@@ -184,8 +339,11 @@ const getRubricScoreEntries = (question: EssayQuestion) => {
 
 export default function StudentMaterialDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const classId = params.classId as string;
   const materialId = params.materialId as string;
+  const viewMode = searchParams.get("view");
+  const sectionCardId = searchParams.get("sectionCardId");
 
   const [cls, setCls] = useState<ClassDetail | null>(null);
   const [material, setMaterial] = useState<Material | null>(null);
@@ -199,7 +357,15 @@ export default function StudentMaterialDetailPage() {
   const [submitLoading, setSubmitLoading] = useState<Record<string, boolean>>({});
   const [submitMessage, setSubmitMessage] = useState<Record<string, string>>({});
   const [questionSort, setQuestionSort] = useState<QuestionSort>("default");
+  const [resultSort, setResultSort] = useState<ResultSort>("default");
+  const [hideAnsweredQuestions, setHideAnsweredQuestions] = useState(false);
   const [openStudentAnswers, setOpenStudentAnswers] = useState<Record<string, boolean>>({});
+  const [taskAnswerText, setTaskAnswerText] = useState("");
+  const [taskAnswerLink, setTaskAnswerLink] = useState("");
+  const [taskAnswerFileUrl, setTaskAnswerFileUrl] = useState("");
+  const [taskAnswerFileName, setTaskAnswerFileName] = useState("");
+  const [taskPendingFile, setTaskPendingFile] = useState<File | null>(null);
+  const [taskUploading, setTaskUploading] = useState(false);
 
   const fetchData = useCallback(async (showLoader = true) => {
     if (!classId || !materialId) return;
@@ -234,23 +400,72 @@ export default function StudentMaterialDetailPage() {
     fetchData(true);
   }, [fetchData]);
 
-  const questions = material?.essay_questions ?? [];
+  const allQuestions = material?.essay_questions ?? [];
+  const sectionCards = useMemo(() => parseSectionQuestionCards(material?.isi_materi), [material?.isi_materi]);
+  const activeCard = useMemo(
+    () => (sectionCardId ? sectionCards.find((card) => card.id === sectionCardId) || null : null),
+    [sectionCardId, sectionCards]
+  );
+  const questions = useMemo(() => {
+    if (!activeCard) return allQuestions;
+    if (!Array.isArray(activeCard.questionIds) || activeCard.questionIds.length === 0) {
+      return activeCard.type === "tugas" ? [] : allQuestions;
+    }
+    return allQuestions.filter((q) => activeCard.questionIds.includes(q.id));
+  }, [allQuestions, activeCard]);
   const materialType = (material?.material_type || "materi") as "materi" | "soal" | "tugas";
   const isSoalType = materialType === "soal";
   const isTugasType = materialType === "tugas";
-  const taskSubmissionQuestion = isTugasType ? questions[0] : null;
+  const forceSoalView = viewMode === "soal" || activeCard?.type === "soal";
+  const forceTugasView = viewMode === "tugas" || activeCard?.type === "tugas";
+  const isSoalContext = isSoalType || forceSoalView;
+  const isTugasContext = isTugasType || forceTugasView;
+  const taskCardConfig = useMemo(() => {
+    if (activeCard?.type === "tugas") {
+      return {
+        id: activeCard.id,
+        type: activeCard.type,
+        title: activeCard.title,
+        body: activeCard.body,
+        meta: activeCard.meta,
+      } as SectionTaskCard;
+    }
+    return parseTaskCardConfig(material?.isi_materi);
+  }, [activeCard, material?.isi_materi]);
+  const taskSubmissionQuestion = useMemo(() => {
+    if (!isTugasContext) return null;
+    const explicitIds =
+      activeCard?.type === "tugas"
+        ? activeCard.questionIds
+        : taskCardConfig?.questionIds || (taskCardConfig?.meta as { question_ids?: string[] } | undefined)?.question_ids;
+    return resolveTaskSubmissionQuestion(questions, explicitIds || null);
+  }, [isTugasContext, questions, activeCard, taskCardConfig]);
+  const taskSubmissionType = taskCardConfig?.meta?.tugas_submission_type || "teks";
+  const taskAllowsTextOrLink = taskSubmissionType !== "file";
+  const taskAllowsFile = taskSubmissionType !== "teks";
+  const taskRequiresBoth = taskSubmissionType === "keduanya";
+  const taskDueAtDate = useMemo(() => parseDueDate(taskCardConfig?.meta?.tugas_due_at), [taskCardConfig?.meta?.tugas_due_at]);
+  const isTaskLate = Boolean(taskDueAtDate && new Date().getTime() > taskDueAtDate.getTime());
   const submittedCount = questions.filter((q) => !!q.submission_id).length;
+  const reviewedCount = questions.filter(
+    (q) => !!q.submission_id && (q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0)
+  ).length;
+  const canShowResults = isSoalContext || isTugasContext;
 
   useEffect(() => {
     if (!material) return;
-    if (isSoalType && activeSection === "overview") {
+    if ((isSoalContext || isTugasContext) && activeSection === "overview") {
       setActiveSection("questions");
       return;
     }
-    if (isTugasType && activeSection === "results") {
-      setActiveSection("questions");
+    if (!canShowResults && activeSection === "results") {
+      setActiveSection("overview");
+      return;
     }
-  }, [material, isSoalType, isTugasType, activeSection]);
+    if (!isSoalContext && !isTugasContext && activeSection !== "overview") {
+      setActiveSection("overview");
+    }
+  }, [material, isSoalContext, isTugasContext, canShowResults, activeSection]);
   const sortedQuestions = useMemo(() => {
     const withIndex = questions.map((q, index) => ({ q, index }));
     switch (questionSort) {
@@ -282,18 +497,31 @@ export default function StudentMaterialDetailPage() {
     }
   }, [questions, questionSort]);
 
+  const visibleQuestions = useMemo(() => {
+    if (!hideAnsweredQuestions) return sortedQuestions;
+    return sortedQuestions.filter((q) => !q.submission_id);
+  }, [sortedQuestions, hideAnsweredQuestions]);
+
   const resultItems = useMemo(() => {
-    return questions
+    const base = questions
       .filter((q) => !!q.submission_id)
-      .map((q) => {
+      .map((q, filteredIndex) => {
+        const originalOrder = questions.findIndex((item) => item.id === q.id);
         const rubricEntries = getRubricScoreEntries(q);
-        const hasTeacherPane = q.revised_score !== undefined;
+        const hasTeacherPane = q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0;
         const hasAIPane = q.skor_ai !== undefined || rubricEntries.length > 0;
+        const finalScore = q.revised_score ?? q.skor_ai;
+        const hasScore = typeof finalScore === "number";
+        const updatedAtMs = q.updated_at ? new Date(q.updated_at).getTime() : 0;
         return {
+          originalOrder: originalOrder >= 0 ? originalOrder : filteredIndex,
           question: q,
           rubricEntries,
           hasTeacherPane,
           hasAIPane,
+          finalScore,
+          hasScore,
+          updatedAtMs,
           radarData: rubricEntries.map((r) => ({
             subject: r.aspek,
             score: r.score,
@@ -301,7 +529,49 @@ export default function StudentMaterialDetailPage() {
           })),
         };
       });
-  }, [questions]);
+    const sorted = [...base];
+    switch (resultSort) {
+      case "score_high":
+        sorted.sort((a, b) => {
+          if (a.hasScore && !b.hasScore) return -1;
+          if (!a.hasScore && b.hasScore) return 1;
+          if (!a.hasScore && !b.hasScore) return a.originalOrder - b.originalOrder;
+          if ((b.finalScore as number) !== (a.finalScore as number)) return (b.finalScore as number) - (a.finalScore as number);
+          return a.originalOrder - b.originalOrder;
+        });
+        break;
+      case "score_low":
+        sorted.sort((a, b) => {
+          if (a.hasScore && !b.hasScore) return -1;
+          if (!a.hasScore && b.hasScore) return 1;
+          if (!a.hasScore && !b.hasScore) return a.originalOrder - b.originalOrder;
+          if ((a.finalScore as number) !== (b.finalScore as number)) return (a.finalScore as number) - (b.finalScore as number);
+          return a.originalOrder - b.originalOrder;
+        });
+        break;
+      case "latest_score":
+        sorted.sort((a, b) => {
+          if (a.hasScore && !b.hasScore) return -1;
+          if (!a.hasScore && b.hasScore) return 1;
+          if (b.updatedAtMs !== a.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;
+          return b.originalOrder - a.originalOrder;
+        });
+        break;
+      case "newly_reviewed":
+        sorted.sort((a, b) => {
+          if (a.hasTeacherPane && !b.hasTeacherPane) return -1;
+          if (!a.hasTeacherPane && b.hasTeacherPane) return 1;
+          if (b.updatedAtMs !== a.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;
+          return a.originalOrder - b.originalOrder;
+        });
+        break;
+      case "default":
+      default:
+        sorted.sort((a, b) => a.originalOrder - b.originalOrder);
+        break;
+    }
+    return sorted;
+  }, [questions, resultSort]);
 
   const finalMaterialScore = useMemo(() => {
     const totalQuestions = questions.length;
@@ -396,6 +666,129 @@ export default function StudentMaterialDetailPage() {
     }
   };
 
+  const handlePickTaskFile = (file: File | null) => {
+    if (!file) return;
+    setTaskPendingFile(file);
+    setTaskAnswerFileName(file.name);
+  };
+
+  const handleUploadTaskFile = async () => {
+    if (!taskAllowsFile) {
+      const qid = taskSubmissionQuestion?.id || "task";
+      setSubmitMessage((prev) => ({ ...prev, [qid]: "Tugas ini tidak menerima upload file." }));
+      return;
+    }
+    if (!taskPendingFile) return;
+    const maxFileMb = typeof taskCardConfig?.meta?.tugas_max_file_mb === "number" ? taskCardConfig.meta.tugas_max_file_mb : 10;
+    if (taskPendingFile.size > maxFileMb * 1024 * 1024) {
+      const qid = taskSubmissionQuestion?.id || "task";
+      setSubmitMessage((prev) => ({ ...prev, [qid]: `Ukuran file melebihi ${maxFileMb} MB.` }));
+      return;
+    }
+    const allowed = Array.isArray(taskCardConfig?.meta?.tugas_allowed_formats) ? taskCardConfig!.meta!.tugas_allowed_formats! : [];
+    if (allowed.length > 0) {
+      const ext = (taskPendingFile.name.split(".").pop() || "").toLowerCase();
+      if (ext && !allowed.map((x) => x.toLowerCase()).includes(ext)) {
+        const qid = taskSubmissionQuestion?.id || "task";
+        setSubmitMessage((prev) => ({ ...prev, [qid]: `Format file tidak diizinkan. Gunakan: ${allowed.join(", ")}` }));
+        return;
+      }
+    }
+    setTaskUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", taskPendingFile);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.message || "Gagal upload file tugas.");
+      }
+      const filePath = typeof body?.filePath === "string" ? body.filePath : "";
+      if (!filePath) throw new Error("Respons upload tidak valid.");
+      setTaskAnswerFileUrl(filePath);
+      setTaskPendingFile(null);
+      if (taskSubmissionQuestion?.id) {
+        setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "File berhasil diupload." }));
+      }
+    } catch (err: any) {
+      const qid = taskSubmissionQuestion?.id || "task";
+      setSubmitMessage((prev) => ({ ...prev, [qid]: err?.message || "Gagal upload file tugas." }));
+    } finally {
+      setTaskUploading(false);
+    }
+  };
+
+  const handleSubmitTask = async () => {
+    if (!taskSubmissionQuestion) return;
+    const text = taskAnswerText.trim();
+    const link = taskAnswerLink.trim();
+    const file = taskAnswerFileUrl.trim();
+    const hasTextOrLink = Boolean(text || link);
+    const hasFile = Boolean(file);
+
+    if (taskRequiresBoth && (!hasTextOrLink || !hasFile)) {
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "Tugas ini wajib mengisi teks/link dan upload file." }));
+      return;
+    }
+    if (!taskRequiresBoth && taskAllowsTextOrLink && !taskAllowsFile && !hasTextOrLink) {
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "Tugas ini wajib mengisi jawaban teks atau link." }));
+      return;
+    }
+    if (!taskRequiresBoth && taskAllowsFile && !taskAllowsTextOrLink && !hasFile) {
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "Tugas ini wajib upload file." }));
+      return;
+    }
+    if (!hasTextOrLink && !hasFile) {
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "Isi minimal salah satu: jawaban teks, link, atau file." }));
+      return;
+    }
+    const payloadLines = [
+      text ? `Jawaban Teks:\n${text}` : "",
+      link ? `Link Jawaban:\n${link}` : "",
+      file ? `File Jawaban:\n${file}` : "",
+    ].filter(Boolean);
+    const finalAnswer = payloadLines.join("\n\n");
+    setSubmitLoading((prev) => ({ ...prev, [taskSubmissionQuestion.id]: true }));
+    setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "" }));
+    try {
+      const res = await fetch("/api/task-submissions", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question_id: taskSubmissionQuestion.id,
+          teks_jawaban: finalAnswer,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Gagal mengirim tugas.");
+      }
+      const data = await res.json().catch(() => ({}));
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: data?.grading_message || "Tugas berhasil dikirim." }));
+      await fetchData(false);
+    } catch (err: any) {
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: err?.message || "Terjadi kesalahan saat submit tugas." }));
+    } finally {
+      setSubmitLoading((prev) => ({ ...prev, [taskSubmissionQuestion.id]: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (!isTugasContext || !taskSubmissionQuestion?.student_essay_text) return;
+    const raw = taskSubmissionQuestion.student_essay_text;
+    const textMatch = raw.match(/Jawaban Teks:\n([\s\S]*?)(?:\n\n(?:Link Jawaban:|File Jawaban:)|$)/);
+    const linkMatch = raw.match(/Link Jawaban:\n([\s\S]*?)(?:\n\n(?:Jawaban Teks:|File Jawaban:)|$)/);
+    const fileMatch = raw.match(/File Jawaban:\n([\s\S]*?)(?:\n\n(?:Jawaban Teks:|Link Jawaban:)|$)/);
+    setTaskAnswerText((textMatch?.[1] || "").trim());
+    setTaskAnswerLink((linkMatch?.[1] || "").trim());
+    setTaskAnswerFileUrl((fileMatch?.[1] || "").trim());
+  }, [isTugasContext, taskSubmissionQuestion?.student_essay_text]);
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-[color:var(--ink-500)]">Loading...</div>;
   }
@@ -417,53 +810,76 @@ export default function StudentMaterialDetailPage() {
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-[color:var(--ink-600)]">
           <span
             className={`sage-pill ${
-              isSoalType ? "bg-blue-100 text-blue-700" : isTugasType ? "bg-purple-100 text-purple-700" : ""
+              isSoalContext ? "bg-blue-100 text-blue-700" : isTugasContext ? "bg-purple-100 text-purple-700" : ""
             }`}
           >
-            Tipe: {isSoalType ? "Soal" : isTugasType ? "Tugas" : "Materi"}
+            Tipe: {isSoalContext ? "Soal" : isTugasContext ? "Tugas" : "Materi"}
           </span>
-          <span className="sage-pill">{isTugasType ? "1 Form Submisi" : `${questions.length} Soal`}</span>
+          <span className="sage-pill">{isTugasContext ? "1 Form Submisi" : `${questions.length} Soal`}</span>
           <span className="sage-pill">{submittedCount} Sudah Submit</span>
+          <span className="sage-pill">{reviewedCount} Sudah Direview</span>
         </div>
       </section>
 
       <section className="sage-panel p-3">
-        <div className={`grid gap-2 ${isTugasType ? "grid-cols-2" : isSoalType ? "grid-cols-2" : "grid-cols-3"}`}>
-          {!isSoalType && (
+        <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+          {!isSoalContext && !isTugasContext && (
             <button
+              type="button"
               onClick={() => setActiveSection("overview")}
-              className={`rounded-xl px-4 py-2 text-sm ${
-                activeSection === "overview" ? "bg-[color:var(--sage-700)] text-white" : "bg-[color:var(--sand-50)] text-[color:var(--ink-600)]"
-              }`}
+              className={`rounded-xl px-4 py-2 text-sm text-left ${activeSection === "overview" ? "bg-[color:var(--sage-700)] text-white" : "bg-slate-100 text-[color:var(--ink-700)]"}`}
             >
-              {isTugasType ? "Detail Tugas" : "Overview"}
+              Materi
             </button>
           )}
-          <button
-            onClick={() => setActiveSection("questions")}
-            className={`rounded-xl px-4 py-2 text-sm ${
-              activeSection === "questions" ? "bg-[color:var(--sage-700)] text-white" : "bg-[color:var(--sand-50)] text-[color:var(--ink-600)]"
-            }`}
-          >
-            {isTugasType ? "Submisi" : "Soal"}
-          </button>
-          {!isTugasType && (
+          {(isSoalContext || isTugasContext) && (
             <button
-              onClick={() => setActiveSection("results")}
-              className={`rounded-xl px-4 py-2 text-sm ${
-                activeSection === "results" ? "bg-[color:var(--sage-700)] text-white" : "bg-[color:var(--sand-50)] text-[color:var(--ink-600)]"
-              }`}
+              type="button"
+              onClick={() => setActiveSection("questions")}
+              className={`rounded-xl px-4 py-2 text-sm text-left ${activeSection === "questions" ? "bg-[color:var(--sage-700)] text-white" : "bg-slate-100 text-[color:var(--ink-700)]"}`}
             >
-              Hasil Saya
+              {isTugasContext ? "Submisi" : "Soal"}
+            </button>
+          )}
+          {canShowResults && (
+            <button
+              type="button"
+              onClick={() => setActiveSection("results")}
+              className={`rounded-xl px-4 py-2 text-sm text-left ${activeSection === "results" ? "bg-[color:var(--sage-700)] text-white" : "bg-slate-100 text-[color:var(--ink-700)]"}`}
+            >
+              Hasil Penilaian
             </button>
           )}
         </div>
       </section>
 
-      {activeSection === "overview" && !isSoalType && (
+      {activeSection === "overview" && !isSoalContext && !isTugasContext && (
         <section className="sage-panel p-6 space-y-3">
           <h2 className="text-lg font-semibold text-[color:var(--ink-900)]">Isi Materi</h2>
           {(() => {
+            const sectionCards = parseSectionContentCards(material.isi_materi);
+            const materiCards = sectionCards.filter((card) => card.type === "materi");
+            if (materiCards.length > 0) {
+              const preferred =
+                materiCards.find((card) => (card.meta?.materi_mode || "").toLowerCase() === "lengkap") ||
+                materiCards[0];
+              const content = (preferred.body || preferred.meta?.materi_description || preferred.meta?.description || "").trim();
+              if (content) {
+                return (
+                  <div className="space-y-3">
+                    {preferred.title && <h3 className="text-xl font-semibold text-[color:var(--ink-900)]">{preferred.title}</h3>}
+                    {containsHtmlTag(content) ? (
+                      <div
+                        className="prose prose-slate max-w-none text-[color:var(--ink-700)]"
+                        dangerouslySetInnerHTML={{ __html: content }}
+                      />
+                    ) : (
+                      <p className="leading-relaxed text-[color:var(--ink-700)] whitespace-pre-line">{content}</p>
+                    )}
+                  </div>
+                );
+              }
+            }
             const blocks = parseMaterialBlocks(material.isi_materi);
             if (blocks && blocks.length > 0) {
               return (
@@ -588,11 +1004,11 @@ export default function StudentMaterialDetailPage() {
         </section>
       )}
 
-      {activeSection === "questions" && (
+      {activeSection === "questions" && (isSoalContext || isTugasContext) && (
         <section className="space-y-4">
-          {!isTugasType && (
+          {!isTugasContext && (
             <div className="sage-panel p-4">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 <label className="text-sm text-[color:var(--ink-600)]">Urutkan Soal:</label>
                 <select
                   value={questionSort}
@@ -604,11 +1020,20 @@ export default function StudentMaterialDetailPage() {
                   <option value="alphabet">Alphabet</option>
                   <option value="unanswered_first">Belum Dijawab Dulu</option>
                 </select>
+                <label className="inline-flex items-center gap-2 text-sm text-[color:var(--ink-600)]">
+                  <input
+                    type="checkbox"
+                    checked={hideAnsweredQuestions}
+                    onChange={(e) => setHideAnsweredQuestions(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Sembunyikan yang sudah dijawab
+                </label>
               </div>
             </div>
           )}
 
-          {isTugasType && (
+          {isTugasContext && (
             <div className="sage-panel p-5 space-y-4">
               <p className="text-sm text-[color:var(--ink-600)]">
                 Halaman ini khusus submisi tugas. Isi jawaban/kumpulan tugas pada form berikut.
@@ -628,21 +1053,100 @@ export default function StudentMaterialDetailPage() {
                     {taskSubmissionQuestion.submission_id && (
                       <span className="sage-pill">Nilai: {taskSubmissionQuestion.revised_score ?? taskSubmissionQuestion.skor_ai ?? "-"}</span>
                     )}
+                    {taskSubmissionQuestion.submission_id && ((taskSubmissionQuestion.teacher_feedback ?? "").trim().length > 0 || taskSubmissionQuestion.revised_score !== undefined) && (
+                      <span className="sage-pill bg-emerald-100 text-emerald-700">Sudah direview guru</span>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-black/5 bg-white p-4 space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Detail Tugas</p>
+                    <p className="text-[color:var(--ink-800)] whitespace-pre-line">
+                      {taskCardConfig?.meta?.tugas_instruction || taskCardConfig?.body || taskSubmissionQuestion.teks_soal || "Instruksi tugas belum tersedia."}
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs text-[color:var(--ink-600)]">
+                      {taskCardConfig?.meta?.tugas_due_at && <span className="sage-pill">Tenggat: {taskCardConfig.meta.tugas_due_at}</span>}
+                      {typeof taskCardConfig?.meta?.tugas_max_score === "number" && <span className="sage-pill">Skor Maks: {taskCardConfig.meta.tugas_max_score}</span>}
+                      {taskCardConfig?.meta?.tugas_submission_type && <span className="sage-pill">Pengumpulan: {taskCardConfig.meta.tugas_submission_type}</span>}
+                      {typeof taskCardConfig?.meta?.tugas_max_file_mb === "number" && <span className="sage-pill">Maks File: {taskCardConfig.meta.tugas_max_file_mb} MB</span>}
+                    </div>
+                    {!taskSubmissionQuestion.submission_id && isTaskLate && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        Peringatan: waktu pengumpulan sudah lewat. Kamu masih bisa submit, tapi akan tercatat terlambat.
+                      </div>
+                    )}
+                    {Array.isArray(taskCardConfig?.meta?.tugas_allowed_formats) && taskCardConfig?.meta?.tugas_allowed_formats?.length > 0 && (
+                      <p className="text-xs text-[color:var(--ink-600)]">Format file: {taskCardConfig.meta.tugas_allowed_formats.join(", ")}</p>
+                    )}
+                    {taskCardConfig?.meta?.tugas_attachment_url && (
+                      <a
+                        href={taskCardConfig.meta.tugas_attachment_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex text-sm text-[color:var(--sage-700)] hover:underline"
+                      >
+                        Lampiran: {taskCardConfig.meta.tugas_attachment_name || "Buka Lampiran"}
+                      </a>
+                    )}
                   </div>
                   {!taskSubmissionQuestion.submission_id && (
                     <>
-                      <textarea
-                        className="sage-input min-h-40"
-                        placeholder="Tulis jawaban/kumpulan tugas kamu di sini..."
-                        value={answerInputs[taskSubmissionQuestion.id] ?? ""}
-                        onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [taskSubmissionQuestion.id]: e.target.value }))}
-                      />
+                      <div className="grid gap-3">
+                        {taskAllowsTextOrLink && (
+                          <div>
+                          <label className="text-sm font-medium text-[color:var(--ink-700)]">Jawaban Teks</label>
+                          <textarea
+                            className="sage-input min-h-28 mt-1"
+                            placeholder="Tulis jawaban tugas di sini..."
+                            value={taskAnswerText}
+                            onChange={(e) => setTaskAnswerText(e.target.value)}
+                          />
+                          </div>
+                        )}
+                        {taskAllowsTextOrLink && (
+                          <div>
+                          <label className="text-sm font-medium text-[color:var(--ink-700)]">Link Jawaban</label>
+                          <input
+                            className="sage-input mt-1"
+                            placeholder="https://..."
+                            value={taskAnswerLink}
+                            onChange={(e) => setTaskAnswerLink(e.target.value)}
+                          />
+                          </div>
+                        )}
+                        {taskAllowsFile && (
+                          <div className="space-y-2">
+                          <label className="text-sm font-medium text-[color:var(--ink-700)]">Upload Dokumen</label>
+                          <input
+                            type="file"
+                            onChange={(e) => handlePickTaskFile(e.target.files?.[0] || null)}
+                            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2"
+                          />
+                          {taskPendingFile && (
+                            <p className="text-xs text-[color:var(--ink-600)]">
+                              Preview file: {taskPendingFile.name} ({Math.ceil(taskPendingFile.size / 1024)} KB)
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            className="sage-button-outline"
+                            disabled={!taskPendingFile || taskUploading}
+                            onClick={() => void handleUploadTaskFile()}
+                          >
+                            {taskUploading ? "Uploading..." : "Upload File"}
+                          </button>
+                          {taskAnswerFileUrl && (
+                            <a href={taskAnswerFileUrl} target="_blank" rel="noopener noreferrer" className="block text-sm text-[color:var(--sage-700)] hover:underline">
+                              File terupload: {taskAnswerFileName || taskAnswerFileUrl}
+                            </a>
+                          )}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
                           className="sage-button"
                           disabled={!!submitLoading[taskSubmissionQuestion.id]}
-                          onClick={() => handleSubmitAnswer(taskSubmissionQuestion.id)}
+                          onClick={() => void handleSubmitTask()}
                         >
                           {submitLoading[taskSubmissionQuestion.id] ? "Mengirim..." : "Submit Tugas"}
                         </button>
@@ -671,8 +1175,11 @@ export default function StudentMaterialDetailPage() {
             </div>
           )}
 
-          {!isTugasType && questions.length === 0 && <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada soal.</div>}
-          {!isTugasType && sortedQuestions.map((q, index) => (
+          {!isTugasContext && questions.length === 0 && <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada soal.</div>}
+          {!isTugasContext && questions.length > 0 && visibleQuestions.length === 0 && (
+            <div className="sage-panel p-6 text-[color:var(--ink-500)]">Semua soal sudah dijawab.</div>
+          )}
+          {!isTugasContext && visibleQuestions.map((q, index) => (
             <div key={q.id} className="sage-card p-5">
               <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
               <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
@@ -759,24 +1266,42 @@ export default function StudentMaterialDetailPage() {
         </section>
       )}
 
-      {activeSection === "results" && !isTugasType && (
+      {activeSection === "results" && canShowResults && (
         <section className="space-y-5">
           <div className="sage-panel p-5">
-            <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Nilai Akhir Materi</p>
-            <p className="mt-1 text-3xl font-semibold text-[color:var(--ink-900)]">
-              {finalMaterialScore.score == null ? "-" : finalMaterialScore.score.toFixed(2)}
-              {finalMaterialScore.score != null && <span className="text-base font-medium text-[color:var(--ink-500)]"> / 100</span>}
-            </p>
-            <p className="mt-1 text-sm text-[color:var(--ink-500)]">
-              Rumus: (Σ(nilai soal × bobot) / Σ(bobot)) × (jumlah soal dijawab / total soal) = (rata-rata berbobot × {finalMaterialScore.counted}) / {finalMaterialScore.totalQuestions || 1}.
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Nilai Akhir Materi</p>
+                <p className="mt-1 text-3xl font-semibold text-[color:var(--ink-900)]">
+                  {finalMaterialScore.score == null ? "-" : finalMaterialScore.score.toFixed(2)}
+                  {finalMaterialScore.score != null && <span className="text-base font-medium text-[color:var(--ink-500)]"> / 100</span>}
+                </p>
+                <p className="mt-1 text-sm text-[color:var(--ink-500)]">
+                  Rumus: (Σ(nilai soal × bobot) / Σ(bobot)) × (jumlah soal dijawab / total soal) = (rata-rata berbobot × {finalMaterialScore.counted}) / {finalMaterialScore.totalQuestions || 1}.
+                </p>
+              </div>
+              <div className="min-w-64">
+                <label className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Urutkan Hasil</label>
+                <select
+                  value={resultSort}
+                  onChange={(e) => setResultSort(e.target.value as ResultSort)}
+                  className="sage-input mt-1"
+                >
+                  <option value="default">Default (Nomor Soal)</option>
+                  <option value="score_high">Nilai Tertinggi</option>
+                  <option value="score_low">Nilai Terendah</option>
+                  <option value="latest_score">Nilai Terbaru</option>
+                  <option value="newly_reviewed">Baru Direview</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {resultItems.length === 0 && (
             <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada hasil. Kerjakan soal dulu.</div>
           )}
 
-          {resultItems.map(({ question, rubricEntries, hasTeacherPane, hasAIPane, radarData }, idx) => {
+          {resultItems.map(({ question, rubricEntries, hasTeacherPane, hasAIPane, radarData, originalOrder }) => {
             const isOpen = !!openResults[question.id];
             const aiFeedbackKey = `${question.id}-ai`;
             const teacherFeedbackKey = `${question.id}-teacher`;
@@ -798,7 +1323,7 @@ export default function StudentMaterialDetailPage() {
                   className="w-full flex items-start justify-between gap-3 text-left"
                 >
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {idx + 1}</p>
+                    <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {originalOrder + 1}</p>
                     <p className="text-[color:var(--ink-900)] mt-1 font-semibold">{question.teks_soal}</p>
                   </div>
                   <span className="text-sm text-[color:var(--ink-500)]">{isOpen ? "Tutup" : "Buka"}</span>
@@ -876,12 +1401,45 @@ export default function StudentMaterialDetailPage() {
                     {radarData.length > 0 && (
                       <div className="h-72 bg-white rounded-2xl border border-black/5 p-4">
                         <ResponsiveContainer>
-                          <RadarChart data={radarData}>
-                            <PolarGrid />
-                            <PolarAngleAxis dataKey="subject" />
-                            <PolarRadiusAxis />
-                            <Radar dataKey="score" fill="#0f766e" fillOpacity={0.45} />
-                          </RadarChart>
+                          {radarData.length === 2 ? (
+                            <BarChart
+                              data={radarData}
+                              layout="vertical"
+                              margin={{ top: 10, right: 24, bottom: 10, left: 16 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis
+                                type="number"
+                                domain={[0, Math.max(...radarData.map((d) => d.full), 1)]}
+                                tick={{ fontSize: 11 }}
+                                angle={0}
+                              />
+                              <YAxis
+                                type="category"
+                                dataKey="subject"
+                                width={120}
+                                tick={{ fontSize: 11 }}
+                                angle={0}
+                              />
+                              <Tooltip
+                                formatter={(value, _name, item) => {
+                                  const score = typeof value === "number" ? value : Number(value ?? 0);
+                                  const full = typeof item?.payload?.full === "number" ? item.payload.full : "-";
+                                  return [`${score} / ${full}`, "Skor"];
+                                }}
+                              />
+                              <Bar dataKey="score" fill="#0f766e" radius={[0, 6, 6, 0]}>
+                                <LabelList dataKey="score" position="right" style={{ fontSize: 11, fill: "#0f172a" }} />
+                              </Bar>
+                            </BarChart>
+                          ) : (
+                            <RadarChart data={radarData}>
+                              <PolarGrid />
+                              <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
+                              <PolarRadiusAxis tick={{ fontSize: 10 }} />
+                              <Radar dataKey="score" fill="#0f766e" fillOpacity={0.45} />
+                            </RadarChart>
+                          )}
                         </ResponsiveContainer>
                       </div>
                     )}

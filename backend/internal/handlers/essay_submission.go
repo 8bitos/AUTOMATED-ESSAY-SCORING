@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -67,6 +68,10 @@ func (h *EssaySubmissionHandlers) CreateEssaySubmissionHandler(w http.ResponseWr
 		"ai_result":      createdAIResult,
 		"grading_status": newSubmission.AIGradingStatus,
 		"grading_message": func() string {
+			// Jika status completed tapi tanpa ai_result, anggap sebagai tugas manual.
+			if newSubmission.AIGradingStatus == "completed" && createdAIResult == nil {
+				return "Tugas berhasil dikirim ke guru untuk direview."
+			}
 			switch newSubmission.AIGradingStatus {
 			case "completed":
 				return "Jawaban berhasil dinilai AI."
@@ -139,6 +144,70 @@ func (h *EssaySubmissionHandlers) GetEssaySubmissionsByStudentIDHandler(w http.R
 		return
 	}
 
+	respondWithJSON(w, http.StatusOK, submissions)
+}
+
+func (h *EssaySubmissionHandlers) GetMaterialStudentSubmissionSummariesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	materialID, ok := vars["materialId"]
+	if !ok || strings.TrimSpace(materialID) == "" {
+		respondWithError(w, http.StatusBadRequest, "Material ID is missing")
+		return
+	}
+	teacherID, ok := r.Context().Value("userID").(string)
+	if !ok || strings.TrimSpace(teacherID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
+	page := 1
+	size := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			page = parsed
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			size = parsed
+		}
+	}
+
+	result, err := h.Service.ListMaterialStudentSubmissionSummaries(materialID, teacherID, q, sortBy, page, size)
+	if err != nil {
+		log.Printf("ERROR: Failed to list student submission summaries for material %s: %v", materialID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve student submission summaries")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, result)
+}
+
+func (h *EssaySubmissionHandlers) GetMaterialSubmissionsByStudentHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	materialID, ok := vars["materialId"]
+	if !ok || strings.TrimSpace(materialID) == "" {
+		respondWithError(w, http.StatusBadRequest, "Material ID is missing")
+		return
+	}
+	studentID, ok := vars["studentId"]
+	if !ok || strings.TrimSpace(studentID) == "" {
+		respondWithError(w, http.StatusBadRequest, "Student ID is missing")
+		return
+	}
+	teacherID, ok := r.Context().Value("userID").(string)
+	if !ok || strings.TrimSpace(teacherID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	submissions, err := h.Service.GetMaterialSubmissionsByStudent(materialID, teacherID, studentID)
+	if err != nil {
+		log.Printf("ERROR: Failed to get submissions for material %s student %s: %v", materialID, studentID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve student submissions")
+		return
+	}
 	respondWithJSON(w, http.StatusOK, submissions)
 }
 

@@ -42,6 +42,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     title: string;
     message: string;
     createdAt: string;
+    href?: string;
   }>>([]);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [teacherNotifPrefs, setTeacherNotifPrefs] = useState<TeacherNotificationPrefs>({
@@ -59,6 +60,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     newMaterials: true,
     reviewedScores: true,
     newQuestions: true,
+    sidebarIndicators: true,
   });
   const [impersonationActive, setImpersonationActive] = useState(false);
   const [impersonationBusy, setImpersonationBusy] = useState(false);
@@ -199,7 +201,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     setNotifLoading(true);
     try {
       if (user.peran === 'teacher') {
-        const allItems: Array<{ id: string; title: string; message: string; createdAt: string }> = [];
+        const allItems: Array<{ id: string; title: string; message: string; createdAt: string; href?: string }> = [];
         const classRes = await fetch('/api/classes', { credentials: 'include' });
         if (!classRes.ok) throw new Error('Failed to fetch classes');
         const classes = await classRes.json();
@@ -215,6 +217,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                   title: 'Join Request Baru',
                   message: `${req.student_name || 'Siswa'} meminta bergabung ke ${cls.class_name || 'kelas Anda'}.`,
                   createdAt: req.requested_at || new Date().toISOString(),
+                  href: '/dashboard/teacher/classes',
                 });
               }
             }
@@ -245,6 +248,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     title: 'Submission Perlu Review',
                     message: `${submission.student_name || 'Siswa'} mengirim jawaban di ${material.judul || 'materi'} (${cls.class_name || 'kelas'}).`,
                     createdAt: submission.submitted_at || new Date().toISOString(),
+                    href: '/dashboard/teacher/penilaian',
                   });
                 }
               }
@@ -270,6 +274,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
             title: 'Approval Pending',
             message: `${item.user_name || 'User'} menunggu approval (${item.request_type || 'profile_change'}).`,
             createdAt: item.created_at || new Date().toISOString(),
+            href: '/dashboard/superadmin/profile-requests?status=pending',
           }));
           mapped.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           setNotifications(mapped.slice(0, 12));
@@ -400,6 +405,13 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     if (!notifications.length) return;
     const merged = Array.from(new Set([...readNotificationIds, ...notifications.map((n) => n.id)]));
     persistReadNotifications(merged);
+  };
+
+  const openNotification = (item: { id: string; href?: string }) => {
+    const nextRead = Array.from(new Set([...readNotificationIds, item.id]));
+    persistReadNotifications(nextRead);
+    setNotifOpen(false);
+    router.push(item.href || notificationPageByRole(user?.peran));
   };
 
   // Close on click outside
@@ -554,11 +566,16 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                           notifications.slice(0, 3).map((item) => {
                             const isRead = readNotificationIds.includes(item.id);
                             return (
-                            <div key={item.id} className={`topbar-list-item rounded-lg px-2 py-2 hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}>
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => openNotification(item)}
+                              className={`topbar-list-item block w-full rounded-lg px-2 py-2 text-left hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}
+                            >
                               <p className="text-sm font-medium text-slate-900">{item.title}</p>
                               <p className="mt-0.5 text-xs text-slate-600">{item.message}</p>
                               <p className="mt-1 text-[11px] text-slate-400">{formatNotifDate(item.createdAt)}</p>
-                            </div>
+                            </button>
                           )})
                         )}
                       </div>

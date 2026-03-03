@@ -1,0 +1,3206 @@
+diff --git a/backend/internal/handlers/essay_submission.go b/backend/internal/handlers/essay_submission.go
+index 7b86368..da4b5d1 100644
+--- a/backend/internal/handlers/essay_submission.go
++++ b/backend/internal/handlers/essay_submission.go
+@@ -6,6 +6,7 @@ import (
+ 	"encoding/json"
+ 	"log"
+ 	"net/http"
++	"strconv"
+ 	"strings"
+ 
+ 	"github.com/gorilla/mux"
+@@ -142,6 +143,70 @@ func (h *EssaySubmissionHandlers) GetEssaySubmissionsByStudentIDHandler(w http.R
+ 	respondWithJSON(w, http.StatusOK, submissions)
+ }
+ 
++func (h *EssaySubmissionHandlers) GetMaterialStudentSubmissionSummariesHandler(w http.ResponseWriter, r *http.Request) {
++	vars := mux.Vars(r)
++	materialID, ok := vars["materialId"]
++	if !ok || strings.TrimSpace(materialID) == "" {
++		respondWithError(w, http.StatusBadRequest, "Material ID is missing")
++		return
++	}
++	teacherID, ok := r.Context().Value("userID").(string)
++	if !ok || strings.TrimSpace(teacherID) == "" {
++		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
++		return
++	}
++
++	q := strings.TrimSpace(r.URL.Query().Get("q"))
++	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
++	page := 1
++	size := 10
++	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
++		if parsed, err := strconv.Atoi(raw); err == nil {
++			page = parsed
++		}
++	}
++	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
++		if parsed, err := strconv.Atoi(raw); err == nil {
++			size = parsed
++		}
++	}
++
++	result, err := h.Service.ListMaterialStudentSubmissionSummaries(materialID, teacherID, q, sortBy, page, size)
++	if err != nil {
++		log.Printf("ERROR: Failed to list student submission summaries for material %s: %v", materialID, err)
++		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve student submission summaries")
++		return
++	}
++	respondWithJSON(w, http.StatusOK, result)
++}
++
++func (h *EssaySubmissionHandlers) GetMaterialSubmissionsByStudentHandler(w http.ResponseWriter, r *http.Request) {
++	vars := mux.Vars(r)
++	materialID, ok := vars["materialId"]
++	if !ok || strings.TrimSpace(materialID) == "" {
++		respondWithError(w, http.StatusBadRequest, "Material ID is missing")
++		return
++	}
++	studentID, ok := vars["studentId"]
++	if !ok || strings.TrimSpace(studentID) == "" {
++		respondWithError(w, http.StatusBadRequest, "Student ID is missing")
++		return
++	}
++	teacherID, ok := r.Context().Value("userID").(string)
++	if !ok || strings.TrimSpace(teacherID) == "" {
++		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
++		return
++	}
++
++	submissions, err := h.Service.GetMaterialSubmissionsByStudent(materialID, teacherID, studentID)
++	if err != nil {
++		log.Printf("ERROR: Failed to get submissions for material %s student %s: %v", materialID, studentID, err)
++		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve student submissions")
++		return
++	}
++	respondWithJSON(w, http.StatusOK, submissions)
++}
++
+ // ----------------------------
+ // Update
+ // ----------------------------
+diff --git a/backend/internal/models/essay_submission.go b/backend/internal/models/essay_submission.go
+index 1d23aa5..47fc535 100644
+--- a/backend/internal/models/essay_submission.go
++++ b/backend/internal/models/essay_submission.go
+@@ -37,3 +37,22 @@ type CreateEssaySubmissionRequest struct {
+ type UpdateEssaySubmissionRequest struct {
+ 	TeksJawaban *string `json:"teks_jawaban,omitempty"` // Pointer ke string untuk teks jawaban (opsional).
+ }
++
++type MaterialStudentSubmissionSummary struct {
++	StudentID           string     `json:"student_id"`
++	StudentName         string     `json:"student_name"`
++	StudentEmail        string     `json:"student_email"`
++	TotalSubmissions    int        `json:"total_submissions"`
++	ReviewedSubmissions int        `json:"reviewed_submissions"`
++	PendingSubmissions  int        `json:"pending_submissions"`
++	AverageFinalScore   *float64   `json:"average_final_score,omitempty"`
++	LatestSubmittedAt   *time.Time `json:"latest_submitted_at,omitempty"`
++}
++
++type MaterialStudentSubmissionSummaryListResponse struct {
++	Items            []MaterialStudentSubmissionSummary `json:"items"`
++	Total            int64                              `json:"total"`
++	Page             int                                `json:"page"`
++	Size             int                                `json:"size"`
++	TotalSubmissions int64                              `json:"total_submissions"`
++}
+diff --git a/backend/internal/routes/routes.go b/backend/internal/routes/routes.go
+index e350bec..7cce5a5 100644
+--- a/backend/internal/routes/routes.go
++++ b/backend/internal/routes/routes.go
+@@ -184,6 +184,8 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
+ 
+ 	// Rute terkait submission esai khusus guru.
+ 	teacherRouter.HandleFunc("/essay-questions/{questionId}/submissions", essaySubmissionHandlers.GetEssaySubmissionsByQuestionIDHandler).Methods("GET") // Mendapatkan submission esai berdasarkan pertanyaan.
++	teacherRouter.HandleFunc("/materials/{materialId}/student-submission-summaries", essaySubmissionHandlers.GetMaterialStudentSubmissionSummariesHandler).Methods("GET")
++	teacherRouter.HandleFunc("/materials/{materialId}/students/{studentId}/submissions", essaySubmissionHandlers.GetMaterialSubmissionsByStudentHandler).Methods("GET")
+ 
+ 	// --- Rute Khusus Superadmin ---
+ 	adminRouter := protectedRouter.PathPrefix("/admin").Subrouter()
+diff --git a/backend/internal/services/ai_service.go b/backend/internal/services/ai_service.go
+index 5631aae..1944f7b 100644
+--- a/backend/internal/services/ai_service.go
++++ b/backend/internal/services/ai_service.go
+@@ -544,7 +544,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
+ 	promptBuilder.WriteString("6) keywords must be concise and relevant (3-6 items).\n")
+ 	promptBuilder.WriteString("7) weight must be positive number.\n")
+ 	promptBuilder.WriteString("8) For holistik, rubrics must contain exactly 1 aspect.\n")
+-	promptBuilder.WriteString("9) For analitik, rubrics should contain 2 - 5 aspects with clear simple names.\n")
++	promptBuilder.WriteString("9) For analitik, rubrics must contain 2 - 5 aspects with clear simple names.\n")
+ 	promptBuilder.WriteString("10) Each descriptor description must be plain string, no object.\n")
+ 	promptBuilder.WriteString("11) If the material is not history-related, return an error JSON: {\"error\":\"MATERI_BUKAN_SEJARAH\"}\n")
+ 
+@@ -612,8 +612,22 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
+ 	if draft.RubricType == "holistik" && len(draft.Rubrics) > 1 {
+ 		draft.Rubrics = draft.Rubrics[:1]
+ 	}
+-	if draft.RubricType == "analitik" && len(draft.Rubrics) > 2 {
+-		draft.Rubrics = draft.Rubrics[:2]
++	if draft.RubricType == "analitik" {
++		for len(draft.Rubrics) < 2 {
++			nextIdx := len(draft.Rubrics) + 1
++			draft.Rubrics = append(draft.Rubrics, models.GeneratedRubricAspect{
++				NamaAspek: fmt.Sprintf("Aspek %d", nextIdx),
++				Descriptors: []models.GeneratedDescriptor{
++					{Score: 0, Description: "Belum memenuhi kriteria."},
++					{Score: 1, Description: "Sebagian kecil kriteria terpenuhi."},
++					{Score: 2, Description: "Sebagian besar kriteria terpenuhi."},
++					{Score: 3, Description: "Seluruh kriteria terpenuhi dengan baik."},
++				},
++			})
++		}
++		if len(draft.Rubrics) > 5 {
++			draft.Rubrics = draft.Rubrics[:5]
++		}
+ 	}
+ 	draft.TeksSoal = trimToWordLimit(draft.TeksSoal, 30)
+ 	draft.IdealAnswer = trimToWordLimit(draft.IdealAnswer, 90)
+diff --git a/backend/internal/services/essay_submission_service.go b/backend/internal/services/essay_submission_service.go
+index 4bc3013..77878ca 100644
+--- a/backend/internal/services/essay_submission_service.go
++++ b/backend/internal/services/essay_submission_service.go
+@@ -461,6 +461,203 @@ func (s *EssaySubmissionService) GetEssaySubmissionsByQuestionID(questionID stri
+ 	return submissions, nil
+ }
+ 
++func (s *EssaySubmissionService) ListMaterialStudentSubmissionSummaries(materialID, teacherID, query, sortBy string, page, size int) (*models.MaterialStudentSubmissionSummaryListResponse, error) {
++	if page < 1 {
++		page = 1
++	}
++	if size < 1 {
++		size = 10
++	}
++	if size > 20 {
++		size = 20
++	}
++
++	whereClauses := []string{"m.id = $1", "c.teacher_id = $2"}
++	args := []interface{}{materialID, teacherID}
++	argPos := 3
++
++	if trimmed := strings.TrimSpace(query); trimmed != "" {
++		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
++		args = append(args, "%"+trimmed+"%")
++		argPos++
++	}
++
++	baseCTE := `
++		WITH grouped AS (
++			SELECT
++				es.siswa_id AS student_id,
++				u.nama_lengkap AS student_name,
++				u.email AS student_email,
++				COUNT(es.id)::int AS total_submissions,
++				SUM(CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END)::int AS reviewed_submissions,
++				MAX(es.submitted_at) AS latest_submitted_at,
++				AVG(COALESCE(tr.revised_score, ar.skor_ai)) AS average_final_score
++			FROM essay_submissions es
++			JOIN essay_questions eq ON eq.id = es.soal_id
++			JOIN materials m ON m.id = eq.material_id
++			JOIN classes c ON c.id = m.class_id
++			JOIN users u ON u.id = es.siswa_id
++			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
++			LEFT JOIN ai_results ar ON ar.submission_id = es.id
++			WHERE ` + strings.Join(whereClauses, " AND ") + `
++			GROUP BY es.siswa_id, u.nama_lengkap, u.email
++		)
++	`
++
++	countQuery := baseCTE + `SELECT COUNT(*) FROM grouped`
++	var total int64
++	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
++		return nil, fmt.Errorf("failed to count material student summaries: %w", err)
++	}
++
++	totalSubmissionsQuery := baseCTE + `SELECT COALESCE(SUM(total_submissions), 0) FROM grouped`
++	var totalSubmissions int64
++	if err := s.db.QueryRow(totalSubmissionsQuery, args...).Scan(&totalSubmissions); err != nil {
++		return nil, fmt.Errorf("failed to sum material submissions: %w", err)
++	}
++
++	orderBy := "latest_submitted_at DESC, student_name ASC"
++	switch strings.TrimSpace(sortBy) {
++	case "alpha":
++		orderBy = "student_name ASC"
++	case "pending_desc":
++		orderBy = "(total_submissions - reviewed_submissions) DESC, latest_submitted_at DESC"
++	case "pending_asc":
++		orderBy = "(total_submissions - reviewed_submissions) ASC, latest_submitted_at DESC"
++	}
++
++	offset := (page - 1) * size
++	dataQuery := baseCTE + fmt.Sprintf(`
++		SELECT
++			student_id,
++			student_name,
++			student_email,
++			total_submissions,
++			reviewed_submissions,
++			(total_submissions - reviewed_submissions) AS pending_submissions,
++			average_final_score,
++			latest_submitted_at
++		FROM grouped
++		ORDER BY %s
++		LIMIT $%d OFFSET $%d
++	`, orderBy, argPos, argPos+1)
++
++	queryArgs := append(args, size, offset)
++	rows, err := s.db.Query(dataQuery, queryArgs...)
++	if err != nil {
++		return nil, fmt.Errorf("failed to query material student summaries: %w", err)
++	}
++	defer rows.Close()
++
++	result := &models.MaterialStudentSubmissionSummaryListResponse{
++		Items:            []models.MaterialStudentSubmissionSummary{},
++		Total:            total,
++		Page:             page,
++		Size:             size,
++		TotalSubmissions: totalSubmissions,
++	}
++	for rows.Next() {
++		var item models.MaterialStudentSubmissionSummary
++		var avgScore sql.NullFloat64
++		var latestSubmitted sql.NullTime
++		if err := rows.Scan(
++			&item.StudentID,
++			&item.StudentName,
++			&item.StudentEmail,
++			&item.TotalSubmissions,
++			&item.ReviewedSubmissions,
++			&item.PendingSubmissions,
++			&avgScore,
++			&latestSubmitted,
++		); err != nil {
++			return nil, fmt.Errorf("failed to scan material student summary: %w", err)
++		}
++		if avgScore.Valid {
++			item.AverageFinalScore = &avgScore.Float64
++		}
++		if latestSubmitted.Valid {
++			ts := latestSubmitted.Time
++			item.LatestSubmittedAt = &ts
++		}
++		result.Items = append(result.Items, item)
++	}
++	if err := rows.Err(); err != nil {
++		return nil, fmt.Errorf("failed during material student summaries iteration: %w", err)
++	}
++	return result, nil
++}
++
++func (s *EssaySubmissionService) GetMaterialSubmissionsByStudent(materialID, teacherID, studentID string) ([]models.EssaySubmission, error) {
++	query := `
++		SELECT
++			es.id, es.soal_id, es.siswa_id, es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
++			u.nama_lengkap AS student_name, u.email AS student_email,
++			ar.skor_ai, ar.umpan_balik_ai,
++			tr.id AS review_id, tr.revised_score, tr.teacher_feedback,
++			ar.logs_rag
++		FROM essay_submissions es
++		JOIN essay_questions eq ON eq.id = es.soal_id
++		JOIN materials m ON m.id = eq.material_id
++		JOIN classes c ON c.id = m.class_id
++		JOIN users u ON u.id = es.siswa_id
++		LEFT JOIN ai_results ar ON ar.submission_id = es.id
++		LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
++		WHERE m.id = $1 AND c.teacher_id = $2 AND es.siswa_id = $3
++		ORDER BY es.submitted_at DESC
++	`
++	rows, err := s.db.Query(query, materialID, teacherID, studentID)
++	if err != nil {
++		return nil, fmt.Errorf("failed to query student submissions by material: %w", err)
++	}
++	defer rows.Close()
++
++	result := []models.EssaySubmission{}
++	for rows.Next() {
++		var es models.EssaySubmission
++		var skorAI sql.NullFloat64
++		var umpanBalikAI sql.NullString
++		var reviewID sql.NullString
++		var revisedScoreDB sql.NullFloat64
++		var teacherFeedbackDB sql.NullString
++		var logsRAG sql.NullString
++		if err := rows.Scan(
++			&es.ID, &es.QuestionID, &es.StudentID, &es.TeksJawaban, &es.SubmittedAt,
++			&es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
++			&es.StudentName, &es.StudentEmail,
++			&skorAI, &umpanBalikAI,
++			&reviewID, &revisedScoreDB, &teacherFeedbackDB, &logsRAG,
++		); err != nil {
++			return nil, fmt.Errorf("failed to scan student material submission: %w", err)
++		}
++		if skorAI.Valid {
++			es.SkorAI = &skorAI.Float64
++		}
++		if umpanBalikAI.Valid {
++			es.UmpanBalikAI = &umpanBalikAI.String
++		}
++		if reviewID.Valid {
++			es.ReviewID = &reviewID.String
++		}
++		if revisedScoreDB.Valid {
++			es.RevisedScore = &revisedScoreDB.Float64
++		}
++		if teacherFeedbackDB.Valid {
++			es.TeacherFeedback = &teacherFeedbackDB.String
++		}
++		if logsRAG.Valid && strings.TrimSpace(logsRAG.String) != "" {
++			var parsedScores []models.GradeEssayAspectScore
++			if unmarshalErr := json.Unmarshal([]byte(logsRAG.String), &parsedScores); unmarshalErr == nil {
++				es.RubricScores = parsedScores
++			}
++		}
++		result = append(result, es)
++	}
++	if err := rows.Err(); err != nil {
++		return nil, fmt.Errorf("failed during student material submissions iteration: %w", err)
++	}
++	return result, nil
++}
++
+ // GetEssaySubmissionsByStudentID mengambil semua submission esai oleh siswa tertentu.
+ func (s *EssaySubmissionService) GetEssaySubmissionsByStudentID(studentID string) ([]models.EssaySubmission, error) {
+ 	query := `
+diff --git a/frontend/eslint.config.mjs b/frontend/eslint.config.mjs
+index 05e726d..5c44b45 100644
+--- a/frontend/eslint.config.mjs
++++ b/frontend/eslint.config.mjs
+@@ -1,18 +1,16 @@
+-import { defineConfig, globalIgnores } from "eslint/config";
+-import nextVitals from "eslint-config-next/core-web-vitals";
+-import nextTs from "eslint-config-next/typescript";
++import { FlatCompat } from "@eslint/eslintrc";
++import path from "node:path";
++import { fileURLToPath } from "node:url";
+ 
+-const eslintConfig = defineConfig([
+-  ...nextVitals,
+-  ...nextTs,
+-  // Override default ignores of eslint-config-next.
+-  globalIgnores([
+-    // Default ignores of eslint-config-next:
+-    ".next/**",
+-    "out/**",
+-    "build/**",
+-    "next-env.d.ts",
+-  ]),
+-]);
++const __filename = fileURLToPath(import.meta.url);
++const __dirname = path.dirname(__filename);
++const compat = new FlatCompat({ baseDirectory: __dirname });
++
++const eslintConfig = [
++  ...compat.extends("next/core-web-vitals", "next/typescript"),
++  {
++    ignores: [".next/**", "out/**", "build/**", "next-env.d.ts"],
++  },
++];
+ 
+ export default eslintConfig;
+diff --git a/frontend/src/app/dashboard/student/classes/[classId]/materials/[materialId]/page.tsx b/frontend/src/app/dashboard/student/classes/[classId]/materials/[materialId]/page.tsx
+index b311f71..c452422 100644
+--- a/frontend/src/app/dashboard/student/classes/[classId]/materials/[materialId]/page.tsx
++++ b/frontend/src/app/dashboard/student/classes/[classId]/materials/[materialId]/page.tsx
+@@ -10,6 +10,13 @@ import {
+   PolarRadiusAxis,
+   Radar,
+   ResponsiveContainer,
++  BarChart,
++  Bar,
++  XAxis,
++  YAxis,
++  CartesianGrid,
++  Tooltip,
++  LabelList,
+ } from "recharts";
+ 
+ interface RubricScore {
+@@ -32,6 +39,8 @@ interface EssayQuestion {
+   id: string;
+   teks_soal: string;
+   weight?: number;
++  created_at?: string;
++  updated_at?: string;
+   rubrics?: QuestionRubric[];
+   submission_id?: string;
+   student_essay_text?: string;
+@@ -59,6 +68,7 @@ interface ClassDetail {
+ 
+ type ActiveSection = "overview" | "questions" | "results";
+ type QuestionSort = "default" | "weight_desc" | "alphabet" | "unanswered_first";
++type ResultSort = "default" | "score_high" | "score_low" | "latest_score" | "newly_reviewed";
+ 
+ type MaterialBlockType = "heading" | "paragraph" | "video" | "image" | "link" | "pdf" | "ppt" | "bullet_list" | "number_list";
+ type BlockAlign = "left" | "center" | "right" | "justify";
+@@ -199,6 +209,8 @@ export default function StudentMaterialDetailPage() {
+   const [submitLoading, setSubmitLoading] = useState<Record<string, boolean>>({});
+   const [submitMessage, setSubmitMessage] = useState<Record<string, string>>({});
+   const [questionSort, setQuestionSort] = useState<QuestionSort>("default");
++  const [resultSort, setResultSort] = useState<ResultSort>("default");
++  const [hideAnsweredQuestions, setHideAnsweredQuestions] = useState(false);
+   const [openStudentAnswers, setOpenStudentAnswers] = useState<Record<string, boolean>>({});
+ 
+   const fetchData = useCallback(async (showLoader = true) => {
+@@ -282,18 +294,31 @@ export default function StudentMaterialDetailPage() {
+     }
+   }, [questions, questionSort]);
+ 
++  const visibleQuestions = useMemo(() => {
++    if (!hideAnsweredQuestions) return sortedQuestions;
++    return sortedQuestions.filter((q) => !q.submission_id);
++  }, [sortedQuestions, hideAnsweredQuestions]);
++
+   const resultItems = useMemo(() => {
+-    return questions
++    const base = questions
+       .filter((q) => !!q.submission_id)
+-      .map((q) => {
++      .map((q, filteredIndex) => {
++        const originalOrder = questions.findIndex((item) => item.id === q.id);
+         const rubricEntries = getRubricScoreEntries(q);
+-        const hasTeacherPane = q.revised_score !== undefined;
++        const hasTeacherPane = q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0;
+         const hasAIPane = q.skor_ai !== undefined || rubricEntries.length > 0;
++        const finalScore = q.revised_score ?? q.skor_ai;
++        const hasScore = typeof finalScore === "number";
++        const updatedAtMs = q.updated_at ? new Date(q.updated_at).getTime() : 0;
+         return {
++          originalOrder: originalOrder >= 0 ? originalOrder : filteredIndex,
+           question: q,
+           rubricEntries,
+           hasTeacherPane,
+           hasAIPane,
++          finalScore,
++          hasScore,
++          updatedAtMs,
+           radarData: rubricEntries.map((r) => ({
+             subject: r.aspek,
+             score: r.score,
+@@ -301,7 +326,49 @@ export default function StudentMaterialDetailPage() {
+           })),
+         };
+       });
+-  }, [questions]);
++    const sorted = [...base];
++    switch (resultSort) {
++      case "score_high":
++        sorted.sort((a, b) => {
++          if (a.hasScore && !b.hasScore) return -1;
++          if (!a.hasScore && b.hasScore) return 1;
++          if (!a.hasScore && !b.hasScore) return a.originalOrder - b.originalOrder;
++          if ((b.finalScore as number) !== (a.finalScore as number)) return (b.finalScore as number) - (a.finalScore as number);
++          return a.originalOrder - b.originalOrder;
++        });
++        break;
++      case "score_low":
++        sorted.sort((a, b) => {
++          if (a.hasScore && !b.hasScore) return -1;
++          if (!a.hasScore && b.hasScore) return 1;
++          if (!a.hasScore && !b.hasScore) return a.originalOrder - b.originalOrder;
++          if ((a.finalScore as number) !== (b.finalScore as number)) return (a.finalScore as number) - (b.finalScore as number);
++          return a.originalOrder - b.originalOrder;
++        });
++        break;
++      case "latest_score":
++        sorted.sort((a, b) => {
++          if (a.hasScore && !b.hasScore) return -1;
++          if (!a.hasScore && b.hasScore) return 1;
++          if (b.updatedAtMs !== a.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;
++          return b.originalOrder - a.originalOrder;
++        });
++        break;
++      case "newly_reviewed":
++        sorted.sort((a, b) => {
++          if (a.hasTeacherPane && !b.hasTeacherPane) return -1;
++          if (!a.hasTeacherPane && b.hasTeacherPane) return 1;
++          if (b.updatedAtMs !== a.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;
++          return a.originalOrder - b.originalOrder;
++        });
++        break;
++      case "default":
++      default:
++        sorted.sort((a, b) => a.originalOrder - b.originalOrder);
++        break;
++    }
++    return sorted;
++  }, [questions, resultSort]);
+ 
+   const finalMaterialScore = useMemo(() => {
+     const totalQuestions = questions.length;
+@@ -592,7 +659,7 @@ export default function StudentMaterialDetailPage() {
+         <section className="space-y-4">
+           {!isTugasType && (
+             <div className="sage-panel p-4">
+-              <div className="flex flex-wrap items-center gap-2">
++              <div className="flex flex-wrap items-center gap-3">
+                 <label className="text-sm text-[color:var(--ink-600)]">Urutkan Soal:</label>
+                 <select
+                   value={questionSort}
+@@ -604,6 +671,15 @@ export default function StudentMaterialDetailPage() {
+                   <option value="alphabet">Alphabet</option>
+                   <option value="unanswered_first">Belum Dijawab Dulu</option>
+                 </select>
++                <label className="inline-flex items-center gap-2 text-sm text-[color:var(--ink-600)]">
++                  <input
++                    type="checkbox"
++                    checked={hideAnsweredQuestions}
++                    onChange={(e) => setHideAnsweredQuestions(e.target.checked)}
++                    className="h-4 w-4"
++                  />
++                  Sembunyikan yang sudah dijawab
++                </label>
+               </div>
+             </div>
+           )}
+@@ -672,7 +748,10 @@ export default function StudentMaterialDetailPage() {
+           )}
+ 
+           {!isTugasType && questions.length === 0 && <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada soal.</div>}
+-          {!isTugasType && sortedQuestions.map((q, index) => (
++          {!isTugasType && questions.length > 0 && visibleQuestions.length === 0 && (
++            <div className="sage-panel p-6 text-[color:var(--ink-500)]">Semua soal sudah dijawab.</div>
++          )}
++          {!isTugasType && visibleQuestions.map((q, index) => (
+             <div key={q.id} className="sage-card p-5">
+               <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
+               <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
+@@ -762,21 +841,39 @@ export default function StudentMaterialDetailPage() {
+       {activeSection === "results" && !isTugasType && (
+         <section className="space-y-5">
+           <div className="sage-panel p-5">
+-            <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Nilai Akhir Materi</p>
+-            <p className="mt-1 text-3xl font-semibold text-[color:var(--ink-900)]">
+-              {finalMaterialScore.score == null ? "-" : finalMaterialScore.score.toFixed(2)}
+-              {finalMaterialScore.score != null && <span className="text-base font-medium text-[color:var(--ink-500)]"> / 100</span>}
+-            </p>
+-            <p className="mt-1 text-sm text-[color:var(--ink-500)]">
+-              Rumus: (Σ(nilai soal × bobot) / Σ(bobot)) × (jumlah soal dijawab / total soal) = (rata-rata berbobot × {finalMaterialScore.counted}) / {finalMaterialScore.totalQuestions || 1}.
+-            </p>
++            <div className="flex flex-wrap items-start justify-between gap-3">
++              <div>
++                <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Nilai Akhir Materi</p>
++                <p className="mt-1 text-3xl font-semibold text-[color:var(--ink-900)]">
++                  {finalMaterialScore.score == null ? "-" : finalMaterialScore.score.toFixed(2)}
++                  {finalMaterialScore.score != null && <span className="text-base font-medium text-[color:var(--ink-500)]"> / 100</span>}
++                </p>
++                <p className="mt-1 text-sm text-[color:var(--ink-500)]">
++                  Rumus: (Σ(nilai soal × bobot) / Σ(bobot)) × (jumlah soal dijawab / total soal) = (rata-rata berbobot × {finalMaterialScore.counted}) / {finalMaterialScore.totalQuestions || 1}.
++                </p>
++              </div>
++              <div className="min-w-64">
++                <label className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Urutkan Hasil</label>
++                <select
++                  value={resultSort}
++                  onChange={(e) => setResultSort(e.target.value as ResultSort)}
++                  className="sage-input mt-1"
++                >
++                  <option value="default">Default (Nomor Soal)</option>
++                  <option value="score_high">Nilai Tertinggi</option>
++                  <option value="score_low">Nilai Terendah</option>
++                  <option value="latest_score">Nilai Terbaru</option>
++                  <option value="newly_reviewed">Baru Direview</option>
++                </select>
++              </div>
++            </div>
+           </div>
+ 
+           {resultItems.length === 0 && (
+             <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada hasil. Kerjakan soal dulu.</div>
+           )}
+ 
+-          {resultItems.map(({ question, rubricEntries, hasTeacherPane, hasAIPane, radarData }, idx) => {
++          {resultItems.map(({ question, rubricEntries, hasTeacherPane, hasAIPane, radarData, originalOrder }) => {
+             const isOpen = !!openResults[question.id];
+             const aiFeedbackKey = `${question.id}-ai`;
+             const teacherFeedbackKey = `${question.id}-teacher`;
+@@ -798,7 +895,7 @@ export default function StudentMaterialDetailPage() {
+                   className="w-full flex items-start justify-between gap-3 text-left"
+                 >
+                   <div>
+-                    <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {idx + 1}</p>
++                    <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {originalOrder + 1}</p>
+                     <p className="text-[color:var(--ink-900)] mt-1 font-semibold">{question.teks_soal}</p>
+                   </div>
+                   <span className="text-sm text-[color:var(--ink-500)]">{isOpen ? "Tutup" : "Buka"}</span>
+@@ -876,12 +973,39 @@ export default function StudentMaterialDetailPage() {
+                     {radarData.length > 0 && (
+                       <div className="h-72 bg-white rounded-2xl border border-black/5 p-4">
+                         <ResponsiveContainer>
+-                          <RadarChart data={radarData}>
+-                            <PolarGrid />
+-                            <PolarAngleAxis dataKey="subject" />
+-                            <PolarRadiusAxis />
+-                            <Radar dataKey="score" fill="#0f766e" fillOpacity={0.45} />
+-                          </RadarChart>
++                          {radarData.length === 2 ? (
++                            <BarChart
++                              data={radarData}
++                              layout="vertical"
++                              margin={{ top: 10, right: 24, bottom: 10, left: 16 }}
++                            >
++                              <CartesianGrid strokeDasharray="3 3" />
++                              <XAxis
++                                type="number"
++                                domain={[0, Math.max(...radarData.map((d) => d.full), 1)]}
++                                tick={{ fontSize: 11 }}
++                                angle={0}
++                              />
++                              <YAxis
++                                type="category"
++                                dataKey="subject"
++                                width={120}
++                                tick={{ fontSize: 11 }}
++                                angle={0}
++                              />
++                              <Tooltip formatter={(value: number, _name, item: any) => [`${value} / ${item?.payload?.full ?? "-"}`, "Skor"]} />
++                              <Bar dataKey="score" fill="#0f766e" radius={[0, 6, 6, 0]}>
++                                <LabelList dataKey="score" position="right" style={{ fontSize: 11, fill: "#0f172a" }} />
++                              </Bar>
++                            </BarChart>
++                          ) : (
++                            <RadarChart data={radarData}>
++                              <PolarGrid />
++                              <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
++                              <PolarRadiusAxis tick={{ fontSize: 10 }} />
++                              <Radar dataKey="score" fill="#0f766e" fillOpacity={0.45} />
++                            </RadarChart>
++                          )}
+                         </ResponsiveContainer>
+                       </div>
+                     )}
+diff --git a/frontend/src/app/dashboard/student/my-classes/page.tsx b/frontend/src/app/dashboard/student/my-classes/page.tsx
+index 7999beb..02b871f 100644
+--- a/frontend/src/app/dashboard/student/my-classes/page.tsx
++++ b/frontend/src/app/dashboard/student/my-classes/page.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useMemo } from 'react';
+ import Link from 'next/link';
+ import { useAuth } from '@/context/AuthContext';
+ import TeacherProfileModal from '@/components/TeacherProfileModal';
+@@ -13,6 +13,7 @@ interface Class {
+   class_name: string;
+   deskripsi: string;
+   class_code: string;
++  is_archived?: boolean;
+   created_at: string;
+   updated_at: string;
+ }
+@@ -27,6 +28,17 @@ interface PendingClass {
+   requested_at: string;
+ }
+ 
++interface StudentProfile {
++  kelas_tingkat?: string | null;
++}
++
++const extractGradeLevel = (value?: string | null): string | null => {
++  if (!value) return null;
++  const normalized = value.toUpperCase();
++  const match = normalized.match(/\b(10|11|12)\b/);
++  return match ? match[1] : null;
++};
++
+ export default function StudentMyClassesPage() {
+   const { user } = useAuth();
+   const [classCode, setClassCode] = useState('');
+@@ -34,15 +46,21 @@ export default function StudentMyClassesPage() {
+   const [loading, setLoading] = useState(false);
+   const [classes, setClasses] = useState<Class[]>([]);
+   const [pendingClasses, setPendingClasses] = useState<PendingClass[]>([]);
++  const [browseClasses, setBrowseClasses] = useState<Class[]>([]);
++  const [browseQuery, setBrowseQuery] = useState('');
++  const [joiningCode, setJoiningCode] = useState<string | null>(null);
++  const [browseOpen, setBrowseOpen] = useState(false);
++  const [browsePage, setBrowsePage] = useState(1);
+   const [fetchingClasses, setFetchingClasses] = useState(true);
+   const [profileModalOpen, setProfileModalOpen] = useState(false);
+   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+   const [selectedTeacherName, setSelectedTeacherName] = useState<string | null>(null);
++  const [studentGradeLevel, setStudentGradeLevel] = useState<string | null>(null);
+ 
+   const fetchClasses = async () => {
+     setFetchingClasses(true);
+     try {
+-      const [classesRes, pendingRes] = await Promise.all([
++      const [classesRes, pendingRes, allClassesRes, profileRes] = await Promise.all([
+         fetch(`/api/student/my-classes`, {
+           method: 'GET',
+           headers: { 'Content-Type': 'application/json' },
+@@ -53,15 +71,31 @@ export default function StudentMyClassesPage() {
+           headers: { 'Content-Type': 'application/json' },
+           credentials: 'include',
+         }),
++        fetch(`/api/classes-public`, {
++          method: 'GET',
++          headers: { 'Content-Type': 'application/json' },
++          credentials: 'include',
++        }),
++        fetch(`/api/profile`, {
++          method: 'GET',
++          headers: { 'Content-Type': 'application/json' },
++          credentials: 'include',
++        }),
+       ]);
+ 
+       if (!classesRes.ok) throw new Error('Failed to fetch classes.');
+       if (!pendingRes.ok) throw new Error('Failed to fetch pending classes.');
++      if (!allClassesRes.ok) throw new Error('Failed to fetch available classes.');
++      if (!profileRes.ok) throw new Error('Failed to fetch profile.');
+ 
+       const classesData: Class[] = await classesRes.json();
+       const pendingData: PendingClass[] = await pendingRes.json();
++      const allClassesData: Class[] = await allClassesRes.json();
++      const profileData: StudentProfile = await profileRes.json();
+       setClasses(Array.isArray(classesData) ? classesData : []);
+       setPendingClasses(Array.isArray(pendingData) ? pendingData : []);
++      setBrowseClasses(Array.isArray(allClassesData) ? allClassesData : []);
++      setStudentGradeLevel(extractGradeLevel(profileData?.kelas_tingkat));
+     } catch (err: any) {
+       setMessage(`Error fetching classes: ${err.message}`);
+     } finally {
+@@ -98,6 +132,64 @@ export default function StudentMyClassesPage() {
+     } finally { setLoading(false); }
+   };
+ 
++  const handleJoinByCode = async (targetCode: string) => {
++    setMessage('');
++    setJoiningCode(targetCode);
++    try {
++      const res = await fetch(`/api/student/join-class`, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        credentials: 'include',
++        body: JSON.stringify({ class_code: targetCode }),
++      });
++      const data = await res.json();
++      if (!res.ok) throw new Error(data.message || 'Failed to join class.');
++      setMessage(data.message || 'Permintaan bergabung berhasil dikirim.');
++      fetchClasses();
++    } catch (err: any) {
++      setMessage(`Error: ${err.message}`);
++    } finally {
++      setJoiningCode(null);
++    }
++  };
++
++  const BROWSE_PAGE_SIZE = 6;
++  const joinedClassIds = new Set(classes.map((c) => c.id));
++  const pendingClassIds = new Set(pendingClasses.map((c) => c.class_id));
++  const filteredBrowseClasses = useMemo(() => {
++    const needle = browseQuery.trim().toLowerCase();
++    const pool = browseClasses.filter((c) => {
++      if (c.is_archived) return false;
++      if (joinedClassIds.has(c.id)) return false;
++      if (pendingClassIds.has(c.id)) return false;
++      if (!needle) return true;
++      const haystack = `${c.class_name} ${c.teacher_name || ''} ${c.class_code || ''} ${c.deskripsi || ''}`.toLowerCase();
++      return haystack.includes(needle);
++    });
++    const withScore = pool.map((c) => {
++      const classLevel = extractGradeLevel(`${c.class_name} ${c.class_code}`);
++      const recommended = Boolean(studentGradeLevel && classLevel && classLevel === studentGradeLevel);
++      return { c, recommended };
++    });
++    withScore.sort((a, b) => {
++      if (a.recommended === b.recommended) {
++        return a.c.class_name.localeCompare(b.c.class_name, "id-ID");
++      }
++      return a.recommended ? -1 : 1;
++    });
++    return withScore.map((item) => item.c);
++  }, [browseClasses, browseQuery, classes, pendingClasses, studentGradeLevel]);
++  const totalBrowsePages = Math.max(1, Math.ceil(filteredBrowseClasses.length / BROWSE_PAGE_SIZE));
++  const currentBrowsePage = Math.min(browsePage, totalBrowsePages);
++  const pagedBrowseClasses = filteredBrowseClasses.slice(
++    (currentBrowsePage - 1) * BROWSE_PAGE_SIZE,
++    currentBrowsePage * BROWSE_PAGE_SIZE,
++  );
++
++  useEffect(() => {
++    setBrowsePage(1);
++  }, [browseQuery, browseOpen]);
++
+   return (
+     <div className="space-y-8">
+       <header className="sage-panel p-6 flex flex-col gap-2">
+@@ -114,19 +206,24 @@ export default function StudentMyClassesPage() {
+             <h2 className="text-lg font-semibold text-slate-900">Gabung Kelas Baru</h2>
+             <p className="text-sm text-slate-500">Masukkan kode kelas dari guru Anda.</p>
+           </div>
+-          <form onSubmit={handleJoinClass} className="flex w-full max-w-md gap-3">
+-            <input
+-              type="text"
+-              value={classCode}
+-              onChange={(e) => setClassCode(e.target.value)}
+-              placeholder="Kode kelas"
+-              className="sage-input"
+-              required
+-            />
+-            <button type="submit" disabled={loading} className="sage-button">
+-              {loading ? "Joining..." : "Join"}
++          <div className="flex w-full max-w-xl gap-3">
++            <form onSubmit={handleJoinClass} className="flex flex-1 gap-3">
++              <input
++                type="text"
++                value={classCode}
++                onChange={(e) => setClassCode(e.target.value)}
++                placeholder="Kode kelas"
++                className="sage-input"
++                required
++              />
++              <button type="submit" disabled={loading} className="sage-button">
++                {loading ? "Joining..." : "Join"}
++              </button>
++            </form>
++            <button type="button" className="sage-button-outline whitespace-nowrap" onClick={() => setBrowseOpen(true)}>
++              Browse Kelas
+             </button>
+-          </form>
++          </div>
+         </div>
+         {message && (
+           <p className={`text-sm mt-3 ${message.startsWith('Error:') ? 'text-red-500' : 'text-slate-700'}`}>
+@@ -206,6 +303,122 @@ export default function StudentMyClassesPage() {
+         isOpen={profileModalOpen}
+         onClose={() => setProfileModalOpen(false)}
+       />
++
++      {browseOpen && (
++        <div className="fixed inset-0 z-50 bg-black/45 p-4 flex items-center justify-center">
++          <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto">
++            <div className="flex items-start justify-between gap-3">
++              <div>
++                <h2 className="text-xl font-semibold text-slate-900">Browse Kelas</h2>
++                <p className="text-sm text-slate-500">Cari kelas mana pun dan kirim permintaan join.</p>
++                {studentGradeLevel && (
++                  <p className="text-xs mt-1 text-[color:var(--sage-700)]">
++                    Rekomendasi diprioritaskan untuk kelas {studentGradeLevel}.
++                  </p>
++                )}
++              </div>
++              <button type="button" className="sage-button-outline !px-3 !py-1.5" onClick={() => setBrowseOpen(false)}>
++                Tutup
++              </button>
++            </div>
++
++            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
++              <input
++                type="text"
++                value={browseQuery}
++                onChange={(e) => setBrowseQuery(e.target.value)}
++                placeholder="Cari nama kelas, guru, kode..."
++                className="sage-input w-full sm:max-w-lg"
++              />
++              <span className="sage-pill">{filteredBrowseClasses.length} hasil</span>
++            </div>
++
++            <div className="mt-4">
++              {fetchingClasses ? (
++                <p className="text-sm text-slate-500">Memuat daftar kelas...</p>
++              ) : filteredBrowseClasses.length === 0 ? (
++                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
++                  Tidak ada kelas yang cocok atau semua kelas sudah Anda ikuti.
++                </div>
++              ) : (
++                <>
++                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
++                    {pagedBrowseClasses.map((cls) => (
++                      <div key={`browse-${cls.id}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
++                        <div className="flex items-start justify-between gap-2">
++                          <p className="text-base font-semibold text-slate-900">{cls.class_name}</p>
++                          {studentGradeLevel && extractGradeLevel(`${cls.class_name} ${cls.class_code}`) === studentGradeLevel && (
++                            <span className="rounded-full border border-[color:var(--sage-500)] bg-[color:var(--sage-100)] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--sage-800)]">
++                              Direkomendasikan
++                            </span>
++                          )}
++                        </div>
++                        <p className="text-sm text-slate-600 mt-1">Code: {cls.class_code}</p>
++                        <p className="text-sm text-slate-600 mt-1">
++                          Guru:{" "}
++                          <button
++                            type="button"
++                            onClick={() => openTeacherProfile(cls.teacher_id || cls.pengajar_id, cls.teacher_name)}
++                            className="text-[color:var(--sage-700)] hover:underline"
++                          >
++                            {cls.teacher_name || "-"}
++                          </button>
++                        </p>
++                        <p className="text-xs text-slate-500 mt-2 line-clamp-3">{cls.deskripsi || "-"}</p>
++                        <div className="mt-3 flex justify-end">
++                          <button
++                            type="button"
++                            className="sage-button"
++                            disabled={joiningCode === cls.class_code}
++                            onClick={() => handleJoinByCode(cls.class_code)}
++                          >
++                            {joiningCode === cls.class_code ? "Joining..." : "Join Class"}
++                          </button>
++                        </div>
++                      </div>
++                    ))}
++                  </div>
++                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
++                    <p className="text-xs text-slate-500">
++                      Halaman {currentBrowsePage} dari {totalBrowsePages}
++                    </p>
++                    <div className="flex items-center gap-2">
++                      <button
++                        type="button"
++                        className="sage-button-outline !px-3 !py-1.5 text-xs"
++                        disabled={currentBrowsePage <= 1}
++                        onClick={() => setBrowsePage((p) => Math.max(1, p - 1))}
++                      >
++                        Prev
++                      </button>
++                      <input
++                        type="number"
++                        min={1}
++                        max={totalBrowsePages}
++                        value={currentBrowsePage}
++                        onChange={(e) => {
++                          const n = Number(e.target.value || 1);
++                          if (Number.isNaN(n)) return;
++                          setBrowsePage(Math.min(totalBrowsePages, Math.max(1, n)));
++                        }}
++                        className="sage-input w-20 !py-1.5 text-center"
++                      />
++                      <button
++                        type="button"
++                        className="sage-button-outline !px-3 !py-1.5 text-xs"
++                        disabled={currentBrowsePage >= totalBrowsePages}
++                        onClick={() => setBrowsePage((p) => Math.min(totalBrowsePages, p + 1))}
++                      >
++                        Next
++                      </button>
++                    </div>
++                  </div>
++                </>
++              )}
++            </div>
++          </div>
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/frontend/src/app/dashboard/student/profile/page.tsx b/frontend/src/app/dashboard/student/profile/page.tsx
+index 050e668..21e5b71 100644
+--- a/frontend/src/app/dashboard/student/profile/page.tsx
++++ b/frontend/src/app/dashboard/student/profile/page.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useEffect, useMemo, useState } from "react";
++import { useEffect, useMemo, useRef, useState } from "react";
+ import { useAuth } from "@/context/AuthContext";
+ import { FiUploadCloud, FiCalendar } from "react-icons/fi";
+ 
+@@ -30,7 +30,15 @@ const formatDateDisplay = (value?: string | null): string => {
+   const normalized = value.includes("T") ? value : `${value}T00:00:00`;
+   const d = new Date(normalized);
+   if (Number.isNaN(d.getTime())) return "-";
+-  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" }).format(d);
++  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
++};
++
++const formatDateDisplayLong = (value?: string | null): string => {
++  if (!value) return "";
++  const normalized = value.includes("T") ? value : `${value}T00:00:00`;
++  const d = new Date(normalized);
++  if (Number.isNaN(d.getTime())) return "";
++  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+ };
+ 
+ export default function StudentProfilePage() {
+@@ -45,6 +53,7 @@ export default function StudentProfilePage() {
+   const [tanggalLahirInput, setTanggalLahirInput] = useState("");
+   const [kelasLevel, setKelasLevel] = useState<"10" | "11" | "12">("10");
+   const [kelasParalel, setKelasParalel] = useState("A");
++  const dobInputRef = useRef<HTMLInputElement | null>(null);
+ 
+   useEffect(() => {
+     const fetchProfile = async () => {
+@@ -201,11 +210,49 @@ export default function StudentProfilePage() {
+               <div>
+                 <label className="text-sm text-slate-600">Tanggal Lahir</label>
+                 <input
++                  ref={dobInputRef}
+                   type="date"
+-                  className="sage-input mt-1"
++                  className="sr-only"
+                   value={tanggalLahirInput}
+                   onChange={(e) => setTanggalLahirInput(e.target.value)}
++                  lang="id-ID"
+                 />
++                <div className="mt-1 flex items-center gap-2">
++                  <input
++                    type="text"
++                    className="sage-input"
++                    value={formatDateDisplayLong(tanggalLahirInput)}
++                    placeholder="DD/MM/YYYY"
++                    readOnly
++                  />
++                  <button
++                    type="button"
++                    className="sage-button-outline !px-3"
++                    onClick={() => {
++                      const el = dobInputRef.current;
++                      if (!el) return;
++                      if (typeof el.showPicker === "function") {
++                        el.showPicker();
++                        return;
++                      }
++                      el.focus();
++                      el.click();
++                    }}
++                    aria-label="Pilih tanggal lahir"
++                  >
++                    <FiCalendar />
++                  </button>
++                  {tanggalLahirInput && (
++                    <button
++                      type="button"
++                      className="sage-button-outline !px-3"
++                      onClick={() => setTanggalLahirInput("")}
++                    >
++                      Reset
++                    </button>
++                  )}
++                </div>
++                <p className="mt-1 text-xs text-slate-500">Format tampilan: DD/MM/YYYY</p>
+               </div>
+ 
+               <div>
+diff --git a/frontend/src/app/dashboard/student/settings/notifications/page.tsx b/frontend/src/app/dashboard/student/settings/notifications/page.tsx
+index 8219981..e3477fb 100644
+--- a/frontend/src/app/dashboard/student/settings/notifications/page.tsx
++++ b/frontend/src/app/dashboard/student/settings/notifications/page.tsx
+@@ -13,6 +13,7 @@ export default function StudentNotificationSettingsPage() {
+     newMaterials: true,
+     reviewedScores: true,
+     newQuestions: true,
++    sidebarIndicators: true,
+   });
+   const [message, setMessage] = useState<string | null>(null);
+ 
+@@ -28,6 +29,7 @@ export default function StudentNotificationSettingsPage() {
+         newMaterials: parsed.newMaterials ?? prev.newMaterials,
+         reviewedScores: parsed.reviewedScores ?? prev.reviewedScores,
+         newQuestions: parsed.newQuestions ?? prev.newQuestions,
++        sidebarIndicators: parsed.sidebarIndicators ?? prev.sidebarIndicators,
+       }));
+     } catch {
+       window.localStorage.removeItem(STUDENT_NOTIFICATION_PREFS_KEY);
+@@ -130,6 +132,18 @@ export default function StudentNotificationSettingsPage() {
+           />
+         </label>
+ 
++        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
++          <div>
++            <p className="text-sm font-medium text-slate-900">Indikator update di sidebar</p>
++            <p className="text-xs text-slate-500">Tampilkan dot merah pada menu sidebar yang punya update penting.</p>
++          </div>
++          <ToggleSwitch
++            label="Toggle indikator update sidebar siswa"
++            checked={prefs.sidebarIndicators}
++            onChange={(value) => updatePref("sidebarIndicators", value)}
++          />
++        </label>
++
+         {message && <p className="text-sm text-emerald-700">{message}</p>}
+ 
+         <div className="flex justify-end">
+diff --git a/frontend/src/app/dashboard/superadmin/settings/notifications/page.tsx b/frontend/src/app/dashboard/superadmin/settings/notifications/page.tsx
+index 2dc3272..e8143e8 100644
+--- a/frontend/src/app/dashboard/superadmin/settings/notifications/page.tsx
++++ b/frontend/src/app/dashboard/superadmin/settings/notifications/page.tsx
+@@ -6,6 +6,7 @@ import ToggleSwitch from "@/components/ToggleSwitch";
+ 
+ type SuperadminNotificationPrefs = {
+   approvalRequests: boolean;
++  sidebarIndicators: boolean;
+ };
+ 
+ const STORAGE_KEY = "superadmin_notification_preferences";
+@@ -13,6 +14,7 @@ const STORAGE_KEY = "superadmin_notification_preferences";
+ export default function SuperadminNotificationSettingsPage() {
+   const [prefs, setPrefs] = useState<SuperadminNotificationPrefs>({
+     approvalRequests: true,
++    sidebarIndicators: true,
+   });
+   const [pollIntervalSeconds, setPollIntervalSeconds] = useState("30");
+   const [loadingConfig, setLoadingConfig] = useState(true);
+@@ -106,6 +108,21 @@ export default function SuperadminNotificationSettingsPage() {
+           />
+         </label>
+ 
++        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
++          <div>
++            <p className="text-sm font-medium text-slate-900">Indikator update di sidebar</p>
++            <p className="text-xs text-slate-500">Tampilkan dot merah pada menu sidebar yang punya update penting.</p>
++          </div>
++          <ToggleSwitch
++            label="Toggle indikator update sidebar superadmin"
++            checked={prefs.sidebarIndicators}
++            onChange={(value) => {
++              setPrefs((prev) => ({ ...prev, sidebarIndicators: value }));
++              setMessage(null);
++            }}
++          />
++        </label>
++
+         <div className="rounded-lg border border-slate-200 p-4 space-y-2">
+           <p className="text-sm font-medium text-slate-900">Interval Realtime Notifikasi</p>
+           <p className="text-xs text-slate-500">Dipakai oleh lonceng notifikasi dan halaman notifikasi semua role. Rentang 5-300 detik.</p>
+diff --git a/frontend/src/app/dashboard/teacher/classes/page.tsx b/frontend/src/app/dashboard/teacher/classes/page.tsx
+index b219398..c499985 100644
+--- a/frontend/src/app/dashboard/teacher/classes/page.tsx
++++ b/frontend/src/app/dashboard/teacher/classes/page.tsx
+@@ -30,6 +30,7 @@ interface Class {
+ 
+ type GradeTab = "10" | "11" | "12" | "other";
+ type SortKey = "newest" | "alpha";
++type GradeForm = "10" | "11" | "12" | "other";
+ 
+ const API_URL = "/api";
+ 
+@@ -64,12 +65,50 @@ const Modal = ({
+ 
+ const getGradeFromClassName = (className: string): GradeTab => {
+   const normalized = (className || "").trim().toUpperCase();
+-  if (normalized.startsWith("10")) return "10";
+-  if (normalized.startsWith("11")) return "11";
+-  if (normalized.startsWith("12")) return "12";
++  if (/(?:^|[^A-Z0-9])XII(?=[^A-Z0-9]|$)/.test(normalized)) return "12";
++  if (/(?:^|[^A-Z0-9])XI(?=[^A-Z0-9]|$)/.test(normalized)) return "11";
++  if (/(?:^|[^A-Z0-9])X(?=[^A-Z0-9]|$)/.test(normalized)) return "10";
++  const match = normalized.match(/(?:^|[^0-9])(10|11|12)(?=[A-Z0-9\s-]|$)/);
++  if (!match) return "other";
++  if (match[1] === "10") return "10";
++  if (match[1] === "11") return "11";
++  if (match[1] === "12") return "12";
+   return "other";
+ };
+ 
++const extractGradeAndParallel = (className: string): { grade: "10" | "11" | "12"; parallel: string } | null => {
++  const normalized = (className || "").trim().toUpperCase();
++  const roman = normalized.match(/(?:^|[^A-Z0-9])(XII|XI|X)\s*([A-Z0-9]{1,2})?(?=[^A-Z0-9]|$)/);
++  if (roman) {
++    const grade = roman[1] === "XII" ? "12" : roman[1] === "XI" ? "11" : "10";
++    return { grade, parallel: (roman[2] || "A").slice(0, 2) };
++  }
++  const match = normalized.match(/\b(10|11|12)\s*([A-Z0-9]{1,2})?\b/);
++  if (!match) return null;
++  return {
++    grade: match[1] as "10" | "11" | "12",
++    parallel: (match[2] || "A").slice(0, 2),
++  };
++};
++
++const hasGradeMarker = (value: string): boolean => {
++  const normalized = value.trim().toUpperCase();
++  if (!normalized) return false;
++  if (/(?:^|[^A-Z0-9])(10|11|12)(?=[A-Z0-9\s-]|$)/.test(normalized)) return true;
++  if (/(?:^|[^A-Z0-9])(XII|XI|X)(?=[^A-Z0-9]|$)/.test(normalized)) return true;
++  return false;
++};
++
++const buildClassName = (grade: GradeForm, parallel: string, customName: string): string => {
++  const cleanCustom = customName.trim();
++  const cleanParallel = (parallel || "A").toUpperCase();
++  if (grade === "other") return cleanCustom || `Kelas-${cleanParallel}`;
++  const code = `${grade}${cleanParallel}`;
++  if (!cleanCustom) return code;
++  if (hasGradeMarker(cleanCustom)) return cleanCustom;
++  return `${code} - ${cleanCustom}`;
++};
++
+ const getGradeAccent = (grade: GradeTab) => {
+   if (grade === "10") return "border-t-sky-500 bg-sky-50 text-sky-700";
+   if (grade === "11") return "border-t-emerald-500 bg-emerald-50 text-emerald-700";
+@@ -185,12 +224,14 @@ export default function ClassManagementPage() {
+   const [query, setQuery] = useState("");
+   const [sortKey, setSortKey] = useState<SortKey>("newest");
+ 
+-  const [tingkat, setTingkat] = useState<"10" | "11" | "12">("10");
++  const [tingkat, setTingkat] = useState<GradeForm>("10");
+   const [paralel, setParalel] = useState("A");
+   const [customName, setCustomName] = useState("");
+   const [newClassDesc, setNewClassDesc] = useState("");
+-  const [editClassName, setEditClassName] = useState("");
+   const [editClassDesc, setEditClassDesc] = useState("");
++  const [editTingkat, setEditTingkat] = useState<GradeForm>("10");
++  const [editParalel, setEditParalel] = useState("A");
++  const [editCustomName, setEditCustomName] = useState("");
+   const [confirmDeleteClass, setConfirmDeleteClass] = useState<Class | null>(null);
+ 
+   const fetchClasses = useCallback(async () => {
+@@ -221,6 +262,8 @@ export default function ClassManagementPage() {
+     }
+     return count;
+   }, [classes]);
++  const archivedCount = useMemo(() => classes.filter((c) => !!c.is_archived).length, [classes]);
++  const activeCount = classes.length - archivedCount;
+ 
+   const activeClasses = useMemo(() => {
+     const q = query.trim().toLowerCase();
+@@ -239,8 +282,8 @@ export default function ClassManagementPage() {
+     });
+   }, [classes, activeGrade, query, sortKey]);
+ 
+-  const generatedName = `${tingkat}${(paralel || "A").toUpperCase()}`;
+-  const finalClassName = customName.trim() || generatedName;
++  const generatedName = tingkat === "other" ? `Kelas-${(paralel || "X").toUpperCase()}` : `${tingkat}${(paralel || "A").toUpperCase()}`;
++  const finalClassName = buildClassName(tingkat, paralel, customName);
+ 
+   const handleCreateClass = async (e: React.FormEvent) => {
+     e.preventDefault();
+@@ -252,6 +295,9 @@ export default function ClassManagementPage() {
+       if (duplicate) {
+         throw new Error("Nama kelas sudah ada. Gunakan paralel/nama lain.");
+       }
++      if (tingkat === "other" && !customName.trim()) {
++        throw new Error("Untuk tingkat Lainnya, isi Nama Kelas (override) agar lebih jelas.");
++      }
+ 
+       const res = await fetch(`${API_URL}/classes`, {
+         method: "POST",
+@@ -281,8 +327,22 @@ export default function ClassManagementPage() {
+ 
+   const openEdit = (cls: Class) => {
+     setEditingClass(cls);
+-    setEditClassName(cls.class_name || "");
+     setEditClassDesc(cls.deskripsi || "");
++    const parsed = extractGradeAndParallel(cls.class_name || "");
++    if (parsed) {
++      setEditTingkat(parsed.grade);
++      setEditParalel(parsed.parallel || "A");
++      const generated = `${parsed.grade}${parsed.parallel || "A"}`.toUpperCase();
++      if ((cls.class_name || "").trim().toUpperCase() === generated) {
++        setEditCustomName("");
++      } else {
++        setEditCustomName(cls.class_name || "");
++      }
++    } else {
++      setEditTingkat("other");
++      setEditParalel("A");
++      setEditCustomName(cls.class_name || "");
++    }
+     setIsEditModalOpen(true);
+   };
+ 
+@@ -292,12 +352,16 @@ export default function ClassManagementPage() {
+     setIsUpdating(true);
+     setError(null);
+     try {
++      const finalEditName = buildClassName(editTingkat, editParalel, editCustomName);
++      if (editTingkat === "other" && !editCustomName.trim()) {
++        throw new Error("Untuk tingkat Lainnya, isi Nama Kelas (override) agar lebih jelas.");
++      }
+       const res = await fetch(`${API_URL}/classes/${editingClass.id}`, {
+         method: "PUT",
+         headers: { "Content-Type": "application/json" },
+         credentials: "include",
+         body: JSON.stringify({
+-          nama_kelas: editClassName.trim(),
++          nama_kelas: finalEditName,
+           deskripsi: editClassDesc,
+         }),
+       });
+@@ -305,6 +369,7 @@ export default function ClassManagementPage() {
+       setIsEditModalOpen(false);
+       setEditingClass(null);
+       await fetchClasses();
++      setActiveGrade(getGradeFromClassName(finalEditName));
+     } catch (err: any) {
+       setError(err.message || "Gagal mengupdate kelas");
+     } finally {
+@@ -369,9 +434,9 @@ export default function ClassManagementPage() {
+ 
+       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+         <SummaryCard title="Total Kelas" value={String(classes.length)} icon={<FiLayers />} />
+-        <SummaryCard title="Kelas 10" value={String(groupedCount["10"])} icon={<FiBookOpen />} />
+-        <SummaryCard title="Kelas 11" value={String(groupedCount["11"])} icon={<FiBookOpen />} />
+-        <SummaryCard title="Kelas 12" value={String(groupedCount["12"])} icon={<FiBookOpen />} />
++        <SummaryCard title="Kelas Aktif" value={String(activeCount)} icon={<FiBookOpen />} />
++        <SummaryCard title="Kelas Arsip" value={String(archivedCount)} icon={<FiArchive />} />
++        <SummaryCard title="Hasil Filter" value={String(activeClasses.length)} icon={<FiSearch />} />
+       </section>
+ 
+       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+@@ -436,12 +501,13 @@ export default function ClassManagementPage() {
+               <label className="text-sm font-medium text-slate-700">Tingkat</label>
+               <select
+                 value={tingkat}
+-                onChange={(e) => setTingkat(e.target.value as "10" | "11" | "12")}
++                onChange={(e) => setTingkat(e.target.value as GradeForm)}
+                 className="mt-1 sage-input"
+               >
+                 <option value="10">Kelas 10</option>
+                 <option value="11">Kelas 11</option>
+                 <option value="12">Kelas 12</option>
++                <option value="other">Lainnya</option>
+               </select>
+             </div>
+             <div>
+@@ -495,9 +561,42 @@ export default function ClassManagementPage() {
+ 
+       <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit Kelas">
+         <form onSubmit={handleUpdateClass} className="space-y-4">
++          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++            <div>
++              <label className="text-sm font-medium text-slate-700">Tingkat</label>
++              <select
++                value={editTingkat}
++                onChange={(e) => setEditTingkat(e.target.value as GradeForm)}
++                className="mt-1 sage-input"
++              >
++                <option value="10">Kelas 10</option>
++                <option value="11">Kelas 11</option>
++                <option value="12">Kelas 12</option>
++                <option value="other">Lainnya</option>
++              </select>
++            </div>
++            <div>
++              <label className="text-sm font-medium text-slate-700">Paralel</label>
++              <input
++                value={editParalel}
++                onChange={(e) => setEditParalel(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 2))}
++                placeholder="A"
++                className="mt-1 sage-input"
++                required
++              />
++            </div>
++          </div>
+           <div>
+-            <label className="text-sm font-medium text-slate-700">Nama Kelas</label>
+-            <input value={editClassName} onChange={(e) => setEditClassName(e.target.value)} className="mt-1 sage-input" required />
++            <label className="text-sm font-medium text-slate-700">Nama Kelas (opsional override)</label>
++            <input
++              value={editCustomName}
++              onChange={(e) => setEditCustomName(e.target.value)}
++              className="mt-1 sage-input"
++              placeholder={`Default: ${editTingkat}${(editParalel || "A").toUpperCase()}`}
++            />
++            <p className="mt-1 text-xs text-slate-500">
++              Jika kosong, nama kelas otomatis: <span className="font-medium">{editTingkat}{(editParalel || "A").toUpperCase()}</span>
++            </p>
+           </div>
+           <div>
+             <label className="text-sm font-medium text-slate-700">Deskripsi</label>
+diff --git a/frontend/src/app/dashboard/teacher/material/[materialId]/page.tsx b/frontend/src/app/dashboard/teacher/material/[materialId]/page.tsx
+index ef2e591..23f444b 100644
+--- a/frontend/src/app/dashboard/teacher/material/[materialId]/page.tsx
++++ b/frontend/src/app/dashboard/teacher/material/[materialId]/page.tsx
+@@ -1639,7 +1639,11 @@ export default function MaterialDetailsPage() {
+   const [material, setMaterial] = useState<MaterialDetail | null>(null);
+   const [classMaterials, setClassMaterials] = useState<RAGMaterialOption[]>([]);
+   const [questions, setQuestions] = useState<EssayQuestion[]>([]);
+-  const [submissions, setSubmissions] = useState<Submission[]>([]); // New state for submissions
++  const [submissionStats, setSubmissionStats] = useState<{ totalStudents: number; totalSubmissions: number }>({
++    totalStudents: 0,
++    totalSubmissions: 0,
++  });
++  const [submissionStatsLoading, setSubmissionStatsLoading] = useState(true);
+   const [isLoading, setIsLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+   const [isReviewModalOpen, setReviewModalOpen] = useState(false);
+@@ -1721,22 +1725,6 @@ export default function MaterialDetailsPage() {
+           };
+       });
+ 
+-      // Fetch submissions for each question
+-      const submissionPromises = processedQuestions.map(async (q: EssayQuestion) => {
+-          const subRes = await fetch(`/api/essay-questions/${q.id}/submissions`);
+-          if (subRes.ok) {
+-              const subData = await subRes.json();
+-              // Add question_id to each submission for easier filtering later
+-              return subData.map((s: Submission) => ({ ...s, question_id: q.id }));
+-          } else {
+-              console.error(`Failed to fetch submissions for question ${q.id}`);
+-              return [];
+-          }
+-      });
+-
+-      const allSubmissions = (await Promise.all(submissionPromises)).flat();
+-      setSubmissions(allSubmissions);
+-
+       setMaterial(materialData);
+       setQuestions(processedQuestions || []);
+     } catch (err: any) {
+@@ -1746,10 +1734,32 @@ export default function MaterialDetailsPage() {
+     }
+   }, [materialId]);
+ 
++  const fetchSubmissionStats = useCallback(async () => {
++    setSubmissionStatsLoading(true);
++    try {
++      const params = new URLSearchParams({ page: "1", limit: "1" });
++      const res = await fetch(`/api/materials/${materialId}/student-submission-summaries?${params.toString()}`, { credentials: "include" });
++      if (!res.ok) throw new Error("Failed to load submission stats");
++      const data = await res.json();
++      setSubmissionStats({
++        totalStudents: Number(data?.total || 0),
++        totalSubmissions: Number(data?.total_submissions || 0),
++      });
++    } catch {
++      setSubmissionStats({ totalStudents: 0, totalSubmissions: 0 });
++    } finally {
++      setSubmissionStatsLoading(false);
++    }
++  }, [materialId]);
++
+   useEffect(() => {
+     fetchData();
+   }, [fetchData]);
+ 
++  useEffect(() => {
++    fetchSubmissionStats();
++  }, [fetchSubmissionStats]);
++
+   useEffect(() => {
+     if (!material) return;
+     const type = material.material_type || "materi";
+@@ -1760,6 +1770,10 @@ export default function MaterialDetailsPage() {
+     }
+   }, [material, activeTab]);
+ 
++  const refreshAllData = useCallback(async () => {
++    await Promise.all([fetchData(), fetchSubmissionStats()]);
++  }, [fetchData, fetchSubmissionStats]);
++
+   const handleDeleteMaterial = async () => {
+     if (!material) return;
+     setConfirmDeleteMaterialOpen(true);
+@@ -1878,7 +1892,7 @@ export default function MaterialDetailsPage() {
+                 </button>
+               )}
+               <button onClick={() => setActiveTab('students')} className={`px-3 py-2 font-medium text-sm rounded-t-lg ${activeTab === 'students' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
+-                  <FiUsers className="inline mr-2" />Submisi Siswa ({new Set(submissions.map(s => s.student_id)).size})
++                  <FiUsers className="inline mr-2" />Submisi Siswa ({submissionStatsLoading ? "..." : submissionStats.totalStudents})
+               </button>
+           </nav>
+       </div>
+@@ -1886,13 +1900,23 @@ export default function MaterialDetailsPage() {
+       {/* Tab Content */}
+       <div>
+           {activeTab === 'overview' && !isSoalType && (
+-              <OverviewSection material={material} questions={questions} submissions={submissions} />
++              <OverviewSection
++                material={material}
++                questions={questions}
++                totalSubmissions={submissionStats.totalSubmissions}
++                totalStudents={submissionStats.totalStudents}
++              />
+           )}
+           {activeTab === 'questions' && !isTugasType && (
+               <QuestionsListSection questions={questions} handleOpenAddQuestionModal={handleOpenAddQuestionModal} handleOpenEditQuestionModal={handleOpenEditQuestionModal} handleDeleteQuestion={handleDeleteQuestion} />
+           )}
+           {activeTab === 'students' && (
+-              <StudentSubmissionsList submissions={submissions} questions={questions} handleOpenReviewModal={handleOpenReviewModal} onFinished={fetchData} />
++              <StudentSubmissionsList
++                materialId={materialId}
++                questions={questions}
++                handleOpenReviewModal={handleOpenReviewModal}
++                onFinished={refreshAllData}
++              />
+           )}
+       </div>
+       {/* Modals */}
+@@ -1906,7 +1930,7 @@ export default function MaterialDetailsPage() {
+           existingQuestion={editingQuestion}
+         />
+       )}
+-      <ReviewModal isOpen={isReviewModalOpen} onClose={() => setReviewModalOpen(false)} submission={reviewingSubmission} onFinished={fetchData} />
++      <ReviewModal isOpen={isReviewModalOpen} onClose={() => setReviewModalOpen(false)} submission={reviewingSubmission} onFinished={refreshAllData} />
+     
+       {/* Edit Material Modal */}
+       {material && !isSoalType && <EditMaterialModal isOpen={isEditMaterialModalOpen} onClose={() => setEditMaterialModalOpen(false)} material={material} onFinished={fetchData} />}
+@@ -1949,13 +1973,14 @@ export default function MaterialDetailsPage() {
+ const OverviewSection = ({
+   material,
+   questions,
+-  submissions,
++  totalSubmissions,
++  totalStudents,
+ }: {
+   material: MaterialDetail;
+   questions: EssayQuestion[];
+-  submissions: Submission[];
++  totalSubmissions: number;
++  totalStudents: number;
+ }) => {
+-  const uniqueStudents = new Set(submissions.map((s) => s.student_id)).size;
+   return (
+     <div className="space-y-6">
+       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+@@ -1965,11 +1990,11 @@ const OverviewSection = ({
+         </div>
+         <div className="sage-card p-5">
+           <p className="text-xs text-slate-500">Total Submisi</p>
+-          <p className="text-2xl font-semibold text-slate-900">{submissions.length}</p>
++          <p className="text-2xl font-semibold text-slate-900">{totalSubmissions}</p>
+         </div>
+         <div className="sage-card p-5">
+           <p className="text-xs text-slate-500">Siswa Terlibat</p>
+-          <p className="text-2xl font-semibold text-slate-900">{uniqueStudents}</p>
++          <p className="text-2xl font-semibold text-slate-900">{totalStudents}</p>
+         </div>
+       </div>
+ 
+@@ -2157,408 +2182,486 @@ const QuestionsListSection = ({
+ 
+ 
+ const StudentSubmissionsList = ({
+-    submissions,
+-    questions,
+-    handleOpenReviewModal,
+-    onFinished
++  materialId,
++  questions,
++  handleOpenReviewModal,
++  onFinished,
+ }: {
+-    submissions: Submission[],
+-    questions: EssayQuestion[],
+-    handleOpenReviewModal: (submission: Submission) => void,
+-    onFinished: () => void
++  materialId: string;
++  questions: EssayQuestion[];
++  handleOpenReviewModal: (submission: Submission) => void;
++  onFinished: () => void;
+ }) => {
++  type SummaryItem = {
++    student_id: string;
++    student_name: string;
++    student_email: string;
++    total_submissions: number;
++    reviewed_submissions: number;
++    pending_submissions: number;
++    average_final_score?: number | null;
++  };
+ 
+-    const [openStudentIds, setOpenStudentIds] = useState<string[]>([]);
+-    const [openSubmissionIds, setOpenSubmissionIds] = useState<string[]>([]);
+-    const [openRubricDetails, setOpenRubricDetails] = useState<Record<string, boolean>>({});
+-    const [searchQuery, setSearchQuery] = useState('');
+-    const [expandedFeedback, setExpandedFeedback] = useState<Record<string, boolean>>({});
+-    const [confirmDeleteSubmissionId, setConfirmDeleteSubmissionId] = useState<string | null>(null);
+-    const [deletingSubmissionId, setDeletingSubmissionId] = useState<string | null>(null);
+-    const [notice, setNotice] = useState<{ open: boolean; title: string; message: string; tone: "info" | "success" | "error" }>({
+-        open: false,
+-        title: "",
+-        message: "",
+-        tone: "info",
+-    });
+-
+-    const toggleStudent = (id: string) => {
+-        setOpenStudentIds(prev =>
+-            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+-        );
+-    };
++  const [openStudentIds, setOpenStudentIds] = useState<string[]>([]);
++  const [openSubmissionIds, setOpenSubmissionIds] = useState<string[]>([]);
++  const [openRubricDetails, setOpenRubricDetails] = useState<Record<string, boolean>>({});
++  const [searchQuery, setSearchQuery] = useState("");
++  const [sortBy, setSortBy] = useState<"newest" | "alpha" | "pending_desc" | "pending_asc">("newest");
++  const [studentPage, setStudentPage] = useState(1);
++  const [studentPageSize, setStudentPageSize] = useState(10);
++  const [summaryLoading, setSummaryLoading] = useState(true);
++  const [summaryItems, setSummaryItems] = useState<SummaryItem[]>([]);
++  const [summaryTotal, setSummaryTotal] = useState(0);
++  const [summaryTotalPages, setSummaryTotalPages] = useState(1);
++  const [submissionsByStudent, setSubmissionsByStudent] = useState<Record<string, Submission[]>>({});
++  const [studentLoadingMap, setStudentLoadingMap] = useState<Record<string, boolean>>({});
++  const [expandedFeedback, setExpandedFeedback] = useState<Record<string, boolean>>({});
++  const [confirmDeleteSubmissionId, setConfirmDeleteSubmissionId] = useState<string | null>(null);
++  const [deletingSubmissionId, setDeletingSubmissionId] = useState<string | null>(null);
++  const [notice, setNotice] = useState<{ open: boolean; title: string; message: string; tone: "info" | "success" | "error" }>({
++    open: false,
++    title: "",
++    message: "",
++    tone: "info",
++  });
+ 
+-    const toggleSubmission = (id: string) => {
+-        setOpenSubmissionIds(prev =>
+-            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+-        );
+-    };
++  const refreshSummary = useCallback(async () => {
++    setSummaryLoading(true);
++    try {
++      const params = new URLSearchParams({
++        q: searchQuery.trim(),
++        sort: sortBy,
++        page: String(studentPage),
++        limit: String(studentPageSize),
++      });
++      const res = await fetch(`/api/materials/${materialId}/student-submission-summaries?${params.toString()}`, { credentials: "include" });
++      if (!res.ok) throw new Error("Gagal memuat daftar siswa.");
++      const data = await res.json();
++      const items = Array.isArray(data?.items) ? data.items : [];
++      const total = Number(data?.total || 0);
++      const size = Math.max(1, Number(data?.size || studentPageSize));
++      setSummaryItems(items);
++      setSummaryTotal(total);
++      setSummaryTotalPages(Math.max(1, Math.ceil(total / size)));
++    } catch {
++      setSummaryItems([]);
++      setSummaryTotal(0);
++      setSummaryTotalPages(1);
++    } finally {
++      setSummaryLoading(false);
++    }
++  }, [materialId, searchQuery, sortBy, studentPage, studentPageSize]);
+ 
+-    const handleDeleteSubmission = async (submissionId: string) => {
+-        setDeletingSubmissionId(submissionId);
+-        try {
+-            const res = await fetch(`/api/submissions/${submissionId}`, { method: "DELETE", credentials: "include" });
+-            if (!res.ok) throw new Error("Delete failed");
+-            onFinished();
+-            setNotice({
+-                open: true,
+-                title: "Berhasil",
+-                message: "Submission berhasil dihapus.",
+-                tone: "success",
+-            });
+-        } catch (err: any) {
+-            setNotice({
+-                open: true,
+-                title: "Gagal",
+-                message: err.message || "Delete failed",
+-                tone: "error",
+-            });
+-        } finally {
+-            setDeletingSubmissionId(null);
+-            setConfirmDeleteSubmissionId(null);
+-        }
+-    };
++  useEffect(() => {
++    refreshSummary();
++  }, [refreshSummary]);
+ 
+-    if (submissions.length === 0) {
+-        return <div className="sage-panel p-10 text-center text-slate-500">Belum ada submisi siswa</div>;
+-    }
++  useEffect(() => {
++    setStudentPage(1);
++  }, [searchQuery, sortBy, studentPageSize]);
+ 
+-    // ===== GROUP PER SISWA =====
+-    const submissionsByStudent = submissions.reduce((acc, s) => {
+-        if (!acc[s.student_id]) {
+-            acc[s.student_id] = {
+-                student_name: s.student_name ?? "Unknown",
+-                student_email: s.student_email ?? "-",
+-                submissions: []
+-            };
+-        }
+-        acc[s.student_id].submissions.push(s);
+-        return acc;
+-    }, {} as Record<string, { student_name: string, student_email: string, submissions: Submission[] }>);
+-
+-    const getQuestionLabel = (id: string) => {
+-        const idx = questions.findIndex(q => q.id === id);
+-        if (idx === -1) return "Soal tidak ditemukan";
+-        return `${idx + 1}. ${questions[idx].teks_soal}`;
+-    };
++  const getQuestionLabel = (id: string) => {
++    const idx = questions.findIndex((q) => q.id === id);
++    if (idx === -1) return "Soal tidak ditemukan";
++    return `${idx + 1}. ${questions[idx].teks_soal}`;
++  };
+ 
+-    const normalizeDescriptors = (descriptors: any) => {
+-        if (!descriptors) return [];
+-        if (Array.isArray(descriptors)) return descriptors;
+-        if (typeof descriptors === "object") {
+-            return Object.entries(descriptors).map(([score, desc]) => ({ score, description: desc }));
+-        }
+-        return [];
+-    };
++  const normalizeDescriptors = (descriptors: any) => {
++    if (!descriptors) return [];
++    if (Array.isArray(descriptors)) return descriptors;
++    if (typeof descriptors === "object") {
++      return Object.entries(descriptors).map(([score, desc]) => ({ score, description: desc }));
++    }
++    return [];
++  };
+ 
+-    const normalizeText = (value: any) => String(value ?? "").trim().toLowerCase();
++  const normalizeText = (value: any) => String(value ?? "").trim().toLowerCase();
+ 
+-    const extractNumericScore = (scoreValue: any): number | undefined => {
+-        const parsed = Number(scoreValue);
+-        return Number.isFinite(parsed) ? parsed : undefined;
+-    };
++  const extractNumericScore = (scoreValue: any): number | undefined => {
++    const parsed = Number(scoreValue);
++    return Number.isFinite(parsed) ? parsed : undefined;
++  };
+ 
+-    const getStudentRubricScore = (submission: Submission, rubric: any, rubricIndex: number): number | undefined => {
+-        if (!Array.isArray(submission.rubric_scores) || submission.rubric_scores.length === 0) {
+-            return undefined;
+-        }
++  const getStudentRubricScore = (submission: Submission, rubric: any, rubricIndex: number): number | undefined => {
++    if (!Array.isArray(submission.rubric_scores) || submission.rubric_scores.length === 0) {
++      return undefined;
++    }
++    const byRubricID = rubric?.id ? submission.rubric_scores.find((r: any) => r?.rubric_id === rubric.id) : undefined;
++    if (byRubricID) {
++      return extractNumericScore(byRubricID.score ?? byRubricID.skor_diperoleh ?? byRubricID.skor);
++    }
++    const byAspectName = submission.rubric_scores.find(
++      (r: any) => normalizeText(r?.aspek ?? r?.nama_aspek) === normalizeText(rubric?.nama_aspek),
++    );
++    if (byAspectName) {
++      return extractNumericScore(byAspectName.score ?? byAspectName.skor_diperoleh ?? byAspectName.skor);
++    }
++    const byIndex = submission.rubric_scores[rubricIndex];
++    if (byIndex) {
++      return extractNumericScore(byIndex.score ?? byIndex.skor_diperoleh ?? byIndex.skor);
++    }
++    return undefined;
++  };
+ 
+-        const byRubricID = rubric?.id
+-            ? submission.rubric_scores.find((r: any) => r?.rubric_id === rubric.id)
+-            : undefined;
+-        if (byRubricID) {
+-            return extractNumericScore(byRubricID.score ?? byRubricID.skor_diperoleh ?? byRubricID.skor);
+-        }
++  const getFeedbackPreview = (text?: string, expanded?: boolean) => {
++    const raw = (text ?? "").trim();
++    if (!raw) return "-";
++    if (expanded || raw.length <= 100) return raw;
++    return `${raw.slice(0, 100)}...`;
++  };
+ 
+-        const byAspectName = submission.rubric_scores.find(
+-            (r: any) => normalizeText(r?.aspek ?? r?.nama_aspek) === normalizeText(rubric?.nama_aspek)
+-        );
+-        if (byAspectName) {
+-            return extractNumericScore(byAspectName.score ?? byAspectName.skor_diperoleh ?? byAspectName.skor);
+-        }
++  const toggleFeedback = (key: string) => {
++    setExpandedFeedback((prev) => ({ ...prev, [key]: !prev[key] }));
++  };
+ 
+-        const byIndex = submission.rubric_scores[rubricIndex];
+-        if (byIndex) {
+-            return extractNumericScore(byIndex.score ?? byIndex.skor_diperoleh ?? byIndex.skor);
+-        }
++  const toggleRubricDetail = (key: string) => {
++    setOpenRubricDetails((prev) => ({ ...prev, [key]: !prev[key] }));
++  };
+ 
+-        return undefined;
+-    };
++  const loadStudentSubmissions = useCallback(async (studentId: string) => {
++    if (submissionsByStudent[studentId]) return;
++    setStudentLoadingMap((prev) => ({ ...prev, [studentId]: true }));
++    try {
++      const res = await fetch(`/api/materials/${materialId}/students/${studentId}/submissions`, { credentials: "include" });
++      if (!res.ok) throw new Error("Failed");
++      const data = await res.json();
++      const list = Array.isArray(data) ? data : [];
++      setSubmissionsByStudent((prev) => ({ ...prev, [studentId]: list }));
++    } catch {
++      setSubmissionsByStudent((prev) => ({ ...prev, [studentId]: [] }));
++    } finally {
++      setStudentLoadingMap((prev) => ({ ...prev, [studentId]: false }));
++    }
++  }, [materialId, submissionsByStudent]);
+ 
+-    const getFeedbackPreview = (text?: string, expanded?: boolean) => {
+-        const raw = (text ?? '').trim();
+-        if (!raw) return '-';
+-        if (expanded || raw.length <= 100) return raw;
+-        return `${raw.slice(0, 100)}...`;
+-    };
++  const toggleStudent = (studentId: string) => {
++    setOpenStudentIds((prev) =>
++      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId],
++    );
++    loadStudentSubmissions(studentId);
++  };
+ 
+-    const toggleFeedback = (key: string) => {
+-        setExpandedFeedback((prev) => ({ ...prev, [key]: !prev[key] }));
+-    };
++  const toggleSubmission = (id: string) => {
++    setOpenSubmissionIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
++  };
+ 
+-    const toggleRubricDetail = (key: string) => {
+-        setOpenRubricDetails((prev) => ({ ...prev, [key]: !prev[key] }));
+-    };
++  const handleDeleteSubmission = async (submissionId: string) => {
++    setDeletingSubmissionId(submissionId);
++    try {
++      const res = await fetch(`/api/submissions/${submissionId}`, { method: "DELETE", credentials: "include" });
++      if (!res.ok) throw new Error("Delete failed");
++      await onFinished();
++      await refreshSummary();
++      setSubmissionsByStudent({});
++      setOpenStudentIds([]);
++      setNotice({
++        open: true,
++        title: "Berhasil",
++        message: "Submission berhasil dihapus.",
++        tone: "success",
++      });
++    } catch (err: any) {
++      setNotice({
++        open: true,
++        title: "Gagal",
++        message: err.message || "Delete failed",
++        tone: "error",
++      });
++    } finally {
++      setDeletingSubmissionId(null);
++      setConfirmDeleteSubmissionId(null);
++    }
++  };
+ 
+-    const normalizedQuery = searchQuery.trim().toLowerCase();
+-    const filteredStudentEntries = Object.entries(submissionsByStudent).filter(([, group]) => {
+-        if (!normalizedQuery) return true;
+-        const name = (group.student_name ?? '').toLowerCase();
+-        const email = (group.student_email ?? '').toLowerCase();
+-        return name.includes(normalizedQuery) || email.includes(normalizedQuery);
+-    });
++  const currentPage = Math.min(studentPage, summaryTotalPages);
+ 
+-    return (
+-        <div className="space-y-6">
+-            <div className="sage-panel p-4">
+-                <label className="relative block">
+-                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+-                    <input
+-                        value={searchQuery}
+-                        onChange={(e) => setSearchQuery(e.target.value)}
+-                        placeholder="Cari nama atau email siswa..."
+-                        className="sage-input pl-10"
+-                    />
+-                </label>
+-            </div>
++  return (
++    <div className="space-y-6">
++      <div className="sage-panel p-4 space-y-3">
++        <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_170px] gap-3">
++          <label className="relative block">
++            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
++            <input
++              value={searchQuery}
++              onChange={(e) => setSearchQuery(e.target.value)}
++              placeholder="Cari nama siswa..."
++              className="sage-input pl-10"
++            />
++          </label>
++          <select
++            value={sortBy}
++            onChange={(e) => setSortBy(e.target.value as "newest" | "alpha" | "pending_desc" | "pending_asc")}
++            className="sage-input"
++          >
++            <option value="newest">Terbaru</option>
++            <option value="alpha">Alphabet</option>
++            <option value="pending_desc">Belum direview terbanyak</option>
++            <option value="pending_asc">Belum direview tersedikit</option>
++          </select>
++          <div className="flex items-center gap-2">
++            <span className="text-xs text-slate-500 whitespace-nowrap">Tampil</span>
++            <select
++              value={studentPageSize}
++              onChange={(e) => {
++                const n = Number(e.target.value);
++                setStudentPageSize(Math.min(20, Math.max(1, Number.isNaN(n) ? 10 : n)));
++              }}
++              className="sage-input"
++            >
++              {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
++                <option key={n} value={n}>{n}</option>
++              ))}
++            </select>
++            <span className="text-xs text-slate-500 whitespace-nowrap">/ page</span>
++          </div>
++        </div>
++        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
++          <p>
++            Menampilkan {summaryTotal === 0 ? 0 : (currentPage - 1) * studentPageSize + 1}-
++            {Math.min(currentPage * studentPageSize, summaryTotal)} dari {summaryTotal} siswa
++          </p>
++          <div className="flex items-center gap-2">
++            <button
++              type="button"
++              className="sage-button-outline !px-3 !py-1.5 text-xs"
++              disabled={currentPage <= 1}
++              onClick={() => setStudentPage((p) => Math.max(1, p - 1))}
++            >
++              Prev
++            </button>
++            <input
++              type="number"
++              min={1}
++              max={summaryTotalPages}
++              value={currentPage}
++              onChange={(e) => {
++                const n = Number(e.target.value || 1);
++                if (Number.isNaN(n)) return;
++                setStudentPage(Math.min(summaryTotalPages, Math.max(1, n)));
++              }}
++              className="sage-input w-20 !py-1.5 text-center"
++            />
++            <button
++              type="button"
++              className="sage-button-outline !px-3 !py-1.5 text-xs"
++              disabled={currentPage >= summaryTotalPages}
++              onClick={() => setStudentPage((p) => Math.min(summaryTotalPages, p + 1))}
++            >
++              Next
++            </button>
++          </div>
++        </div>
++      </div>
+ 
+-            {filteredStudentEntries.length === 0 && (
+-                <div className="sage-panel p-8 text-center text-slate-500">
+-                    Tidak ada siswa yang cocok dengan pencarian.
++      {summaryLoading ? (
++        <div className="sage-panel p-10 text-center text-slate-500">Memuat submisi siswa...</div>
++      ) : summaryItems.length === 0 ? (
++        <div className="sage-panel p-8 text-center text-slate-500">Tidak ada siswa yang cocok dengan pencarian.</div>
++      ) : (
++        summaryItems.map((item) => {
++          const studentId = item.student_id;
++          const isOpenStudent = openStudentIds.includes(studentId);
++          const reviewRatio = item.total_submissions > 0 ? item.reviewed_submissions / item.total_submissions : 0;
++          const reviewToneClass =
++            item.reviewed_submissions === 0
++              ? "bg-red-100 text-red-700 border-red-200"
++              : reviewRatio < 1
++                ? "bg-amber-100 text-amber-800 border-amber-200"
++                : "bg-emerald-100 text-emerald-700 border-emerald-200";
++          const studentSubmissions = submissionsByStudent[studentId] || [];
++          const studentLoading = !!studentLoadingMap[studentId];
++
++          return (
++            <div key={studentId} className="sage-card overflow-hidden">
++              <button
++                className="w-full px-6 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
++                onClick={() => toggleStudent(studentId)}
++              >
++                <div className="flex items-center gap-3">
++                  <FiUsers className="text-slate-600" />
++                  <div>
++                    <p className="font-semibold text-slate-900">{item.student_name}</p>
++                    <p className="text-sm text-slate-500">{item.student_email}</p>
++                  </div>
+                 </div>
+-            )}
++                <div className="flex items-center gap-3 text-xs text-slate-500">
++                  <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
++                    {item.total_submissions} Submisi
++                  </span>
++                  <span className={`px-2 py-1 rounded-full border ${reviewToneClass}`}>
++                    {item.reviewed_submissions} Direview
++                  </span>
++                  <span className="px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
++                    {item.pending_submissions} Belum Direview
++                  </span>
++                  <span className="px-2 py-1 rounded-full bg-white border border-slate-200 text-slate-700">
++                    Nilai Akhir: {item.average_final_score == null ? "-" : Number(item.average_final_score).toFixed(1)}
++                  </span>
++                  {isOpenStudent ? <FiChevronUp /> : <FiChevronDown />}
++                </div>
++              </button>
+ 
+-            {filteredStudentEntries.map(([studentId, group]) => {
+-                const isOpenStudent = openStudentIds.includes(studentId);
+-                const reviewedCount = group.submissions.filter(s => s.revised_score != null || s.teacher_feedback).length;
+-                const totalSubmissions = group.submissions.length;
+-                const reviewRatio = totalSubmissions > 0 ? reviewedCount / totalSubmissions : 0;
+-                const reviewToneClass =
+-                    reviewedCount === 0
+-                        ? "bg-red-100 text-red-700 border-red-200"
+-                        : reviewRatio < 1
+-                            ? "bg-amber-100 text-amber-800 border-amber-200"
+-                            : "bg-emerald-100 text-emerald-700 border-emerald-200";
+-
+-                const scoredSubmissions = group.submissions.filter((s) => {
+-                    const score = s.revised_score ?? s.skor_ai;
+-                    return typeof score === "number";
+-                });
+-                const averageFinalScore = scoredSubmissions.length > 0
+-                    ? scoredSubmissions.reduce((sum, s) => sum + Number(s.revised_score ?? s.skor_ai ?? 0), 0) / scoredSubmissions.length
+-                    : null;
+-
+-                return (
+-                    <div key={studentId} className="sage-card overflow-hidden">
+-                        <button
+-                            className="w-full px-6 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+-                            onClick={() => toggleStudent(studentId)}
+-                        >
+-                            <div className="flex items-center gap-3">
+-                                <FiUsers className="text-slate-600" />
+-                                <div>
+-                                    <p className="font-semibold text-slate-900">{group.student_name}</p>
+-                                    <p className="text-sm text-slate-500">{group.student_email}</p>
+-                                </div>
++              {isOpenStudent && (
++                <div className="divide-y divide-slate-100 bg-white">
++                  {studentLoading ? (
++                    <div className="px-6 py-5 text-sm text-slate-500">Memuat detail submisi siswa...</div>
++                  ) : studentSubmissions.length === 0 ? (
++                    <div className="px-6 py-5 text-sm text-slate-500">Belum ada submisi pada siswa ini.</div>
++                  ) : (
++                    studentSubmissions.map((sub) => {
++                      const isOpenSub = openSubmissionIds.includes(sub.id);
++                      const aiFeedbackKey = `${sub.id}-ai`;
++                      const teacherFeedbackKey = `${sub.id}-teacher`;
++                      const aiFeedbackRaw = (sub.umpan_balik_ai ?? "").trim();
++                      const teacherFeedbackRaw = (sub.teacher_feedback ?? "").trim();
++                      const hasLongAIFeedback = aiFeedbackRaw.length > 100;
++                      const hasLongTeacherFeedback = teacherFeedbackRaw.length > 100;
++                      const statusLabel = sub.revised_score != null ? "Reviewed" : sub.skor_ai != null ? "Auto-scored" : "Pending";
++
++                      return (
++                        <div key={sub.id} className="px-6 py-5">
++                          <button
++                            className="w-full text-left flex flex-col md:flex-row md:items-center md:justify-between gap-2 hover:bg-slate-50 px-3 py-2 rounded-md transition-colors"
++                            onClick={() => toggleSubmission(sub.id)}
++                          >
++                            <div className="flex items-center gap-2">
++                              <span className="text-sm font-medium text-slate-800 text-justify block">{getQuestionLabel(sub.question_id)}</span>
++                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{statusLabel}</span>
+                             </div>
+                             <div className="flex items-center gap-3 text-xs text-slate-500">
+-                                <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+-                                    {totalSubmissions} Submisi
+-                                </span>
+-                                <span className={`px-2 py-1 rounded-full border ${reviewToneClass}`}>
+-                                    {reviewedCount} Direview
+-                                </span>
+-                                <span className="px-2 py-1 rounded-full bg-white border border-slate-200 text-slate-700">
+-                                    Nilai Akhir: {averageFinalScore == null ? "-" : averageFinalScore.toFixed(1)}
+-                                </span>
+-                                {isOpenStudent ? <FiChevronUp /> : <FiChevronDown />}
++                              <span>{new Date(sub.submitted_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
++                              {isOpenSub ? <FiChevronUp /> : <FiChevronDown />}
+                             </div>
+-                        </button>
++                          </button>
+ 
+-                        {isOpenStudent && (
+-                            <div className="divide-y divide-slate-100 bg-white">
+-                                {group.submissions.map(sub => {
+-                                    const isOpenSub = openSubmissionIds.includes(sub.id);
+-                                    const aiFeedbackKey = `${sub.id}-ai`;
+-                                    const teacherFeedbackKey = `${sub.id}-teacher`;
+-                                    const aiFeedbackRaw = (sub.umpan_balik_ai ?? '').trim();
+-                                    const teacherFeedbackRaw = (sub.teacher_feedback ?? '').trim();
+-                                    const hasLongAIFeedback = aiFeedbackRaw.length > 100;
+-                                    const hasLongTeacherFeedback = teacherFeedbackRaw.length > 100;
+-                                    const statusLabel = sub.revised_score != null
+-                                        ? "Reviewed"
+-                                        : sub.skor_ai != null
+-                                            ? "Auto-scored"
+-                                            : "Pending";
+-
+-                                    return (
+-                                        <div key={sub.id} className="px-6 py-5">
++                          {isOpenSub && (
++                            <div className="mt-3 space-y-4 p-4 rounded-md bg-slate-50 border border-slate-200">
++                              <div>
++                                <p className="text-xs uppercase tracking-wide text-slate-500">Jawaban</p>
++                                <p className="text-sm text-slate-700 mt-1">{sub.teks_jawaban}</p>
++                              </div>
++                              <div className="grid md:grid-cols-3 gap-3">
++                                <div className="bg-white p-3 rounded-md border border-slate-200">
++                                  <p className="text-xs text-slate-500">Skor AI</p>
++                                  <p className="font-semibold text-slate-900">{sub.skor_ai ?? "-"}</p>
++                                  {aiFeedbackRaw && (
++                                    <div className="mt-1">
++                                      <p className="text-sm text-slate-600">{getFeedbackPreview(sub.umpan_balik_ai, !!expandedFeedback[aiFeedbackKey])}</p>
++                                      {hasLongAIFeedback && (
++                                        <button type="button" onClick={() => toggleFeedback(aiFeedbackKey)} className="text-xs font-medium text-[color:var(--sage-700)] hover:underline mt-1">
++                                          {!!expandedFeedback[aiFeedbackKey] ? "Tutup" : "Baca selengkapnya"}
++                                        </button>
++                                      )}
++                                    </div>
++                                  )}
++                                </div>
++                                <div className="bg-white p-3 rounded-md border border-slate-200">
++                                  <p className="text-xs text-slate-500">Skor Guru</p>
++                                  <p className="font-semibold text-slate-900">{sub.revised_score ?? "-"}</p>
++                                  {teacherFeedbackRaw && (
++                                    <div className="mt-1">
++                                      <p className="text-sm text-slate-600">{getFeedbackPreview(sub.teacher_feedback, !!expandedFeedback[teacherFeedbackKey])}</p>
++                                      {hasLongTeacherFeedback && (
++                                        <button type="button" onClick={() => toggleFeedback(teacherFeedbackKey)} className="text-xs font-medium text-[color:var(--sage-700)] hover:underline mt-1">
++                                          {!!expandedFeedback[teacherFeedbackKey] ? "Tutup" : "Baca selengkapnya"}
++                                        </button>
++                                      )}
++                                    </div>
++                                  )}
++                                </div>
++                                {(() => {
++                                  const submissionRubrics = questions.find((q) => q.id === sub.question_id)?.rubrics ?? [];
++                                  if (submissionRubrics.length === 0) return null;
++                                  return (
++                                    <div className="bg-white p-3 rounded-md border border-slate-200">
++                                      <p className="text-xs text-slate-500 font-semibold mb-2">Nilai Per Rubrik</p>
++                                      {submissionRubrics.map((rubric, i) => {
++                                        const studentScore = getStudentRubricScore(sub, rubric, i);
++                                        const descriptors = normalizeDescriptors(rubric.descriptors);
++                                        const rubricDetailKey = `${sub.id}-${rubric.id ?? rubric.nama_aspek ?? i}`;
++                                        const isRubricOpen = !!openRubricDetails[rubricDetailKey];
++                                        return (
++                                          <div key={i} className="mb-4 last:mb-0">
+                                             <button
+-                                                className="w-full text-left flex flex-col md:flex-row md:items-center md:justify-between gap-2 hover:bg-slate-50 px-3 py-2 rounded-md transition-colors"
+-                                                onClick={() => toggleSubmission(sub.id)}
++                                              type="button"
++                                              onClick={() => toggleRubricDetail(rubricDetailKey)}
++                                              className="w-full text-left flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 border border-slate-200"
+                                             >
+-                                                <div className="flex items-center gap-2">
+-                                                    <span className="text-sm font-medium text-slate-800 text-justify block">{getQuestionLabel(sub.question_id)}</span>
+-                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+-                                                        {statusLabel}
+-                                                    </span>
+-                                                </div>
+-                                                <div className="flex items-center gap-3 text-xs text-slate-500">
+-                                                    <span>{new Date(sub.submitted_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+-                                                    {isOpenSub ? <FiChevronUp /> : <FiChevronDown />}
+-                                                </div>
++                                              <p className="text-sm font-semibold text-slate-800">
++                                                {rubric.nama_aspek}
++                                                <span className="ml-2 text-slate-500">-</span>
++                                                <span className="ml-2 font-bold text-slate-900">{studentScore ?? "-"}</span>
++                                              </p>
++                                              {isRubricOpen ? <FiChevronUp className="text-slate-500" /> : <FiChevronDown className="text-slate-500" />}
+                                             </button>
+-
+-                                            {isOpenSub && (
+-                                                <div className="mt-3 space-y-4 p-4 rounded-md bg-slate-50 border border-slate-200">
+-                                                    <div>
+-                                                        <p className="text-xs uppercase tracking-wide text-slate-500">Jawaban</p>
+-                                                        <p className="text-sm text-slate-700 mt-1">{sub.teks_jawaban}</p>
++                                            {isRubricOpen && (
++                                              <div className="mt-2 space-y-1.5 text-xs text-slate-600">
++                                                {descriptors.map((d: any) => {
++                                                  const isSelected = studentScore === Number(d.score);
++                                                  return (
++                                                    <div
++                                                      key={d.score}
++                                                      className={`rounded-md px-2 py-1 border ${isSelected ? "bg-slate-100 border-slate-300 text-slate-900" : "bg-white border-slate-200"}`}
++                                                    >
++                                                      <span className="font-semibold">{d.score}:</span> {formatDescriptor(d.description)}
+                                                     </div>
+-
+-                                                    <div className="grid md:grid-cols-3 gap-3">
+-                                                        <div className="bg-white p-3 rounded-md border border-slate-200">
+-                                                            <p className="text-xs text-slate-500">Skor AI</p>
+-                                                            <p className="font-semibold text-slate-900">{sub.skor_ai ?? "-"}</p>
+-                                                            {aiFeedbackRaw && (
+-                                                                <div className="mt-1">
+-                                                                    <p className="text-sm text-slate-600">{getFeedbackPreview(sub.umpan_balik_ai, !!expandedFeedback[aiFeedbackKey])}</p>
+-                                                                    {hasLongAIFeedback && (
+-                                                                        <button
+-                                                                            type="button"
+-                                                                            onClick={() => toggleFeedback(aiFeedbackKey)}
+-                                                                            className="text-xs font-medium text-[color:var(--sage-700)] hover:underline mt-1"
+-                                                                        >
+-                                                                            {!!expandedFeedback[aiFeedbackKey] ? 'Tutup' : 'Baca selengkapnya'}
+-                                                                        </button>
+-                                                                    )}
+-                                                                </div>
+-                                                            )}
+-                                                        </div>
+-
+-                                                        <div className="bg-white p-3 rounded-md border border-slate-200">
+-                                                            <p className="text-xs text-slate-500">Skor Guru</p>
+-                                                            <p className="font-semibold text-slate-900">{sub.revised_score ?? "-"}</p>
+-                                                            {teacherFeedbackRaw && (
+-                                                                <div className="mt-1">
+-                                                                    <p className="text-sm text-slate-600">{getFeedbackPreview(sub.teacher_feedback, !!expandedFeedback[teacherFeedbackKey])}</p>
+-                                                                    {hasLongTeacherFeedback && (
+-                                                                        <button
+-                                                                            type="button"
+-                                                                            onClick={() => toggleFeedback(teacherFeedbackKey)}
+-                                                                            className="text-xs font-medium text-[color:var(--sage-700)] hover:underline mt-1"
+-                                                                        >
+-                                                                            {!!expandedFeedback[teacherFeedbackKey] ? 'Tutup' : 'Baca selengkapnya'}
+-                                                                        </button>
+-                                                                    )}
+-                                                                </div>
+-                                                            )}
+-                                                        </div>
+-
+-                                                        {(() => {
+-                                                            const submissionRubrics = questions.find(q => q.id === sub.question_id)?.rubrics ?? [];
+-                                                            if (submissionRubrics.length === 0) return null;
+-
+-                                                            return (
+-                                                                <div className="bg-white p-3 rounded-md border border-slate-200">
+-                                                                    <p className="text-xs text-slate-500 font-semibold mb-2">Nilai Per Rubrik</p>
+-                                                                    {submissionRubrics.map((rubric, i) => {
+-                                                                        const studentScore = getStudentRubricScore(sub, rubric, i);
+-                                                                        const descriptors = normalizeDescriptors(rubric.descriptors);
+-                                                                        const rubricDetailKey = `${sub.id}-${rubric.id ?? rubric.nama_aspek ?? i}`;
+-                                                                        const isRubricOpen = !!openRubricDetails[rubricDetailKey];
+-                                                                        return (
+-                                                                            <div key={i} className="mb-4 last:mb-0">
+-                                                                                <button
+-                                                                                    type="button"
+-                                                                                    onClick={() => toggleRubricDetail(rubricDetailKey)}
+-                                                                                    className="w-full text-left flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 border border-slate-200"
+-                                                                                >
+-                                                                                    <p className="text-sm font-semibold text-slate-800">
+-                                                                                        {rubric.nama_aspek}
+-                                                                                        <span className="ml-2 text-slate-500">-</span>
+-                                                                                        <span className="ml-2 font-bold text-slate-900">{studentScore ?? "-"}</span>
+-                                                                                    </p>
+-                                                                                    {isRubricOpen ? <FiChevronUp className="text-slate-500" /> : <FiChevronDown className="text-slate-500" />}
+-                                                                                </button>
+-                                                                                {isRubricOpen && (
+-                                                                                    <div className="mt-2 space-y-1.5 text-xs text-slate-600">
+-                                                                                        {descriptors.map((d: any) => {
+-                                                                                            const isSelected = studentScore === Number(d.score);
+-                                                                                            return (
+-                                                                                                <div
+-                                                                                                    key={d.score}
+-                                                                                                    className={`rounded-md px-2 py-1 border ${
+-                                                                                                        isSelected
+-                                                                                                            ? "bg-slate-100 border-slate-300 text-slate-900"
+-                                                                                                            : "bg-white border-slate-200"
+-                                                                                                    }`}
+-                                                                                                >
+-                                                                                                    <span className="font-semibold">{d.score}:</span>{" "}
+-                                                                                                    {formatDescriptor(d.description)}
+-                                                                                                </div>
+-                                                                                            );
+-                                                                                        })}
+-                                                                                    </div>
+-                                                                                )}
+-                                                                            </div>
+-                                                                        );
+-                                                                    })}
+-                                                                </div>
+-                                                            );
+-                                                        })()}
+-                                                    </div>
+-
+-                                                    <div className="flex gap-2">
+-                                                        <button
+-                                                            className="sage-button"
+-                                                            onClick={() => handleOpenReviewModal(sub)}
+-                                                        >
+-                                                            <FiEdit /> Review
+-                                                        </button>
+-                                                        <button
+-                                                            className="sage-button-outline"
+-                                                            onClick={() => setConfirmDeleteSubmissionId(sub.id)}
+-                                                        >
+-                                                            <FiTrash2 /> Delete
+-                                                        </button>
+-                                                    </div>
+-                                                </div>
++                                                  );
++                                                })}
++                                              </div>
+                                             )}
+-                                        </div>
+-                                    );
+-                                })}
++                                          </div>
++                                        );
++                                      })}
++                                    </div>
++                                  );
++                                })()}
++                              </div>
++                              <div className="flex gap-2">
++                                <button className="sage-button" onClick={() => handleOpenReviewModal(sub)}>
++                                  <FiEdit /> Review
++                                </button>
++                                <button className="sage-button-outline" onClick={() => setConfirmDeleteSubmissionId(sub.id)}>
++                                  <FiTrash2 /> Delete
++                                </button>
++                              </div>
+                             </div>
+-                        )}
+-                    </div>
+-                );
+-            })}
+-
+-            <ConfirmDialog
+-                isOpen={!!confirmDeleteSubmissionId}
+-                title="Hapus Submission"
+-                message="Delete submission beserta AI result dan teacher review?"
+-                confirmLabel="Hapus"
+-                danger
+-                loading={!!deletingSubmissionId}
+-                onCancel={() => setConfirmDeleteSubmissionId(null)}
+-                onConfirm={() => {
+-                    if (!confirmDeleteSubmissionId) return;
+-                    handleDeleteSubmission(confirmDeleteSubmissionId);
+-                }}
+-            />
++                          )}
++                        </div>
++                      );
++                    })
++                  )}
++                </div>
++              )}
++            </div>
++          );
++        })
++      )}
+ 
+-            <NoticeDialog
+-                isOpen={notice.open}
+-                title={notice.title}
+-                message={notice.message}
+-                tone={notice.tone}
+-                onClose={() => setNotice((prev) => ({ ...prev, open: false }))}
+-            />
++      <ConfirmDialog
++        isOpen={!!confirmDeleteSubmissionId}
++        title="Hapus Submission"
++        message="Delete submission beserta AI result dan teacher review?"
++        confirmLabel="Hapus"
++        danger
++        loading={!!deletingSubmissionId}
++        onCancel={() => setConfirmDeleteSubmissionId(null)}
++        onConfirm={() => {
++          if (!confirmDeleteSubmissionId) return;
++          handleDeleteSubmission(confirmDeleteSubmissionId);
++        }}
++      />
+ 
+-            <LoadingDialog isOpen={!!deletingSubmissionId} message="Menghapus submission..." />
+-        </div>
+-    );
++      <NoticeDialog
++        isOpen={notice.open}
++        title={notice.title}
++        message={notice.message}
++        tone={notice.tone}
++        onClose={() => setNotice((prev) => ({ ...prev, open: false }))}
++      />
++
++      <LoadingDialog isOpen={!!deletingSubmissionId} message="Menghapus submission..." />
++    </div>
++  );
+ };
+ 
+ // --- REVIEW MODAL ---
+diff --git a/frontend/src/app/dashboard/teacher/settings/notifications/page.tsx b/frontend/src/app/dashboard/teacher/settings/notifications/page.tsx
+index 7a939f3..cee4e4a 100644
+--- a/frontend/src/app/dashboard/teacher/settings/notifications/page.tsx
++++ b/frontend/src/app/dashboard/teacher/settings/notifications/page.tsx
+@@ -8,6 +8,7 @@ type NotificationPrefs = {
+   classRequests: boolean;
+   assessmentUpdates: boolean;
+   systemAnnouncements: boolean;
++  sidebarIndicators: boolean;
+ };
+ 
+ const STORAGE_KEY = "teacher_notification_preferences";
+@@ -17,6 +18,7 @@ export default function TeacherNotificationSettingsPage() {
+     classRequests: true,
+     assessmentUpdates: true,
+     systemAnnouncements: true,
++    sidebarIndicators: true,
+   });
+   const [message, setMessage] = useState<string | null>(null);
+ 
+@@ -94,6 +96,18 @@ export default function TeacherNotificationSettingsPage() {
+           />
+         </label>
+ 
++        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
++          <div>
++            <p className="text-sm font-medium text-slate-900">Indikator update di sidebar</p>
++            <p className="text-xs text-slate-500">Tampilkan dot merah pada menu sidebar yang punya update penting.</p>
++          </div>
++          <ToggleSwitch
++            label="Toggle indikator update sidebar guru"
++            checked={prefs.sidebarIndicators}
++            onChange={(value) => updatePref("sidebarIndicators", value)}
++          />
++        </label>
++
+         {message && <p className="text-sm text-emerald-700">{message}</p>}
+ 
+         <div className="flex justify-end">
+diff --git a/frontend/src/app/globals.css b/frontend/src/app/globals.css
+index 79ae703..a0a247d 100644
+--- a/frontend/src/app/globals.css
++++ b/frontend/src/app/globals.css
+@@ -156,6 +156,8 @@
+   }
+ 
+   html[data-theme='dark'] #sidebar .text-slate-700,
++  html[data-theme='dark'] #sidebar .text-slate-900,
++  html[data-theme='dark'] #sidebar .text-slate-800,
+   html[data-theme='dark'] #sidebar .text-slate-600,
+   html[data-theme='dark'] #sidebar .text-slate-500,
+   html[data-theme='dark'] #sidebar .text-slate-400 {
+@@ -166,13 +168,13 @@
+     border-color: rgba(148, 163, 184, 0.26) !important;
+   }
+ 
+-  html[data-theme='dark'] #sidebar .sidebar-nav-item:hover,
++  html[data-theme='dark'] #sidebar .sidebar-nav-item:not(.sidebar-nav-item-has-submenu):hover,
+   html[data-theme='dark'] #sidebar .sidebar-settings-link:hover {
+     background-color: var(--dark-layer-4) !important;
+   }
+ 
+-  html[data-theme='dark'] #sidebar .sidebar-nav-item:hover .sidebar-nav-link,
+-  html[data-theme='dark'] #sidebar .sidebar-nav-item:hover .sidebar-nav-icon,
++  html[data-theme='dark'] #sidebar .sidebar-nav-item:not(.sidebar-nav-item-has-submenu):hover .sidebar-nav-link,
++  html[data-theme='dark'] #sidebar .sidebar-nav-item:not(.sidebar-nav-item-has-submenu):hover .sidebar-nav-icon,
+   html[data-theme='dark'] #sidebar .sidebar-settings-link:hover,
+   html[data-theme='dark'] #sidebar .sidebar-settings-link:hover span {
+     color: #0f172a !important;
+@@ -183,6 +185,45 @@
+     background-color: var(--dark-layer-4) !important;
+   }
+ 
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 {
++    background-color: var(--dark-layer-4) !important;
++  }
++
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .sidebar-nav-link,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .sidebar-nav-icon,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-500,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-600,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-700,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-900 {
++    color: #0f172a !important;
++  }
++
++  html[data-theme='dark'] #sidebar .sidebar-nav-item.sidebar-nav-item-has-submenu:hover {
++    background-color: transparent !important;
++  }
++
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover {
++    background-color: var(--dark-layer-4) !important;
++  }
++
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .sidebar-nav-link,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .sidebar-nav-icon,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-500,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-600,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-700,
++  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-900 {
++    color: #0f172a !important;
++  }
++
++  html[data-theme='dark'] #sidebar .sidebar-class-subitem:hover {
++    background-color: #2b3f5a !important;
++    color: #f8fafc !important;
++  }
++
++  html[data-theme='dark'] #sidebar .bg-slate-200 {
++    background-color: #24364f !important;
++  }
++
+   html[data-theme='dark'] #sidebar .sidebar-nav-item.bg-slate-100 .sidebar-nav-link,
+   html[data-theme='dark'] #sidebar .sidebar-nav-item.bg-slate-100 .sidebar-nav-icon,
+   html[data-theme='dark'] #sidebar .sidebar-settings-link.bg-slate-100,
+@@ -190,6 +231,10 @@
+     color: #0f172a !important;
+   }
+ 
++  html[data-theme='dark'] #sidebar .hover\:bg-slate-100:hover {
++    background-color: #24364f !important;
++  }
++
+   html[data-theme='dark'] input,
+   html[data-theme='dark'] textarea,
+   html[data-theme='dark'] select {
+diff --git a/frontend/src/components/Sidebar.tsx b/frontend/src/components/Sidebar.tsx
+index 06fb0fc..a946a74 100644
+--- a/frontend/src/components/Sidebar.tsx
++++ b/frontend/src/components/Sidebar.tsx
+@@ -1,7 +1,15 @@
+-import React from 'react';
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
+ import Link from 'next/link'; // Import Link for navigation
+ import { usePathname } from 'next/navigation'; // To highlight active link
+ import { User } from '@/context/AuthContext'; // Import User type
++import {
++  fetchStudentNotifications,
++  loadStudentNotificationPrefs,
++} from '@/lib/studentNotifications';
++import {
++  DEFAULT_NOTIFICATION_POLL_INTERVAL_MS,
++  loadNotificationPollIntervalMs,
++} from '@/lib/notificationRealtime';
+ 
+ interface SidebarProps {
+   sidebarOpen: boolean;
+@@ -14,13 +22,336 @@ type NavItem = {
+   icon: React.ReactNode;
+   label: string;
+   includeChildren?: boolean;
++  badgeKey?: string;
++};
++
++type TeacherNotificationPrefs = {
++  classRequests: boolean;
++  assessmentUpdates: boolean;
++  systemAnnouncements: boolean;
++  sidebarIndicators?: boolean;
++};
++
++type SuperadminNotificationPrefs = {
++  approvalRequests: boolean;
++  sidebarIndicators?: boolean;
++};
++
++type TeacherClassItem = {
++  id: string;
++  class_name: string;
++};
++
++type StudentClassItem = {
++  id: string;
++  class_name: string;
++};
++
++const TEACHER_NOTIFICATION_PREFS_KEY = "teacher_notification_preferences";
++const SUPERADMIN_NOTIFICATION_PREFS_KEY = "superadmin_notification_preferences";
++const NOTIF_READ_STORAGE_PREFIX = "read_notifications_";
++
++const getGradeFromClassName = (className: string): "10" | "11" | "12" | "other" => {
++  const normalized = (className || "").trim().toUpperCase();
++  if (/(?:^|[^A-Z0-9])XII(?=[^A-Z0-9]|$)/.test(normalized)) return "12";
++  if (/(?:^|[^A-Z0-9])XI(?=[^A-Z0-9]|$)/.test(normalized)) return "11";
++  if (/(?:^|[^A-Z0-9])X(?=[^A-Z0-9]|$)/.test(normalized)) return "10";
++  const match = normalized.match(/(?:^|[^0-9])(10|11|12)(?=[A-Z0-9\s-]|$)/);
++  if (!match) return "other";
++  if (match[1] === "10") return "10";
++  if (match[1] === "11") return "11";
++  if (match[1] === "12") return "12";
++  return "other";
+ };
+ 
+ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) => {
+   const pathname = usePathname();
+   const userRole = user.peran;
++  const [badgeMap, setBadgeMap] = useState<Record<string, boolean>>({});
++  const [pollIntervalMs, setPollIntervalMs] = useState<number>(DEFAULT_NOTIFICATION_POLL_INTERVAL_MS);
++  const [teacherClasses, setTeacherClasses] = useState<TeacherClassItem[]>([]);
++  const [isTeacherClassesLoading, setTeacherClassesLoading] = useState(false);
++  const [isClassSubmenuOpen, setClassSubmenuOpen] = useState(false);
++  const [studentClasses, setStudentClasses] = useState<StudentClassItem[]>([]);
++  const [isStudentClassesLoading, setStudentClassesLoading] = useState(false);
++  const [isStudentClassSubmenuOpen, setStudentClassSubmenuOpen] = useState(false);
++  const [openClassGroups, setOpenClassGroups] = useState<Record<string, boolean>>({
++    "Kelas 10": false,
++    "Kelas 11": false,
++    "Kelas 12": false,
++    Lainnya: false,
++  });
+   const isPathActive = (href: string, includeChildren?: boolean) =>
+     includeChildren ? pathname === href || pathname.startsWith(`${href}/`) : pathname === href;
++  const currentTeacherClassId = pathname.match(/^\/dashboard\/teacher\/class\/([^/]+)/)?.[1] ?? "";
++  const currentStudentClassId = pathname.match(/^\/dashboard\/student\/classes\/([^/]+)/)?.[1] ?? "";
++  const isTeacherClassArea = pathname === "/dashboard/teacher/classes" || pathname.startsWith("/dashboard/teacher/class/");
++  const isStudentClassArea = pathname === "/dashboard/student/my-classes" || pathname.startsWith("/dashboard/student/classes/");
++
++  const teacherClassesByGrade = useMemo(
++    () => ({
++      "10": teacherClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "10"),
++      "11": teacherClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "11"),
++      "12": teacherClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "12"),
++      other: teacherClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "other"),
++    }),
++    [teacherClasses]
++  );
++  const teacherClassSections = useMemo(
++    () => [
++      { label: "Kelas 10", items: teacherClassesByGrade["10"] },
++      { label: "Kelas 11", items: teacherClassesByGrade["11"] },
++      { label: "Kelas 12", items: teacherClassesByGrade["12"] },
++      { label: "Lainnya", items: teacherClassesByGrade.other },
++    ],
++    [teacherClassesByGrade]
++  );
++
++  const studentClassesByGrade = useMemo(
++    () => ({
++      "10": studentClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "10"),
++      "11": studentClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "11"),
++      "12": studentClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "12"),
++      other: studentClasses.filter((cls) => getGradeFromClassName(cls.class_name) === "other"),
++    }),
++    [studentClasses]
++  );
++  const studentClassSections = useMemo(
++    () => [
++      { label: "Kelas 10", items: studentClassesByGrade["10"] },
++      { label: "Kelas 11", items: studentClassesByGrade["11"] },
++      { label: "Kelas 12", items: studentClassesByGrade["12"] },
++      { label: "Lainnya", items: studentClassesByGrade.other },
++    ],
++    [studentClassesByGrade]
++  );
++
++  const fetchTeacherClasses = useCallback(async () => {
++    if (userRole !== "teacher") return;
++    setTeacherClassesLoading(true);
++    try {
++      const res = await fetch("/api/classes", { credentials: "include" });
++      const data = res.ok ? await res.json() : [];
++      setTeacherClasses(Array.isArray(data) ? data : []);
++    } catch {
++      setTeacherClasses([]);
++    } finally {
++      setTeacherClassesLoading(false);
++    }
++  }, [userRole]);
++
++  const fetchStudentClasses = useCallback(async () => {
++    if (userRole !== "student") return;
++    setStudentClassesLoading(true);
++    try {
++      const res = await fetch("/api/student/my-classes", { credentials: "include" });
++      const data = res.ok ? await res.json() : [];
++      setStudentClasses(Array.isArray(data) ? data : []);
++    } catch {
++      setStudentClasses([]);
++    } finally {
++      setStudentClassesLoading(false);
++    }
++  }, [userRole]);
++
++  const getReadIDs = useCallback(() => {
++    if (typeof window === "undefined") return new Set<string>();
++    const userKey = user?.id || user?.nama_lengkap || "anon";
++    const key = `${NOTIF_READ_STORAGE_PREFIX}${userKey}`;
++    try {
++      const raw = window.localStorage.getItem(key);
++      const parsed = raw ? JSON.parse(raw) : [];
++      return new Set<string>(Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : []);
++    } catch {
++      return new Set<string>();
++    }
++  }, [user?.id, user?.nama_lengkap]);
++
++  const refreshBadges = useCallback(async () => {
++    const next: Record<string, boolean> = {};
++    const readIDs = getReadIDs();
++
++    if (userRole === "teacher") {
++      let prefs: TeacherNotificationPrefs = {
++        classRequests: true,
++        assessmentUpdates: true,
++        systemAnnouncements: true,
++        sidebarIndicators: true,
++      };
++      if (typeof window !== "undefined") {
++        try {
++          const raw = window.localStorage.getItem(TEACHER_NOTIFICATION_PREFS_KEY);
++          if (raw) prefs = { ...prefs, ...(JSON.parse(raw) as Partial<TeacherNotificationPrefs>) };
++        } catch {
++          // noop
++        }
++      }
++      if (!prefs.sidebarIndicators) {
++        setBadgeMap({});
++        return;
++      }
++      try {
++        const classRes = await fetch("/api/classes", { credentials: "include" });
++        const classes = classRes.ok ? await classRes.json() : [];
++        if (prefs.classRequests) {
++          let hasUnreadJoin = false;
++          for (const cls of Array.isArray(classes) ? classes : []) {
++            const pendingRes = await fetch(`/api/classes/${cls.id}/join-requests`, { credentials: "include" });
++            if (!pendingRes.ok) continue;
++            const pendingItems = await pendingRes.json();
++            for (const req of Array.isArray(pendingItems) ? pendingItems : []) {
++              const notifID = `join-${req.member_id || req.id}`;
++              if (!readIDs.has(notifID)) {
++                hasUnreadJoin = true;
++                break;
++              }
++            }
++            if (hasUnreadJoin) break;
++          }
++          next.teacher_classes = hasUnreadJoin;
++        }
++
++        if (prefs.assessmentUpdates) {
++          let hasUnreadAssessment = false;
++          for (const cls of Array.isArray(classes) ? classes : []) {
++            const materialsRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: "include" });
++            const materials = materialsRes.ok ? await materialsRes.json() : [];
++            for (const material of Array.isArray(materials) ? materials : []) {
++              const questionRes = await fetch(`/api/materials/${material.id}/essay-questions`, { credentials: "include" });
++              const questions = questionRes.ok ? await questionRes.json() : [];
++              for (const q of Array.isArray(questions) ? questions : []) {
++                const submissionRes = await fetch(`/api/essay-questions/${q.id}/submissions`, { credentials: "include" });
++                const submissions = submissionRes.ok ? await submissionRes.json() : [];
++                for (const sub of Array.isArray(submissions) ? submissions : []) {
++                  const reviewed = sub?.revised_score != null || String(sub?.teacher_feedback || "").trim().length > 0;
++                  if (reviewed) continue;
++                  const notifID = `assessment-${sub.id}`;
++                  if (!readIDs.has(notifID)) {
++                    hasUnreadAssessment = true;
++                    break;
++                  }
++                }
++                if (hasUnreadAssessment) break;
++              }
++              if (hasUnreadAssessment) break;
++            }
++            if (hasUnreadAssessment) break;
++          }
++          next.teacher_penilaian = hasUnreadAssessment;
++        }
++      } catch {
++        // noop
++      }
++      setBadgeMap(next);
++      return;
++    }
++
++    if (userRole === "superadmin") {
++      let prefs: SuperadminNotificationPrefs = { approvalRequests: true, sidebarIndicators: true };
++      if (typeof window !== "undefined") {
++        try {
++          const raw = window.localStorage.getItem(SUPERADMIN_NOTIFICATION_PREFS_KEY);
++          if (raw) prefs = { ...prefs, ...(JSON.parse(raw) as Partial<SuperadminNotificationPrefs>) };
++        } catch {
++          // noop
++        }
++      }
++      if (!prefs.sidebarIndicators) {
++        setBadgeMap({});
++        return;
++      }
++      if (prefs.approvalRequests) {
++        try {
++          const res = await fetch("/api/admin/profile-requests?status=pending", { credentials: "include" });
++          const items = res.ok ? await res.json() : [];
++          next.superadmin_approval = (Array.isArray(items) ? items : []).some((item: any) => !readIDs.has(`profile-${item.id}`));
++        } catch {
++          next.superadmin_approval = false;
++        }
++      }
++      setBadgeMap(next);
++      return;
++    }
++
++    if (userRole === "student") {
++      const prefs = loadStudentNotificationPrefs();
++      if (!prefs.sidebarIndicators) {
++        setBadgeMap({});
++        return;
++      }
++      try {
++        const items = await fetchStudentNotifications(prefs);
++        const unread = items.filter((item) => !readIDs.has(item.id));
++        next.student_classes = unread.some((item) => item.id.startsWith("student-class-approved-") || item.id.startsWith("student-class-invited-"));
++        next.student_assignments = unread.some((item) => item.id.startsWith("student-material-") || item.id.startsWith("student-question-"));
++        next.student_grades = unread.some((item) => item.id.startsWith("student-ai-graded-") || item.id.startsWith("student-review-"));
++      } catch {
++        // noop
++      }
++      setBadgeMap(next);
++      return;
++    }
++    setBadgeMap({});
++  }, [getReadIDs, userRole]);
++
++  useEffect(() => {
++    let active = true;
++    (async () => {
++      const next = await loadNotificationPollIntervalMs();
++      if (active) setPollIntervalMs(next);
++    })();
++    return () => {
++      active = false;
++    };
++  }, []);
++
++  useEffect(() => {
++    refreshBadges();
++    const timer = window.setInterval(refreshBadges, pollIntervalMs);
++    const onFocus = () => refreshBadges();
++    const onStorage = () => refreshBadges();
++    window.addEventListener("focus", onFocus);
++    window.addEventListener("storage", onStorage);
++    return () => {
++      window.clearInterval(timer);
++      window.removeEventListener("focus", onFocus);
++      window.removeEventListener("storage", onStorage);
++    };
++  }, [pollIntervalMs, refreshBadges]);
++
++  useEffect(() => {
++    fetchTeacherClasses();
++  }, [fetchTeacherClasses]);
++
++  useEffect(() => {
++    fetchStudentClasses();
++  }, [fetchStudentClasses]);
++
++  useEffect(() => {
++    if (isTeacherClassArea) setClassSubmenuOpen(true);
++  }, [isTeacherClassArea]);
++
++  useEffect(() => {
++    if (isStudentClassArea) setStudentClassSubmenuOpen(true);
++  }, [isStudentClassArea]);
++
++  useEffect(() => {
++    if (!currentTeacherClassId) return;
++    const activeClass = teacherClasses.find((cls) => cls.id === currentTeacherClassId);
++    if (!activeClass) return;
++    const grade = getGradeFromClassName(activeClass.class_name);
++    const label = grade === "10" ? "Kelas 10" : grade === "11" ? "Kelas 11" : grade === "12" ? "Kelas 12" : "Lainnya";
++    setOpenClassGroups((prev) => ({ ...prev, [label]: true }));
++  }, [currentTeacherClassId, teacherClasses]);
++
++  useEffect(() => {
++    if (!currentStudentClassId) return;
++    const activeClass = studentClasses.find((cls) => cls.id === currentStudentClassId);
++    if (!activeClass) return;
++    const grade = getGradeFromClassName(activeClass.class_name);
++    const label = grade === "10" ? "Kelas 10" : grade === "11" ? "Kelas 11" : grade === "12" ? "Kelas 12" : "Lainnya";
++    setOpenClassGroups((prev) => ({ ...prev, [label]: true }));
++  }, [currentStudentClassId, studentClasses]);
+ 
+   // Define navigation items for Teacher
+   const teacherNavItems: NavItem[] = [
+@@ -29,10 +360,10 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user })
+     ), label: 'Beranda' },
+     { href: '/dashboard/teacher/classes', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+-    ), label: 'Manajemen Kelas' },
++    ), label: 'Kelas', badgeKey: 'teacher_classes' },
+     { href: '/dashboard/teacher/penilaian', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+-    ), label: 'Penilaian' },
++    ), label: 'Penilaian', badgeKey: 'teacher_penilaian' },
+     { href: '/dashboard/teacher/bank-soal', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h8M8 11h8m-8 4h5m-7 6h12a2 2 0 002-2V5a2 2 0 00-2-2H6a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+     ), label: 'Bank Soal' },
+@@ -51,13 +382,13 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user })
+     ), label: 'Dashboard' , includeChildren: false},
+     { href: '/dashboard/student/my-classes', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+-    ), label: 'My Classes', includeChildren: true },
++    ), label: 'Kelas Saya', includeChildren: true, badgeKey: 'student_classes' },
+     { href: '/dashboard/student/assignments', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+-    ), label: 'Materi & Tugas', includeChildren: false },
++    ), label: 'Materi & Tugas', includeChildren: false, badgeKey: 'student_assignments' },
+     { href: '/dashboard/student/grades', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 17a1 1 0 102 0V5a1 1 0 10-2 0v12zm-4 0a1 1 0 102 0V9a1 1 0 10-2 0v8zm8 0a1 1 0 102 0v-4a1 1 0 10-2 0v4z"></path></svg>
+-    ), label: 'Nilai & Feedback', includeChildren: false },
++    ), label: 'Nilai & Feedback', includeChildren: false, badgeKey: 'student_grades' },
+     { href: '/dashboard/student/calendar', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+     ), label: 'Kalender', includeChildren: false },
+@@ -96,7 +427,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user })
+     ), label: 'Audit Log' },
+     { href: '/dashboard/superadmin/profile-requests', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m-6-8h6m-8 12h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+-    ), label: 'Approval' },
++    ), label: 'Approval', badgeKey: 'superadmin_approval' },
+     { href: '/dashboard/superadmin/users', icon: (
+       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H7m4-8a4 4 0 100-8 4 4 0 000 8z"></path></svg>
+     ), label: 'Manajemen User' },
+@@ -181,23 +512,126 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user })
+             <ul className="mt-3">
+               {navItems.map((item) => {
+                 const active = isPathActive(item.href, item.includeChildren);
++                const isTeacherClassesMenu = userRole === "teacher" && item.href === "/dashboard/teacher/classes";
++                const isStudentClassesMenu = userRole === "student" && item.href === "/dashboard/student/my-classes";
++                const hasClassSubmenu = isTeacherClassesMenu || isStudentClassesMenu;
++                const classSubmenuOpen = isTeacherClassesMenu ? isClassSubmenuOpen : isStudentClassSubmenuOpen;
++                const classSections = isTeacherClassesMenu ? teacherClassSections : studentClassSections;
++                const classesLoading = isTeacherClassesMenu ? isTeacherClassesLoading : isStudentClassesLoading;
++                const totalClasses = isTeacherClassesMenu ? teacherClasses.length : studentClasses.length;
++                const currentClassId = isTeacherClassesMenu ? currentTeacherClassId : currentStudentClassId;
++                const classHrefBase = isTeacherClassesMenu ? "/dashboard/teacher/class" : "/dashboard/student/classes";
++                const itemContainerClass = hasClassSubmenu
++                  ? ""
++                  : active
++                  ? "bg-slate-100"
++                  : "hover:bg-slate-50";
++                const itemSpacingClass = hasClassSubmenu ? "px-0 py-0" : "pl-4 pr-3 py-2.5";
++                const rowContainerClass = hasClassSubmenu
++                  ? active
++                    ? "relative w-full pl-4 pr-1 py-2.5 bg-slate-100 rounded-xl transition"
++                    : "relative w-full pl-4 pr-1 py-2.5 hover:bg-slate-50 rounded-xl transition"
++                  : "";
+                 return (
+                 <li
+                   key={item.href}
+-                  className={`sidebar-nav-item px-3 py-2.5 rounded-xl mb-1 last:mb-0 transition ${
+-                    active ? 'bg-slate-100' : 'hover:bg-slate-50'
+-                  }`}
++                  className={`sidebar-nav-item ${hasClassSubmenu ? 'sidebar-nav-item-has-submenu' : ''} ${itemSpacingClass} rounded-xl mb-1 last:mb-0 transition ${itemContainerClass}`}
+                 >
+-                  <Link
+-                    href={item.href}
+-                    className={`sidebar-nav-link flex items-center text-slate-600 ${active && 'text-slate-900 font-semibold'}`}
+-                    onClick={() => setSidebarOpen(false)} // Close sidebar on mobile
+-                  >
+-                    <span className="sidebar-nav-icon text-slate-500">{item.icon}</span>
+-                    <span className="text-sm font-medium ml-3 lg:opacity-100 duration-200">
+-                      {item.label}
+-                    </span>
+-                  </Link>
++                  <div className={`sidebar-nav-row flex items-center ${rowContainerClass}`}>
++                    <Link
++                      href={item.href}
++                      className={`sidebar-nav-link flex items-center text-slate-600 ${hasClassSubmenu ? 'flex-1 min-w-0 pr-12' : ''} ${active && 'text-slate-900 font-semibold'}`}
++                      onClick={() => setSidebarOpen(false)} // Close sidebar on mobile
++                    >
++                      <span className="sidebar-nav-icon text-slate-500">{item.icon}</span>
++                      <span className="text-sm font-medium ml-3 lg:opacity-100 duration-200 truncate">
++                        {item.label}
++                      </span>
++                    </Link>
++                    {(item.badgeKey && badgeMap[item.badgeKey]) || hasClassSubmenu ? (
++                      <div className={hasClassSubmenu ? "absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2" : "ml-auto flex items-center gap-2"}>
++                        {item.badgeKey && badgeMap[item.badgeKey] && (
++                          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Ada update penting" />
++                        )}
++                        {hasClassSubmenu && (
++                          <button
++                            type="button"
++                            onClick={() => {
++                              if (isTeacherClassesMenu) {
++                                setClassSubmenuOpen((prev) => !prev);
++                              } else {
++                                setStudentClassSubmenuOpen((prev) => !prev);
++                              }
++                            }}
++                            className="rounded-md p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
++                            aria-label="Toggle submenu manajemen kelas"
++                            aria-expanded={classSubmenuOpen}
++                          >
++                            <svg className={`h-4 w-4 transition-transform ${classSubmenuOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
++                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
++                            </svg>
++                          </button>
++                        )}
++                      </div>
++                    ) : null}
++                  </div>
++
++                  {hasClassSubmenu && classSubmenuOpen && (
++                    <div className="mt-2 ml-9 border-l border-slate-200 pl-3 space-y-2">
++                      {classesLoading && (
++                        <p className="text-xs text-slate-500">Memuat kelas...</p>
++                      )}
++                      {!classesLoading && totalClasses === 0 && (
++                        <p className="text-xs text-slate-500">Belum ada kelas</p>
++                      )}
++                      {!classesLoading &&
++                        classSections.map((section) => (
++                          section.items.length > 0 ? (
++                            <div key={section.label}>
++                              <button
++                                type="button"
++                                onClick={() =>
++                                  setOpenClassGroups((prev) => ({ ...prev, [section.label]: !prev[section.label] }))
++                                }
++                                className="flex w-full items-center justify-between rounded-md pl-2.5 pr-1 py-1 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:bg-slate-100"
++                                aria-expanded={!!openClassGroups[section.label]}
++                                aria-label={`Toggle ${section.label}`}
++                              >
++                                <span>{section.label}</span>
++                                <svg className={`h-3.5 w-3.5 transition-transform ${openClassGroups[section.label] ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
++                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
++                                </svg>
++                              </button>
++                              {openClassGroups[section.label] && (
++                                <ul className="mt-1 space-y-1">
++                                  {section.items.map((cls) => {
++                                    const classHref = `${classHrefBase}/${cls.id}`;
++                                    const classActive = currentClassId === cls.id;
++                                    return (
++                                      <li key={cls.id}>
++                                        <Link
++                                          href={classHref}
++                                          onClick={() => {
++                                            setSidebarOpen(false);
++                                          }}
++                                          className={`sidebar-class-subitem block rounded-md px-3 py-1 text-xs transition ${
++                                            classActive
++                                              ? "bg-slate-200 text-slate-900 font-medium"
++                                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
++                                          }`}
++                                        >
++                                          {cls.class_name}
++                                        </Link>
++                                      </li>
++                                    );
++                                  })}
++                                </ul>
++                              )}
++                            </div>
++                          ) : null
++                        ))}
++                    </div>
++                  )}
+                 </li>
+                 );
+               })}
+diff --git a/frontend/src/components/Topbar.tsx b/frontend/src/components/Topbar.tsx
+index 0a88a38..9a4dff6 100644
+--- a/frontend/src/components/Topbar.tsx
++++ b/frontend/src/components/Topbar.tsx
+@@ -42,6 +42,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+     title: string;
+     message: string;
+     createdAt: string;
++    href?: string;
+   }>>([]);
+   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+   const [teacherNotifPrefs, setTeacherNotifPrefs] = useState<TeacherNotificationPrefs>({
+@@ -59,6 +60,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+     newMaterials: true,
+     reviewedScores: true,
+     newQuestions: true,
++    sidebarIndicators: true,
+   });
+   const [impersonationActive, setImpersonationActive] = useState(false);
+   const [impersonationBusy, setImpersonationBusy] = useState(false);
+@@ -199,7 +201,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+     setNotifLoading(true);
+     try {
+       if (user.peran === 'teacher') {
+-        const allItems: Array<{ id: string; title: string; message: string; createdAt: string }> = [];
++        const allItems: Array<{ id: string; title: string; message: string; createdAt: string; href?: string }> = [];
+         const classRes = await fetch('/api/classes', { credentials: 'include' });
+         if (!classRes.ok) throw new Error('Failed to fetch classes');
+         const classes = await classRes.json();
+@@ -215,6 +217,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+                   title: 'Join Request Baru',
+                   message: `${req.student_name || 'Siswa'} meminta bergabung ke ${cls.class_name || 'kelas Anda'}.`,
+                   createdAt: req.requested_at || new Date().toISOString(),
++                  href: '/dashboard/teacher/classes',
+                 });
+               }
+             }
+@@ -245,6 +248,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+                     title: 'Submission Perlu Review',
+                     message: `${submission.student_name || 'Siswa'} mengirim jawaban di ${material.judul || 'materi'} (${cls.class_name || 'kelas'}).`,
+                     createdAt: submission.submitted_at || new Date().toISOString(),
++                    href: '/dashboard/teacher/penilaian',
+                   });
+                 }
+               }
+@@ -270,6 +274,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+             title: 'Approval Pending',
+             message: `${item.user_name || 'User'} menunggu approval (${item.request_type || 'profile_change'}).`,
+             createdAt: item.created_at || new Date().toISOString(),
++            href: '/dashboard/superadmin/profile-requests?status=pending',
+           }));
+           mapped.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+           setNotifications(mapped.slice(0, 12));
+@@ -402,6 +407,13 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+     persistReadNotifications(merged);
+   };
+ 
++  const openNotification = (item: { id: string; href?: string }) => {
++    const nextRead = Array.from(new Set([...readNotificationIds, item.id]));
++    persistReadNotifications(nextRead);
++    setNotifOpen(false);
++    router.push(item.href || notificationPageByRole(user?.peran));
++  };
++
+   // Close on click outside
+   useEffect(() => {
+     const clickHandler = ({ target }: MouseEvent) => {
+@@ -554,11 +566,16 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
+                           notifications.slice(0, 3).map((item) => {
+                             const isRead = readNotificationIds.includes(item.id);
+                             return (
+-                            <div key={item.id} className={`topbar-list-item rounded-lg px-2 py-2 hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}>
++                            <button
++                              key={item.id}
++                              type="button"
++                              onClick={() => openNotification(item)}
++                              className={`topbar-list-item block w-full rounded-lg px-2 py-2 text-left hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}
++                            >
+                               <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                               <p className="mt-0.5 text-xs text-slate-600">{item.message}</p>
+                               <p className="mt-1 text-[11px] text-slate-400">{formatNotifDate(item.createdAt)}</p>
+-                            </div>
++                            </button>
+                           )})
+                         )}
+                       </div>
+diff --git a/frontend/src/lib/studentNotifications.ts b/frontend/src/lib/studentNotifications.ts
+index c95e347..2049001 100644
+--- a/frontend/src/lib/studentNotifications.ts
++++ b/frontend/src/lib/studentNotifications.ts
+@@ -7,6 +7,7 @@ export type StudentNotificationPrefs = {
+   newMaterials: boolean;
+   reviewedScores: boolean;
+   newQuestions: boolean;
++  sidebarIndicators: boolean;
+ };
+ 
+ export type StudentNotificationItem = {
+@@ -130,6 +131,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
+       newMaterials: true,
+       reviewedScores: true,
+       newQuestions: true,
++      sidebarIndicators: true,
+     };
+   }
+   try {
+@@ -142,6 +144,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
+         newMaterials: true,
+         reviewedScores: true,
+         newQuestions: true,
++        sidebarIndicators: true,
+       };
+     }
+     const parsed = JSON.parse(raw) as Partial<StudentNotificationPrefs>;
+@@ -152,6 +155,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
+       newMaterials: parsed.newMaterials ?? true,
+       reviewedScores: parsed.reviewedScores ?? true,
+       newQuestions: parsed.newQuestions ?? true,
++      sidebarIndicators: parsed.sidebarIndicators ?? true,
+     };
+   } catch {
+     return {
+@@ -161,6 +165,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
+       newMaterials: true,
+       reviewedScores: true,
+       newQuestions: true,
++      sidebarIndicators: true,
+     };
+   }
+ };

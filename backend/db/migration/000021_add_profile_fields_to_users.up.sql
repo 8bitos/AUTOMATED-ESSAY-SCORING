@@ -1,0 +1,10 @@
+ALTER TABLE users
+ADD COLUMN foto_profil_url TEXT,
+ADD COLUMN mata_pelajaran TEXT,
+ADD COLUMN kelas_tingkat TEXT,
+ADD COLUMN institusi TEXT,
+ADD COLUMN bahasa TEXT DEFAULT 'id',
+ADD COLUMN notif_email BOOLEAN DEFAULT TRUE,
+ADD COLUMN notif_inapp BOOLEAN DEFAULT TRUE,
+ADD COLUMN last_login_at TIMESTAMP WITH TIME ZONE;
+

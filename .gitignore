@@ -48,6 +48,7 @@ Dockerfile*
 *.sqlite
 *.db
 *.sql
+!backend/db/migration/*.sql
 
 ### Misc ###
 /tmp/

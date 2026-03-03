@@ -1,26 +1,24 @@
+const stripTrailingSlash = (value = "") => value.replace(/\/+$/, "");
+
+const apiBase = stripTrailingSlash(
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080/api"
+);
+
+const uploadsBase = stripTrailingSlash(
+  process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || apiBase.replace(/\/api$/, "")
+);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
   async rewrites() {
-    console.log("Rewrites function called!"); // Added for debugging
     return [
-      // Specific rules first
-      {
-        source: '/api/ping',
-        destination: 'http://localhost:8080/api/ping',
-      },
-      {
-        source: '/api/classes',
-        destination: 'http://localhost:8080/api/classes',
-      },
-      // Generic rule last
       {
         source: "/api/:path*",
-        destination: "http://localhost:8080/api/:path*",
+        destination: `${apiBase}/:path*`,
       },
       {
         source: "/uploads/:path*",
-        destination: "http://localhost:8080/uploads/:path*",
+        destination: `${uploadsBase}/uploads/:path*`,
       },
     ];
   },

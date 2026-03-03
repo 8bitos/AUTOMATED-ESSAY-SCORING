@@ -1,0 +1,8 @@
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS mata_pelajaran_tambahan TEXT,
+  ADD COLUMN IF NOT EXISTS pengalaman_mengajar INT,
+  ADD COLUMN IF NOT EXISTS tingkat_ajar TEXT,
+  ADD COLUMN IF NOT EXISTS rombel_aktif TEXT,
+  ADD COLUMN IF NOT EXISTS is_wali_kelas BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS no_whatsapp TEXT,
+  ADD COLUMN IF NOT EXISTS bio_singkat TEXT;

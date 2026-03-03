@@ -78,17 +78,27 @@ func (s *MaterialService) CreateMaterialWithQuestions(req models.CreateMaterialA
 		ClassID:      req.ClassID,
 		UploaderID:   uploaderID,
 		Judul:        req.MaterialName,
+		DisplayOrder: 0,
 		MaterialType: "materi",
 		IsiMateri:    materialText,
 		FileUrl:      fileURL,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
+
+	if _, err := tx.ExecContext(
+		context.Background(),
+		"UPDATE materials SET display_order = display_order + 1 WHERE class_id = $1",
+		newMaterial.ClassID,
+	); err != nil {
+		return nil, fmt.Errorf("error shifting material order: %w", err)
+	}
+
 	// Query INSERT untuk materi.
 	materialQuery := `
-		INSERT INTO materials (class_id, uploader_id, judul, isi_materi, file_url, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)
-		RETURNING id, created_at, updated_at
+		INSERT INTO materials (class_id, uploader_id, judul, isi_materi, file_url, display_order, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 1, $6, $6)
+		RETURNING id, display_order, created_at, updated_at
 	`
 	// Menjalankan query dan mendapatkan ID materi yang baru dibuat.
 	err = tx.QueryRowContext(context.Background(),
@@ -99,7 +109,7 @@ func (s *MaterialService) CreateMaterialWithQuestions(req models.CreateMaterialA
 		newMaterial.IsiMateri,
 		newMaterial.FileUrl,
 		newMaterial.CreatedAt,
-	).Scan(&newMaterial.ID, &newMaterial.CreatedAt, &newMaterial.UpdatedAt)
+	).Scan(&newMaterial.ID, &newMaterial.DisplayOrder, &newMaterial.CreatedAt, &newMaterial.UpdatedAt)
 
 	if err != nil {
 		return nil, fmt.Errorf("error inserting new material: %w", err)
@@ -160,6 +170,7 @@ func (s *MaterialService) CreateMaterial(req models.CreateMaterialRequest, uploa
 		ClassID:             req.ClassID,
 		UploaderID:          uploaderID,
 		Judul:               req.Judul,
+		DisplayOrder:        0,
 		MaterialType:        normalizeMaterialType(req.MaterialType),
 		IsiMateri:           req.IsiMateri,
 		FileUrl:             req.FileUrl,
@@ -169,13 +180,27 @@ func (s *MaterialService) CreateMaterial(req models.CreateMaterialRequest, uploa
 		KataKunci:           applyMaterialTypeToKeywords(req.KataKunci, req.MaterialType),
 	}
 
+	tx, err := s.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(
+		context.Background(),
+		"UPDATE materials SET display_order = display_order + 1 WHERE class_id = $1",
+		newMaterial.ClassID,
+	); err != nil {
+		return nil, fmt.Errorf("error shifting material order: %w", err)
+	}
+
 	// Query INSERT untuk materi.
 	query := `
-		INSERT INTO materials (class_id, uploader_id, judul, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, created_at, updated_at
+		INSERT INTO materials (class_id, uploader_id, judul, isi_materi, file_url, display_order, created_at, updated_at, capaian_pembelajaran, kata_kunci)
+		VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9)
+		RETURNING id, display_order, created_at, updated_at
 	`
-	err := s.db.QueryRowContext(context.Background(),
+	err = tx.QueryRowContext(context.Background(),
 		query,
 		newMaterial.ClassID,
 		newMaterial.UploaderID,
@@ -186,7 +211,7 @@ func (s *MaterialService) CreateMaterial(req models.CreateMaterialRequest, uploa
 		newMaterial.UpdatedAt,
 		newMaterial.CapaianPembelajaran,
 		pq.Array(newMaterial.KataKunci), // Menggunakan pq.Array untuk KataKunci.
-	).Scan(&newMaterial.ID, &newMaterial.CreatedAt, &newMaterial.UpdatedAt)
+	).Scan(&newMaterial.ID, &newMaterial.DisplayOrder, &newMaterial.CreatedAt, &newMaterial.UpdatedAt)
 
 	if err != nil {
 		return nil, fmt.Errorf("error inserting new material: %w", err)
@@ -196,7 +221,7 @@ func (s *MaterialService) CreateMaterial(req models.CreateMaterialRequest, uploa
 	if newMaterial.MaterialType == "tugas" {
 		emptyRubrics, _ := json.Marshal([]interface{}{})
 		defaultPrompt := "Kumpulkan tugas Anda pada form jawaban di bawah ini."
-		if _, err := s.db.ExecContext(
+		if _, err := tx.ExecContext(
 			context.Background(),
 			`INSERT INTO essay_questions (id, material_id, teks_soal, keywords, ideal_answer, weight, rubrics, created_at, updated_at)
 			 VALUES ($1, $2, $3, $4, NULL, 1, $5, $6, $6)`,
@@ -211,13 +236,17 @@ func (s *MaterialService) CreateMaterial(req models.CreateMaterialRequest, uploa
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit material creation transaction: %w", err)
+	}
+
 	return newMaterial, nil
 }
 
 // GetMaterialByID retrieves a single material by its ID.
 func (s *MaterialService) GetMaterialByID(materialID string) (*models.Material, error) {
 	query := `
-		SELECT id, class_id, uploader_id, judul, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci
+		SELECT id, class_id, uploader_id, judul, display_order, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci
 		FROM materials
 		WHERE id = $1
 	`
@@ -226,7 +255,7 @@ func (s *MaterialService) GetMaterialByID(materialID string) (*models.Material, 
 
 	// Menjalankan query dan memindai hasilnya.
 	err := s.db.QueryRowContext(context.Background(), query, materialID).Scan(
-		&m.ID, &m.ClassID, &m.UploaderID, &m.Judul, &m.IsiMateri, &m.FileUrl, &m.CreatedAt, &m.UpdatedAt, &m.CapaianPembelajaran, &kataKunci,
+		&m.ID, &m.ClassID, &m.UploaderID, &m.Judul, &m.DisplayOrder, &m.IsiMateri, &m.FileUrl, &m.CreatedAt, &m.UpdatedAt, &m.CapaianPembelajaran, &kataKunci,
 	)
 	m.MaterialType, m.KataKunci = extractMaterialTypeAndKeywords([]string(kataKunci)) // Pisahkan tipe internal dan kata kunci publik.
 
@@ -243,10 +272,10 @@ func (s *MaterialService) GetMaterialByID(materialID string) (*models.Material, 
 // GetMaterialsByClassID retrieves all materials for a specific class.
 func (s *MaterialService) GetMaterialsByClassID(classID string) ([]models.Material, error) {
 	query := `
-		SELECT id, class_id, uploader_id, judul, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci
+		SELECT id, class_id, uploader_id, judul, display_order, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci
 		FROM materials
 		WHERE class_id = $1
-		ORDER BY created_at DESC
+		ORDER BY display_order ASC, created_at DESC
 	`
 	rows, err := s.db.QueryContext(context.Background(), query, classID)
 	if err != nil {
@@ -260,7 +289,7 @@ func (s *MaterialService) GetMaterialsByClassID(classID string) ([]models.Materi
 		var kataKunci pq.StringArray // Untuk memindai kolom array string.
 
 		if err := rows.Scan(
-			&m.ID, &m.ClassID, &m.UploaderID, &m.Judul, &m.IsiMateri, &m.FileUrl, &m.CreatedAt, &m.UpdatedAt, &m.CapaianPembelajaran, &kataKunci); err != nil {
+			&m.ID, &m.ClassID, &m.UploaderID, &m.Judul, &m.DisplayOrder, &m.IsiMateri, &m.FileUrl, &m.CreatedAt, &m.UpdatedAt, &m.CapaianPembelajaran, &kataKunci); err != nil {
 			return nil, fmt.Errorf("error scanning material row: %w", err)
 		}
 		m.MaterialType, m.KataKunci = extractMaterialTypeAndKeywords([]string(kataKunci))
@@ -385,10 +414,10 @@ func (s *MaterialService) GetMaterialsForStudentByClassID(classID, studentID str
 
 	// 2. Ambil Materi (jika siswa adalah anggota).
 	query := `
-		SELECT id, class_id, uploader_id, judul, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci
+		SELECT id, class_id, uploader_id, judul, display_order, isi_materi, file_url, created_at, updated_at, capaian_pembelajaran, kata_kunci
 		FROM materials
 		WHERE class_id = $1
-		ORDER BY created_at DESC
+		ORDER BY display_order ASC, created_at DESC
 	`
 	rows, err := s.db.QueryContext(context.Background(), query, classID)
 	if err != nil {
@@ -402,7 +431,7 @@ func (s *MaterialService) GetMaterialsForStudentByClassID(classID, studentID str
 		var kataKunci pq.StringArray // Untuk memindai kolom array string.
 
 		if err := rows.Scan(
-			&m.ID, &m.ClassID, &m.UploaderID, &m.Judul, &m.IsiMateri, &m.FileUrl, &m.CreatedAt, &m.UpdatedAt, &m.CapaianPembelajaran, &kataKunci); err != nil {
+			&m.ID, &m.ClassID, &m.UploaderID, &m.Judul, &m.DisplayOrder, &m.IsiMateri, &m.FileUrl, &m.CreatedAt, &m.UpdatedAt, &m.CapaianPembelajaran, &kataKunci); err != nil {
 			return nil, fmt.Errorf("error scanning material row: %w", err)
 		}
 		m.MaterialType, m.KataKunci = extractMaterialTypeAndKeywords([]string(kataKunci))
@@ -418,4 +447,75 @@ func (s *MaterialService) GetMaterialsForStudentByClassID(classID, studentID str
 	}
 
 	return materials, nil
+}
+
+// ReorderMaterials updates material display_order in batch for one class.
+func (s *MaterialService) ReorderMaterials(classID, teacherID string, orderedMaterialIDs []string) error {
+	if len(orderedMaterialIDs) == 0 {
+		return fmt.Errorf("ordered material IDs cannot be empty")
+	}
+
+	tx, err := s.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("could not begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var classOwned bool
+	if err := tx.QueryRowContext(
+		context.Background(),
+		"SELECT EXISTS(SELECT 1 FROM classes WHERE id = $1 AND teacher_id = $2)",
+		classID,
+		teacherID,
+	).Scan(&classOwned); err != nil {
+		return fmt.Errorf("error validating class ownership: %w", err)
+	}
+	if !classOwned {
+		return fmt.Errorf("class not found or access denied")
+	}
+
+	var materialCount int
+	if err := tx.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM materials WHERE class_id = $1",
+		classID,
+	).Scan(&materialCount); err != nil {
+		return fmt.Errorf("error counting materials: %w", err)
+	}
+	if materialCount != len(orderedMaterialIDs) {
+		return fmt.Errorf("ordered material count mismatch")
+	}
+
+	seen := make(map[string]bool, len(orderedMaterialIDs))
+	for _, id := range orderedMaterialIDs {
+		if id == "" {
+			return fmt.Errorf("material ID cannot be empty")
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate material ID in request")
+		}
+		seen[id] = true
+	}
+
+	for idx, materialID := range orderedMaterialIDs {
+		res, err := tx.ExecContext(
+			context.Background(),
+			"UPDATE materials SET display_order = $1 WHERE id = $2 AND class_id = $3",
+			idx+1,
+			materialID,
+			classID,
+		)
+		if err != nil {
+			return fmt.Errorf("error updating material order: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return fmt.Errorf("material %s not found in class", materialID)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit reorder transaction: %w", err)
+	}
+	return nil
 }

@@ -8,6 +8,7 @@ type NotificationPrefs = {
   classRequests: boolean;
   assessmentUpdates: boolean;
   systemAnnouncements: boolean;
+  sidebarIndicators: boolean;
 };
 
 const STORAGE_KEY = "teacher_notification_preferences";
@@ -17,6 +18,7 @@ export default function TeacherNotificationSettingsPage() {
     classRequests: true,
     assessmentUpdates: true,
     systemAnnouncements: true,
+    sidebarIndicators: true,
   });
   const [message, setMessage] = useState<string | null>(null);
 
@@ -91,6 +93,18 @@ export default function TeacherNotificationSettingsPage() {
             label="Toggle notifikasi pengumuman sistem"
             checked={prefs.systemAnnouncements}
             onChange={(value) => updatePref("systemAnnouncements", value)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Indikator update di sidebar</p>
+            <p className="text-xs text-slate-500">Tampilkan dot merah pada menu sidebar yang punya update penting.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle indikator update sidebar guru"
+            checked={prefs.sidebarIndicators}
+            onChange={(value) => updatePref("sidebarIndicators", value)}
           />
         </label>
 

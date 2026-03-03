@@ -241,6 +241,54 @@ func (h *MaterialHandlers) GetMaterialsByClassIDHandler(w http.ResponseWriter, r
 	respondWithJSON(w, http.StatusOK, materials)
 }
 
+// ReorderMaterialsByClassIDHandler handles updating material display order for a class.
+func (h *MaterialHandlers) ReorderMaterialsByClassIDHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok || userID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	vars := mux.Vars(r)
+	classID, ok := vars["classId"]
+	if !ok || classID == "" {
+		respondWithError(w, http.StatusBadRequest, "Class ID is missing from URL")
+		return
+	}
+
+	var req models.ReorderMaterialsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if len(req.OrderedMaterialIDs) == 0 {
+		respondWithError(w, http.StatusBadRequest, "ordered_material_ids cannot be empty")
+		return
+	}
+
+	if err := h.Service.ReorderMaterials(classID, userID, req.OrderedMaterialIDs); err != nil {
+		log.Printf("ERROR: Failed to reorder materials for class %s: %v", classID, err)
+		msg := err.Error()
+		switch msg {
+		case "class not found or access denied":
+			respondWithError(w, http.StatusForbidden, msg)
+			return
+		case "ordered material IDs cannot be empty", "ordered material count mismatch", "duplicate material ID in request", "material ID cannot be empty":
+			respondWithError(w, http.StatusBadRequest, msg)
+			return
+		default:
+			if strings.Contains(msg, "not found in class") {
+				respondWithError(w, http.StatusBadRequest, msg)
+				return
+			}
+			respondWithError(w, http.StatusInternalServerError, "Failed to reorder materials")
+			return
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Material order updated"})
+}
+
 // UpdateMaterialHandler handles updating an existing material.
 func (h *MaterialHandlers) UpdateMaterialHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

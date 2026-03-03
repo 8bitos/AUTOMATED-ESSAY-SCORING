@@ -1,0 +1,1 @@
+ALTER TABLE ai_results DROP COLUMN logs_rag;

@@ -1,0 +1,1 @@
+ALTER TABLE essay_questions RENAME COLUMN rubrics TO rubric;

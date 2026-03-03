@@ -1,0 +1,684 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FiCheckCircle,
+  FiChevronDown,
+  FiClock,
+  FiFileText,
+  FiChevronsLeft,
+  FiChevronsRight,
+  FiRefreshCw,
+  FiSearch,
+  FiX,
+} from "react-icons/fi";
+import { useRouter } from "next/navigation";
+
+interface TeacherClass {
+  id: string;
+  class_name: string;
+}
+
+interface MaterialItem {
+  id: string;
+  judul: string;
+}
+
+interface EssayQuestion {
+  id: string;
+  teks_soal: string;
+}
+
+interface Submission {
+  id: string;
+  question_id: string;
+  student_name?: string;
+  student_email?: string;
+  submitted_at?: string;
+  teks_jawaban?: string;
+  skor_ai?: number;
+  revised_score?: number;
+  teacher_feedback?: string;
+}
+
+interface ReviewQueueItem {
+  submissionId: string;
+  classId: string;
+  className: string;
+  materialId: string;
+  materialTitle: string;
+  questionId: string;
+  questionText: string;
+  studentName: string;
+  studentEmail: string;
+  submittedAt?: string;
+  answerText?: string;
+  aiScore?: number;
+  revisedScore?: number;
+  teacherFeedback?: string;
+}
+
+type StatusTab = "pending" | "reviewed" | "all";
+
+interface AssignmentGroup {
+  key: string;
+  classId: string;
+  className: string;
+  materialId: string;
+  materialTitle: string;
+  questionId: string;
+  questionText: string;
+  total: number;
+  pending: number;
+  reviewed: number;
+  latestSubmittedAt?: string;
+}
+
+const buildAssignmentKey = (item: ReviewQueueItem): string => `${item.classId}__${item.materialId}__${item.questionId}`;
+
+const isReviewed = (item: ReviewQueueItem): boolean =>
+  item.revisedScore != null || (item.teacherFeedback || "").trim().length > 0;
+
+const getSubmissionStatus = (item: ReviewQueueItem): "returned" | "turned_in" | "missing" => {
+  if (!item.submittedAt) return "missing";
+  if (isReviewed(item)) return "returned";
+  return "turned_in";
+};
+
+export default function TeacherPenilaianPage() {
+  const router = useRouter();
+  const [items, setItems] = useState<ReviewQueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [assignmentQuery, setAssignmentQuery] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [statusTab, setStatusTab] = useState<StatusTab>("pending");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest">("newest");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const [selectedAssignmentKey, setSelectedAssignmentKey] = useState<string | null>(null);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>([]);
+
+  const loadQueue = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
+    else setRefreshing(true);
+    setError(null);
+
+    try {
+      const classRes = await fetch("/api/classes", { credentials: "include" });
+      if (!classRes.ok) throw new Error("Gagal memuat kelas.");
+      const classes: TeacherClass[] = await classRes.json();
+
+      const allQueueItems = await Promise.all(
+        classes.map(async (cls) => {
+          const materialsRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: "include" });
+          const materials: MaterialItem[] = materialsRes.ok ? await materialsRes.json() : [];
+
+          const materialChunks = await Promise.all(
+            materials.map(async (material) => {
+              const questionRes = await fetch(`/api/materials/${material.id}/essay-questions`, { credentials: "include" });
+              const questions: EssayQuestion[] = questionRes.ok ? await questionRes.json() : [];
+
+              const submissionChunks = await Promise.all(
+                questions.map(async (question) => {
+                  const submissionRes = await fetch(`/api/essay-questions/${question.id}/submissions`, { credentials: "include" });
+                  const submissions: Submission[] = submissionRes.ok ? await submissionRes.json() : [];
+
+                  return submissions.map((submission) => ({
+                    submissionId: submission.id,
+                    classId: cls.id,
+                    className: cls.class_name,
+                    materialId: material.id,
+                    materialTitle: material.judul,
+                    questionId: question.id,
+                    questionText: question.teks_soal,
+                    studentName: submission.student_name || "Unknown",
+                    studentEmail: submission.student_email || "-",
+                    submittedAt: submission.submitted_at,
+                    answerText: submission.teks_jawaban,
+                    aiScore: submission.skor_ai,
+                    revisedScore: submission.revised_score,
+                    teacherFeedback: submission.teacher_feedback,
+                  }));
+                })
+              );
+
+              return submissionChunks.flat();
+            })
+          );
+
+          return materialChunks.flat();
+        })
+      );
+
+      const flat = allQueueItems.flat().sort((a, b) => {
+        const aTime = new Date(a.submittedAt || 0).getTime();
+        const bTime = new Date(b.submittedAt || 0).getTime();
+        return bTime - aTime;
+      });
+      setItems(flat);
+    } catch (err: any) {
+      setError(err?.message || "Gagal memuat antrian penilaian.");
+    } finally {
+      if (initial) setLoading(false);
+      else setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQueue(true);
+  }, [loadQueue]);
+
+  const summary = useMemo(() => {
+    const pending = items.filter((item) => !isReviewed(item)).length;
+    const reviewed = items.length - pending;
+    return { pending, reviewed, total: items.length };
+  }, [items]);
+
+  const assignments = useMemo(() => {
+    const map = new Map<string, AssignmentGroup>();
+
+    items.forEach((item) => {
+      const key = buildAssignmentKey(item);
+      const current = map.get(key);
+      const reviewed = isReviewed(item);
+
+      if (!current) {
+        map.set(key, {
+          key,
+          classId: item.classId,
+          className: item.className,
+          materialId: item.materialId,
+          materialTitle: item.materialTitle,
+          questionId: item.questionId,
+          questionText: item.questionText,
+          total: 1,
+          pending: reviewed ? 0 : 1,
+          reviewed: reviewed ? 1 : 0,
+          latestSubmittedAt: item.submittedAt,
+        });
+        return;
+      }
+
+      current.total += 1;
+      if (reviewed) current.reviewed += 1;
+      else current.pending += 1;
+
+      const currentTime = new Date(current.latestSubmittedAt || 0).getTime();
+      const itemTime = new Date(item.submittedAt || 0).getTime();
+      if (itemTime > currentTime) {
+        current.latestSubmittedAt = item.submittedAt;
+      }
+    });
+
+    const q = assignmentQuery.trim().toLowerCase();
+    const rows = [...map.values()].filter((group) => {
+      if (!q) return true;
+      const haystack = `${group.className} ${group.materialTitle} ${group.questionText}`.toLowerCase();
+      return haystack.includes(q);
+    });
+
+    rows.sort((a, b) => {
+      if (a.pending !== b.pending) return b.pending - a.pending;
+      const aTime = new Date(a.latestSubmittedAt || 0).getTime();
+      const bTime = new Date(b.latestSubmittedAt || 0).getTime();
+      return bTime - aTime;
+    });
+
+    return rows;
+  }, [items, assignmentQuery]);
+
+  useEffect(() => {
+    if (assignments.length === 0) {
+      setSelectedAssignmentKey(null);
+      return;
+    }
+    if (!selectedAssignmentKey || !assignments.some((a) => a.key === selectedAssignmentKey)) {
+      setSelectedAssignmentKey(assignments[0].key);
+    }
+  }, [assignments, selectedAssignmentKey]);
+
+  const selectedAssignment = useMemo(
+    () => assignments.find((a) => a.key === selectedAssignmentKey) || null,
+    [assignments, selectedAssignmentKey]
+  );
+
+  const submissionsForSelectedAssignment = useMemo(() => {
+    if (!selectedAssignment) return [];
+
+    const q = studentQuery.trim().toLowerCase();
+    const rows = items.filter((item) => {
+      const itemKey = buildAssignmentKey(item);
+      if (itemKey !== selectedAssignment.key) return false;
+
+      const reviewed = isReviewed(item);
+      if (statusTab === "pending" && reviewed) return false;
+      if (statusTab === "reviewed" && !reviewed) return false;
+
+      if (!q) return true;
+      return item.studentName.toLowerCase().includes(q) || item.studentEmail.toLowerCase().includes(q);
+    });
+
+    rows.sort((a, b) => {
+      const aTime = new Date(a.submittedAt || 0).getTime();
+      const bTime = new Date(b.submittedAt || 0).getTime();
+      return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
+    });
+
+    return rows;
+  }, [items, selectedAssignment, studentQuery, statusTab, sortBy]);
+
+  useEffect(() => {
+    if (submissionsForSelectedAssignment.length === 0) {
+      setSelectedSubmissionId(null);
+      setSelectedSubmissionIds([]);
+      return;
+    }
+    if (!selectedSubmissionId || !submissionsForSelectedAssignment.some((s) => s.submissionId === selectedSubmissionId)) {
+      setSelectedSubmissionId(submissionsForSelectedAssignment[0].submissionId);
+    }
+    setSelectedSubmissionIds((prev) =>
+      prev.filter((id) => submissionsForSelectedAssignment.some((item) => item.submissionId === id))
+    );
+  }, [submissionsForSelectedAssignment, selectedSubmissionId]);
+
+  const selectedSubmission = useMemo(
+    () => submissionsForSelectedAssignment.find((s) => s.submissionId === selectedSubmissionId) || null,
+    [submissionsForSelectedAssignment, selectedSubmissionId]
+  );
+
+  const selectedIndex = useMemo(
+    () => submissionsForSelectedAssignment.findIndex((s) => s.submissionId === selectedSubmissionId),
+    [submissionsForSelectedAssignment, selectedSubmissionId]
+  );
+
+  const gotoSubmissionAt = (index: number) => {
+    const target = submissionsForSelectedAssignment[index];
+    if (!target) return;
+    setSelectedSubmissionId(target.submissionId);
+    setDetailOpen(true);
+  };
+
+  const toggleBulkSelection = (submissionId: string) => {
+    setSelectedSubmissionIds((prev) =>
+      prev.includes(submissionId) ? prev.filter((id) => id !== submissionId) : [...prev, submissionId]
+    );
+  };
+
+  const selectAllVisible = () => {
+    setSelectedSubmissionIds(submissionsForSelectedAssignment.map((item) => item.submissionId));
+  };
+
+  const clearSelection = () => {
+    setSelectedSubmissionIds([]);
+  };
+
+  const handleReviewSelected = () => {
+    if (selectedSubmissionIds.length === 0) return;
+    const firstSelected = submissionsForSelectedAssignment.find((item) => selectedSubmissionIds.includes(item.submissionId));
+    if (!firstSelected) return;
+    router.push(`/dashboard/teacher/material/${firstSelected.materialId}`);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDetailOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">Penilaian Kelas</h1>
+            <p className="text-xs text-slate-600">Pilih soal, pilih siswa, lalu review dan kembalikan nilai.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadQueue(false)}
+            className="sage-button-outline !px-3 !py-2 text-xs"
+            disabled={refreshing}
+          >
+            <FiRefreshCw className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+
+      <section className="grid gap-2 sm:grid-cols-3">
+        <StatCard title="Perlu Dinilai" value={String(summary.pending)} icon={<FiClock className="text-amber-600" />} />
+        <StatCard title="Sudah Dinilai" value={String(summary.reviewed)} icon={<FiCheckCircle className="text-emerald-600" />} />
+        <StatCard title="Total Submission" value={String(summary.total)} icon={<FiFileText className="text-slate-600" />} />
+      </section>
+
+      {loading ? (
+        <div className="sage-panel p-10 text-center text-slate-500">Memuat antrian penilaian...</div>
+      ) : error ? (
+        <div className="sage-panel p-6 text-red-600">{error}</div>
+      ) : (
+        <section
+          className="relative grid gap-3 lg:grid-cols-[240px_minmax(0,1fr)]"
+          style={{ gridTemplateColumns: sidebarCollapsed ? "64px minmax(0,1fr)" : "240px minmax(0,1fr)" }}
+        >
+          <aside className="flex h-[74vh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 bg-slate-50/70 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                {!sidebarCollapsed && <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Daftar Soal</p>}
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed((prev) => !prev)}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100"
+                >
+                  {sidebarCollapsed ? ">>" : "<<"}
+                </button>
+              </div>
+              {!sidebarCollapsed && (
+                <label className="relative mt-2 block">
+                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={assignmentQuery}
+                    onChange={(e) => setAssignmentQuery(e.target.value)}
+                    placeholder="Cari soal..."
+                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-slate-300"
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-1.5">
+              {assignments.length === 0 ? (
+                <p className="p-2 text-xs text-slate-500">Belum ada data assignment.</p>
+              ) : (
+                assignments.map((assignment) => {
+                  const active = selectedAssignmentKey === assignment.key;
+                  return (
+                    <button
+                      key={assignment.key}
+                      type="button"
+                      onClick={() => setSelectedAssignmentKey(assignment.key)}
+                      className={`mb-1.5 w-full rounded-lg border p-2 text-left transition ${
+                        active ? "border-slate-700 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                      title={`${assignment.className} - ${assignment.materialTitle}`}
+                    >
+                      {sidebarCollapsed ? (
+                        <div className="space-y-1 text-center text-[10px]">
+                          <div className="font-semibold text-slate-900">{assignment.pending}</div>
+                          <div className="text-slate-500">pending</div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-[11px] text-slate-500 line-clamp-1">{assignment.className}</p>
+                          <p className="mt-0.5 text-xs font-semibold text-slate-900 line-clamp-1">{assignment.materialTitle}</p>
+                          <div className="mt-1 flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">{assignment.total} submission</span>
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">{assignment.pending}</span>
+                          </div>
+                        </>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+
+          <div className="flex h-[74vh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="sticky top-0 z-10 space-y-2 border-b border-slate-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Daftar Submission</p>
+                  <p className="text-xs font-semibold text-slate-900">
+                    {selectedAssignment ? selectedAssignment.materialTitle : "Pilih assignment"}
+                  </p>
+                </div>
+                <div className="relative">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as "newest" | "oldest")}
+                    className="appearance-none rounded-lg border border-slate-200 bg-white py-1 pl-2.5 pr-8 text-[11px] outline-none"
+                    style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none" }}
+                  >
+                    <option value="newest">Terbaru</option>
+                    <option value="oldest">Terlama</option>
+                  </select>
+                  <FiChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                  <TabButton active={statusTab === "pending"} onClick={() => setStatusTab("pending")}>
+                    Pending
+                  </TabButton>
+                  <TabButton active={statusTab === "reviewed"} onClick={() => setStatusTab("reviewed")}>
+                    Reviewed
+                  </TabButton>
+                  <TabButton active={statusTab === "all"} onClick={() => setStatusTab("all")}>
+                    Semua
+                  </TabButton>
+                </div>
+                <label className="relative block min-w-[220px] flex-1 md:max-w-xs">
+                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input
+                    value={studentQuery}
+                    onChange={(e) => setStudentQuery(e.target.value)}
+                    placeholder="Cari siswa..."
+                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-slate-300"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-1.5">
+              {!selectedAssignment ? (
+                <p className="p-2 text-xs text-slate-500">Pilih assignment dulu dari panel kiri.</p>
+              ) : submissionsForSelectedAssignment.length === 0 ? (
+                <p className="p-2 text-xs text-slate-500">Tidak ada submission pada filter ini.</p>
+              ) : (
+                submissionsForSelectedAssignment.map((item) => {
+                  const active = selectedSubmissionId === item.submissionId;
+                  const status = getSubmissionStatus(item);
+                  return (
+                    <button
+                      key={item.submissionId}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSubmissionId(item.submissionId);
+                        setDetailOpen(true);
+                      }}
+                      className={`mb-1.5 w-full rounded-lg border p-2.5 text-left transition ${
+                        active ? "border-slate-700 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-slate-900 truncate">{item.studentName}</p>
+                          <p className="text-[11px] text-slate-500 truncate">{item.studentEmail}</p>
+                        </div>
+                        <StatusBadge status={status} />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="text-[11px] text-slate-500">
+                          {item.submittedAt
+                            ? new Date(item.submittedAt).toLocaleString("id-ID", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "-"}
+                        </p>
+                        <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <input
+                            type="checkbox"
+                            checked={selectedSubmissionIds.includes(item.submissionId)}
+                            onChange={() => toggleBulkSelection(item.submissionId)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-3.5 w-3.5"
+                          />
+                          pilih
+                        </label>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {selectedSubmissionIds.length > 0 && (
+              <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white p-2.5">
+                <p className="text-[11px] text-slate-600">{selectedSubmissionIds.length} submission dipilih</p>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={selectAllVisible} className="sage-button-outline !px-2.5 !py-1">
+                    Semua
+                  </button>
+                  <button type="button" onClick={clearSelection} className="sage-button-outline !px-2.5 !py-1">
+                    Reset
+                  </button>
+                  <button type="button" onClick={handleReviewSelected} className="sage-button !px-2.5 !py-1">
+                    Review ({selectedSubmissionIds.length})
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {detailOpen && <button type="button" aria-label="Close detail overlay" onClick={() => setDetailOpen(false)} className="absolute inset-0 z-20 bg-slate-900/20" />}
+          <aside
+            className={`absolute right-0 top-0 z-30 h-[74vh] w-full max-w-[420px] border-l border-slate-200 bg-white shadow-xl transition-transform duration-200 ${
+              detailOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 p-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Detail Submission</p>
+                <p className="text-xs font-semibold text-slate-900">Review Panel</p>
+              </div>
+              <button type="button" onClick={() => setDetailOpen(false)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-200">
+                <FiX size={16} />
+              </button>
+            </div>
+
+            <div className="h-[calc(74vh-53px)] overflow-y-auto p-3">
+              {!selectedSubmission ? (
+                <p className="text-xs text-slate-500">Pilih siswa pada panel tengah untuk melihat detail.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-900">{selectedSubmission.studentName}</p>
+                        <p className="text-[11px] text-slate-500">{selectedSubmission.studentEmail}</p>
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        {selectedIndex + 1} / {submissionsForSelectedAssignment.length}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <StatusBadge status={getSubmissionStatus(selectedSubmission)} />
+                      <span className="text-slate-500">AI: {selectedSubmission.aiScore ?? "-"}</span>
+                      <span className="text-slate-500">Guru: {selectedSubmission.revisedScore ?? "-"}</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Jawaban Siswa</p>
+                    <div className="mt-1 rounded-lg border border-slate-200 bg-white p-2.5 text-xs text-slate-700 whitespace-pre-line max-h-56 overflow-y-auto">
+                      {(selectedSubmission.answerText || "").trim() || "Jawaban tidak tersedia pada ringkasan ini."}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Feedback Guru</p>
+                    <div className="mt-1 rounded-lg border border-slate-200 bg-white p-2.5 text-xs text-slate-700 whitespace-pre-line min-h-16">
+                      {(selectedSubmission.teacherFeedback || "").trim() || "Belum ada feedback guru."}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => gotoSubmissionAt(Math.max(0, selectedIndex - 1))}
+                      disabled={selectedIndex <= 0}
+                      className="sage-button-outline !py-2 text-xs inline-flex items-center justify-center gap-1"
+                    >
+                      <FiChevronsLeft size={14} /> Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => gotoSubmissionAt(Math.min(submissionsForSelectedAssignment.length - 1, selectedIndex + 1))}
+                      disabled={selectedIndex < 0 || selectedIndex >= submissionsForSelectedAssignment.length - 1}
+                      className="sage-button-outline !py-2 text-xs inline-flex items-center justify-center gap-1"
+                    >
+                      Next <FiChevronsRight size={14} />
+                    </button>
+                    <Link
+                      href={`/dashboard/teacher/material/${selectedSubmission.materialId}`}
+                      className="sage-button !py-2 text-center text-xs"
+                    >
+                      Nilai & Kembalikan
+                    </Link>
+                    <Link
+                      href={`/dashboard/teacher/material/${selectedSubmission.materialId}`}
+                      className="sage-button-outline !py-2 text-center text-xs"
+                    >
+                      Buka Materi
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">{icon}</span>
+      </div>
+      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: "returned" | "turned_in" | "missing" }) {
+  if (status === "returned") {
+    return <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">Returned</span>;
+  }
+  if (status === "turned_in") {
+    return <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">Turned In</span>;
+  }
+  return <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-700">Missing</span>;
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-2.5 py-1 text-[11px] transition ${
+        active ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}

@@ -13,6 +13,7 @@ export default function StudentNotificationSettingsPage() {
     newMaterials: true,
     reviewedScores: true,
     newQuestions: true,
+    sidebarIndicators: true,
   });
   const [message, setMessage] = useState<string | null>(null);
 
@@ -28,6 +29,7 @@ export default function StudentNotificationSettingsPage() {
         newMaterials: parsed.newMaterials ?? prev.newMaterials,
         reviewedScores: parsed.reviewedScores ?? prev.reviewedScores,
         newQuestions: parsed.newQuestions ?? prev.newQuestions,
+        sidebarIndicators: parsed.sidebarIndicators ?? prev.sidebarIndicators,
       }));
     } catch {
       window.localStorage.removeItem(STUDENT_NOTIFICATION_PREFS_KEY);
@@ -127,6 +129,18 @@ export default function StudentNotificationSettingsPage() {
             label="Toggle notifikasi nilai direview guru"
             checked={prefs.reviewedScores}
             onChange={(value) => updatePref("reviewedScores", value)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Indikator update di sidebar</p>
+            <p className="text-xs text-slate-500">Tampilkan dot merah pada menu sidebar yang punya update penting.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle indikator update sidebar siswa"
+            checked={prefs.sidebarIndicators}
+            onChange={(value) => updatePref("sidebarIndicators", value)}
           />
         </label>
 

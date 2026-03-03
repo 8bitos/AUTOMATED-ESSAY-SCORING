@@ -1,0 +1,2 @@
+ALTER TABLE essay_submissions
+DROP CONSTRAINT IF EXISTS uq_essay_submissions_soal_siswa;

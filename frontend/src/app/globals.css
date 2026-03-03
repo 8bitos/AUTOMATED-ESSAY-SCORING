@@ -156,6 +156,8 @@
   }
 
   html[data-theme='dark'] #sidebar .text-slate-700,
+  html[data-theme='dark'] #sidebar .text-slate-900,
+  html[data-theme='dark'] #sidebar .text-slate-800,
   html[data-theme='dark'] #sidebar .text-slate-600,
   html[data-theme='dark'] #sidebar .text-slate-500,
   html[data-theme='dark'] #sidebar .text-slate-400 {
@@ -166,13 +168,13 @@
     border-color: rgba(148, 163, 184, 0.26) !important;
   }
 
-  html[data-theme='dark'] #sidebar .sidebar-nav-item:hover,
+  html[data-theme='dark'] #sidebar .sidebar-nav-item:not(.sidebar-nav-item-has-submenu):hover,
   html[data-theme='dark'] #sidebar .sidebar-settings-link:hover {
     background-color: var(--dark-layer-4) !important;
   }
 
-  html[data-theme='dark'] #sidebar .sidebar-nav-item:hover .sidebar-nav-link,
-  html[data-theme='dark'] #sidebar .sidebar-nav-item:hover .sidebar-nav-icon,
+  html[data-theme='dark'] #sidebar .sidebar-nav-item:not(.sidebar-nav-item-has-submenu):hover .sidebar-nav-link,
+  html[data-theme='dark'] #sidebar .sidebar-nav-item:not(.sidebar-nav-item-has-submenu):hover .sidebar-nav-icon,
   html[data-theme='dark'] #sidebar .sidebar-settings-link:hover,
   html[data-theme='dark'] #sidebar .sidebar-settings-link:hover span {
     color: #0f172a !important;
@@ -183,11 +185,54 @@
     background-color: var(--dark-layer-4) !important;
   }
 
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 {
+    background-color: var(--dark-layer-4) !important;
+  }
+
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .sidebar-nav-link,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .sidebar-nav-icon,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-500,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-600,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-700,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100 .text-slate-900 {
+    color: #0f172a !important;
+  }
+
+  html[data-theme='dark'] #sidebar .sidebar-nav-item.sidebar-nav-item-has-submenu:hover {
+    background-color: transparent !important;
+  }
+
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover {
+    background-color: var(--dark-layer-4) !important;
+  }
+
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .sidebar-nav-link,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .sidebar-nav-icon,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-500,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-600,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-700,
+  html[data-theme='dark'] #sidebar .sidebar-nav-row:hover .text-slate-900 {
+    color: #0f172a !important;
+  }
+
+  html[data-theme='dark'] #sidebar .sidebar-class-subitem:hover {
+    background-color: #2b3f5a !important;
+    color: #f8fafc !important;
+  }
+
+  html[data-theme='dark'] #sidebar .bg-slate-200 {
+    background-color: #24364f !important;
+  }
+
   html[data-theme='dark'] #sidebar .sidebar-nav-item.bg-slate-100 .sidebar-nav-link,
   html[data-theme='dark'] #sidebar .sidebar-nav-item.bg-slate-100 .sidebar-nav-icon,
   html[data-theme='dark'] #sidebar .sidebar-settings-link.bg-slate-100,
   html[data-theme='dark'] #sidebar .sidebar-settings-link.bg-slate-100 span {
     color: #0f172a !important;
+  }
+
+  html[data-theme='dark'] #sidebar .hover\:bg-slate-100:hover {
+    background-color: #24364f !important;
   }
 
   html[data-theme='dark'] input,

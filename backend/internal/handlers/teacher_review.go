@@ -96,3 +96,26 @@ func (h *TeacherReviewHandlers) GetTeacherReviewBySubmissionIDHandler(w http.Res
 
 	respondWithJSON(w, http.StatusOK, review)
 }
+
+func (h *TeacherReviewHandlers) UpsertTeacherReviewsBatchHandler(w http.ResponseWriter, r *http.Request) {
+	var req models.BatchTeacherReviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	teacherID, ok := r.Context().Value("userID").(string)
+	if !ok || teacherID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	result, err := h.Service.UpsertTeacherReviewsBatch(&req, teacherID)
+	if err != nil {
+		log.Printf("ERROR: Failed to upsert teacher reviews batch: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to upsert teacher reviews")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, result)
+}

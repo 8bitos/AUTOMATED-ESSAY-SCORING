@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -33,6 +31,31 @@ services:
     volumes:
       - redis_data:/data
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: user
+      DB_PASSWORD: password
+      DB_NAME: essay_scoring
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_DAILY_TOKEN_LIMIT: ${GEMINI_DAILY_TOKEN_LIMIT:-250000}
+      GEMINI_LIMIT_RPM: ${GEMINI_LIMIT_RPM:-5}
+      GEMINI_LIMIT_TPM: ${GEMINI_LIMIT_TPM:-250000}
+      GEMINI_LIMIT_RPD: ${GEMINI_LIMIT_RPD:-20}
+      AI_GRADING_WORKERS: ${AI_GRADING_WORKERS:-1}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
+    depends_on:
+      - db
+      - redis
+    restart: always
+
   web-frontend:
     build:
       context: ./frontend
@@ -40,10 +63,12 @@ services:
     ports:
       - "3001:3000"
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080/api}
+      NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-http://backend:8080}
+    depends_on:
+      - backend
     restart: always
 
 volumes:
   db_data:
-  es_data:
   redis_data:

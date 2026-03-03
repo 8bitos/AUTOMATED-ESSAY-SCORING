@@ -1,0 +1,10 @@
+ALTER TABLE users
+DROP COLUMN IF EXISTS foto_profil_url,
+DROP COLUMN IF EXISTS mata_pelajaran,
+DROP COLUMN IF EXISTS kelas_tingkat,
+DROP COLUMN IF EXISTS institusi,
+DROP COLUMN IF EXISTS bahasa,
+DROP COLUMN IF EXISTS notif_email,
+DROP COLUMN IF EXISTS notif_inapp,
+DROP COLUMN IF EXISTS last_login_at;
+

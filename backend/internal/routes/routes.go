@@ -47,9 +47,11 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	essaySubmissionService := services.NewEssaySubmissionService(db, aiService, essayQuestionService, systemSettingService)
 	aiResultService := services.NewAIResultService(db)
 	teacherReviewService := services.NewTeacherReviewService(db)
+	gradeAppealService := services.NewGradeAppealService(db)
 	moduleService := services.NewModuleService(db)
 	classTeachingModuleService := services.NewClassTeachingModuleService(db)
 	questionBankService := services.NewQuestionBankService(db)
+	sectionService := services.NewSectionService(db)
 
 	// --- Inisialisasi Handler ---
 	// Handler menerima permintaan HTTP dan memanggil metode dari layanan.
@@ -59,12 +61,15 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	materialHandlers := handlers.NewMaterialHandlers(materialService)
 	essayQuestionHandlers := handlers.NewEssayQuestionHandlers(essayQuestionService, materialService, classTeachingModuleService, aiService)
 	essaySubmissionHandlers := handlers.NewEssaySubmissionHandlers(essaySubmissionService, aiResultService)
+	taskSubmissionHandlers := handlers.NewTaskSubmissionHandlers(essaySubmissionService)
 	aiResultHandlers := handlers.NewAIResultHandlers(aiResultService)
 	teacherReviewHandlers := handlers.NewTeacherReviewHandlers(teacherReviewService)
+	gradeAppealHandlers := handlers.NewGradeAppealHandlers(gradeAppealService)
 	devHandler := handlers.NewDevHandler(db) // Handler untuk pengembangan/debugging.
 	moduleHandlers := handlers.NewModuleHandlers(moduleService)
 	classTeachingModuleHandlers := handlers.NewClassTeachingModuleHandlers(classTeachingModuleService)
 	questionBankHandlers := handlers.NewQuestionBankHandlers(questionBankService, materialService)
+	sectionHandlers := handlers.NewSectionHandlers(sectionService)
 	uploadHandler := handlers.NewUploadHandler()
 	adminOpsHandlers := handlers.NewAdminOpsHandlers(db, authService, essaySubmissionService, aiService, systemSettingService, adminAuditService, questionBankService)
 
@@ -121,6 +126,11 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	protectedRouter.HandleFunc("/submissions/{submissionId}", essaySubmissionHandlers.UpdateEssaySubmissionHandler).Methods("PUT")
 	protectedRouter.HandleFunc("/submissions/{submissionId}", essaySubmissionHandlers.DeleteEssaySubmissionHandler).Methods("DELETE")
 	protectedRouter.HandleFunc("/students/{studentId}/submissions", essaySubmissionHandlers.GetEssaySubmissionsByStudentIDHandler).Methods("GET")
+	protectedRouter.HandleFunc("/task-submissions", taskSubmissionHandlers.CreateTaskSubmissionHandler).Methods("POST")
+	protectedRouter.HandleFunc("/task-submissions/{submissionId}", taskSubmissionHandlers.GetTaskSubmissionByIDHandler).Methods("GET")
+	protectedRouter.HandleFunc("/task-submissions/{submissionId}", taskSubmissionHandlers.UpdateTaskSubmissionHandler).Methods("PUT")
+	protectedRouter.HandleFunc("/task-submissions/{submissionId}", taskSubmissionHandlers.DeleteTaskSubmissionHandler).Methods("DELETE")
+	protectedRouter.HandleFunc("/students/{studentId}/task-submissions", taskSubmissionHandlers.GetTaskSubmissionsByStudentIDHandler).Methods("GET")
 
 	// Rute terkait hasil penilaian AI.
 	protectedRouter.HandleFunc("/ai-results", aiResultHandlers.CreateAIResultHandler).Methods("POST")
@@ -133,6 +143,8 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	protectedRouter.HandleFunc("/teacher-reviews", teacherReviewHandlers.CreateTeacherReviewHandler).Methods("POST")
 	protectedRouter.HandleFunc("/teacher-reviews/{reviewId}", teacherReviewHandlers.UpdateTeacherReviewHandler).Methods("PUT")
 	protectedRouter.HandleFunc("/teacher-reviews/submission/{submissionId}", teacherReviewHandlers.GetTeacherReviewBySubmissionIDHandler).Methods("GET")
+	protectedRouter.HandleFunc("/grade-appeals", gradeAppealHandlers.CreateGradeAppealHandler).Methods("POST")
+	protectedRouter.HandleFunc("/grade-appeals/mine", gradeAppealHandlers.GetMyGradeAppealsHandler).Methods("GET")
 
 	// --- Rute Khusus Guru (Memerlukan Otentikasi dan Peran Guru) ---
 	// Semua rute di bawah teacherRouter akan melewati TeacherOnlyMiddleware (setelah AuthMiddleware).
@@ -143,6 +155,9 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	// Rute terkait review dari guru - khusus guru.
 	teacherRouter.HandleFunc("/teacher-reviews", teacherReviewHandlers.CreateTeacherReviewHandler).Methods("POST")
 	teacherRouter.HandleFunc("/teacher-reviews/{reviewId}", teacherReviewHandlers.UpdateTeacherReviewHandler).Methods("PUT")
+	teacherRouter.HandleFunc("/teacher-reviews/batch", teacherReviewHandlers.UpsertTeacherReviewsBatchHandler).Methods("POST")
+	teacherRouter.HandleFunc("/teacher/grade-appeals", gradeAppealHandlers.ListTeacherGradeAppealsHandler).Methods("GET")
+	teacherRouter.HandleFunc("/teacher/grade-appeals/{appealId}/review", gradeAppealHandlers.ReviewGradeAppealHandler).Methods("PUT")
 
 	teacherRouter.HandleFunc("/classes", classHandlers.GetClassesHandler).Methods("GET") // Mendapatkan daftar kelas yang diajar guru.
 	teacherRouter.HandleFunc("/dashboard-summary", classHandlers.GetTeacherDashboardSummaryHandler).Methods("GET")
@@ -159,13 +174,17 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	teacherRouter.HandleFunc("/classes/{classId}/teaching-modules", classTeachingModuleHandlers.GetClassTeachingModulesByClassIDHandler).Methods("GET")
 	teacherRouter.HandleFunc("/classes/{classId}/teaching-modules", classTeachingModuleHandlers.CreateClassTeachingModuleHandler).Methods("POST")
 	teacherRouter.HandleFunc("/teaching-modules/{moduleId}", classTeachingModuleHandlers.DeleteClassTeachingModuleHandler).Methods("DELETE")
+	teacherRouter.HandleFunc("/classes/{classId}/sections", sectionHandlers.GetSectionsByClassIDHandler).Methods("GET")
+	teacherRouter.HandleFunc("/classes/{classId}/sections", sectionHandlers.CreateSectionHandler).Methods("POST")
+	teacherRouter.HandleFunc("/sections/{sectionId}/contents", sectionHandlers.CreateSectionContentHandler).Methods("POST")
 
 	// Rute terkait materi khusus guru.
 	teacherRouter.HandleFunc("/materials", materialHandlers.CreateMaterialHandler).Methods("POST")                         // Membuat materi baru (sederhana).
 	teacherRouter.HandleFunc("/materials/{materialId}", materialHandlers.GetMaterialByIDHandler).Methods("GET")            // Mendapatkan detail materi.
 	teacherRouter.HandleFunc("/classes/{classId}/materials", materialHandlers.GetMaterialsByClassIDHandler).Methods("GET") // Mendapatkan materi berdasarkan kelas.
-	teacherRouter.HandleFunc("/materials/{materialId}", materialHandlers.UpdateMaterialHandler).Methods("PUT")             // Memperbarui materi.
-	teacherRouter.HandleFunc("/materials/{materialId}", materialHandlers.DeleteMaterialHandler).Methods("DELETE")          // Menghapus materi.
+	teacherRouter.HandleFunc("/classes/{classId}/materials/reorder", materialHandlers.ReorderMaterialsByClassIDHandler).Methods("PUT")
+	teacherRouter.HandleFunc("/materials/{materialId}", materialHandlers.UpdateMaterialHandler).Methods("PUT")    // Memperbarui materi.
+	teacherRouter.HandleFunc("/materials/{materialId}", materialHandlers.DeleteMaterialHandler).Methods("DELETE") // Menghapus materi.
 
 	// Rute terkait pertanyaan esai khusus guru.
 	teacherRouter.HandleFunc("/essay-questions", essayQuestionHandlers.CreateEssayQuestionHandler).Methods("POST")                                 // Membuat pertanyaan esai baru.
@@ -184,6 +203,8 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 
 	// Rute terkait submission esai khusus guru.
 	teacherRouter.HandleFunc("/essay-questions/{questionId}/submissions", essaySubmissionHandlers.GetEssaySubmissionsByQuestionIDHandler).Methods("GET") // Mendapatkan submission esai berdasarkan pertanyaan.
+	teacherRouter.HandleFunc("/materials/{materialId}/student-submission-summaries", essaySubmissionHandlers.GetMaterialStudentSubmissionSummariesHandler).Methods("GET")
+	teacherRouter.HandleFunc("/materials/{materialId}/students/{studentId}/submissions", essaySubmissionHandlers.GetMaterialSubmissionsByStudentHandler).Methods("GET")
 
 	// --- Rute Khusus Superadmin ---
 	adminRouter := protectedRouter.PathPrefix("/admin").Subrouter()

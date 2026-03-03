@@ -30,6 +30,7 @@ interface Class {
 
 type GradeTab = "10" | "11" | "12" | "other";
 type SortKey = "newest" | "alpha";
+type GradeForm = "10" | "11" | "12" | "other";
 
 const API_URL = "/api";
 
@@ -64,10 +65,48 @@ const Modal = ({
 
 const getGradeFromClassName = (className: string): GradeTab => {
   const normalized = (className || "").trim().toUpperCase();
-  if (normalized.startsWith("10")) return "10";
-  if (normalized.startsWith("11")) return "11";
-  if (normalized.startsWith("12")) return "12";
+  if (/(?:^|[^A-Z0-9])XII(?=[^A-Z0-9]|$)/.test(normalized)) return "12";
+  if (/(?:^|[^A-Z0-9])XI(?=[^A-Z0-9]|$)/.test(normalized)) return "11";
+  if (/(?:^|[^A-Z0-9])X(?=[^A-Z0-9]|$)/.test(normalized)) return "10";
+  const match = normalized.match(/(?:^|[^0-9])(10|11|12)(?=[A-Z0-9\s-]|$)/);
+  if (!match) return "other";
+  if (match[1] === "10") return "10";
+  if (match[1] === "11") return "11";
+  if (match[1] === "12") return "12";
   return "other";
+};
+
+const extractGradeAndParallel = (className: string): { grade: "10" | "11" | "12"; parallel: string } | null => {
+  const normalized = (className || "").trim().toUpperCase();
+  const roman = normalized.match(/(?:^|[^A-Z0-9])(XII|XI|X)\s*([A-Z0-9]{1,2})?(?=[^A-Z0-9]|$)/);
+  if (roman) {
+    const grade = roman[1] === "XII" ? "12" : roman[1] === "XI" ? "11" : "10";
+    return { grade, parallel: (roman[2] || "A").slice(0, 2) };
+  }
+  const match = normalized.match(/\b(10|11|12)\s*([A-Z0-9]{1,2})?\b/);
+  if (!match) return null;
+  return {
+    grade: match[1] as "10" | "11" | "12",
+    parallel: (match[2] || "A").slice(0, 2),
+  };
+};
+
+const hasGradeMarker = (value: string): boolean => {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return false;
+  if (/(?:^|[^A-Z0-9])(10|11|12)(?=[A-Z0-9\s-]|$)/.test(normalized)) return true;
+  if (/(?:^|[^A-Z0-9])(XII|XI|X)(?=[^A-Z0-9]|$)/.test(normalized)) return true;
+  return false;
+};
+
+const buildClassName = (grade: GradeForm, parallel: string, customName: string): string => {
+  const cleanCustom = customName.trim();
+  const cleanParallel = (parallel || "A").toUpperCase();
+  if (grade === "other") return cleanCustom || `Kelas-${cleanParallel}`;
+  const code = `${grade}${cleanParallel}`;
+  if (!cleanCustom) return code;
+  if (hasGradeMarker(cleanCustom)) return cleanCustom;
+  return `${code} - ${cleanCustom}`;
 };
 
 const getGradeAccent = (grade: GradeTab) => {
@@ -185,12 +224,14 @@ export default function ClassManagementPage() {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
 
-  const [tingkat, setTingkat] = useState<"10" | "11" | "12">("10");
+  const [tingkat, setTingkat] = useState<GradeForm>("10");
   const [paralel, setParalel] = useState("A");
   const [customName, setCustomName] = useState("");
   const [newClassDesc, setNewClassDesc] = useState("");
-  const [editClassName, setEditClassName] = useState("");
   const [editClassDesc, setEditClassDesc] = useState("");
+  const [editTingkat, setEditTingkat] = useState<GradeForm>("10");
+  const [editParalel, setEditParalel] = useState("A");
+  const [editCustomName, setEditCustomName] = useState("");
   const [confirmDeleteClass, setConfirmDeleteClass] = useState<Class | null>(null);
 
   const fetchClasses = useCallback(async () => {
@@ -221,6 +262,8 @@ export default function ClassManagementPage() {
     }
     return count;
   }, [classes]);
+  const archivedCount = useMemo(() => classes.filter((c) => !!c.is_archived).length, [classes]);
+  const activeCount = classes.length - archivedCount;
 
   const activeClasses = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -239,8 +282,8 @@ export default function ClassManagementPage() {
     });
   }, [classes, activeGrade, query, sortKey]);
 
-  const generatedName = `${tingkat}${(paralel || "A").toUpperCase()}`;
-  const finalClassName = customName.trim() || generatedName;
+  const generatedName = tingkat === "other" ? `Kelas-${(paralel || "X").toUpperCase()}` : `${tingkat}${(paralel || "A").toUpperCase()}`;
+  const finalClassName = buildClassName(tingkat, paralel, customName);
 
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,6 +294,9 @@ export default function ClassManagementPage() {
       const duplicate = classes.some((c) => c.class_name.toUpperCase() === finalClassName.toUpperCase());
       if (duplicate) {
         throw new Error("Nama kelas sudah ada. Gunakan paralel/nama lain.");
+      }
+      if (tingkat === "other" && !customName.trim()) {
+        throw new Error("Untuk tingkat Lainnya, isi Nama Kelas (override) agar lebih jelas.");
       }
 
       const res = await fetch(`${API_URL}/classes`, {
@@ -281,8 +327,22 @@ export default function ClassManagementPage() {
 
   const openEdit = (cls: Class) => {
     setEditingClass(cls);
-    setEditClassName(cls.class_name || "");
     setEditClassDesc(cls.deskripsi || "");
+    const parsed = extractGradeAndParallel(cls.class_name || "");
+    if (parsed) {
+      setEditTingkat(parsed.grade);
+      setEditParalel(parsed.parallel || "A");
+      const generated = `${parsed.grade}${parsed.parallel || "A"}`.toUpperCase();
+      if ((cls.class_name || "").trim().toUpperCase() === generated) {
+        setEditCustomName("");
+      } else {
+        setEditCustomName(cls.class_name || "");
+      }
+    } else {
+      setEditTingkat("other");
+      setEditParalel("A");
+      setEditCustomName(cls.class_name || "");
+    }
     setIsEditModalOpen(true);
   };
 
@@ -292,12 +352,16 @@ export default function ClassManagementPage() {
     setIsUpdating(true);
     setError(null);
     try {
+      const finalEditName = buildClassName(editTingkat, editParalel, editCustomName);
+      if (editTingkat === "other" && !editCustomName.trim()) {
+        throw new Error("Untuk tingkat Lainnya, isi Nama Kelas (override) agar lebih jelas.");
+      }
       const res = await fetch(`${API_URL}/classes/${editingClass.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          nama_kelas: editClassName.trim(),
+          nama_kelas: finalEditName,
           deskripsi: editClassDesc,
         }),
       });
@@ -305,6 +369,7 @@ export default function ClassManagementPage() {
       setIsEditModalOpen(false);
       setEditingClass(null);
       await fetchClasses();
+      setActiveGrade(getGradeFromClassName(finalEditName));
     } catch (err: any) {
       setError(err.message || "Gagal mengupdate kelas");
     } finally {
@@ -369,9 +434,9 @@ export default function ClassManagementPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Total Kelas" value={String(classes.length)} icon={<FiLayers />} />
-        <SummaryCard title="Kelas 10" value={String(groupedCount["10"])} icon={<FiBookOpen />} />
-        <SummaryCard title="Kelas 11" value={String(groupedCount["11"])} icon={<FiBookOpen />} />
-        <SummaryCard title="Kelas 12" value={String(groupedCount["12"])} icon={<FiBookOpen />} />
+        <SummaryCard title="Kelas Aktif" value={String(activeCount)} icon={<FiBookOpen />} />
+        <SummaryCard title="Kelas Arsip" value={String(archivedCount)} icon={<FiArchive />} />
+        <SummaryCard title="Hasil Filter" value={String(activeClasses.length)} icon={<FiSearch />} />
       </section>
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -436,12 +501,13 @@ export default function ClassManagementPage() {
               <label className="text-sm font-medium text-slate-700">Tingkat</label>
               <select
                 value={tingkat}
-                onChange={(e) => setTingkat(e.target.value as "10" | "11" | "12")}
+                onChange={(e) => setTingkat(e.target.value as GradeForm)}
                 className="mt-1 sage-input"
               >
                 <option value="10">Kelas 10</option>
                 <option value="11">Kelas 11</option>
                 <option value="12">Kelas 12</option>
+                <option value="other">Lainnya</option>
               </select>
             </div>
             <div>
@@ -495,9 +561,42 @@ export default function ClassManagementPage() {
 
       <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit Kelas">
         <form onSubmit={handleUpdateClass} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium text-slate-700">Tingkat</label>
+              <select
+                value={editTingkat}
+                onChange={(e) => setEditTingkat(e.target.value as GradeForm)}
+                className="mt-1 sage-input"
+              >
+                <option value="10">Kelas 10</option>
+                <option value="11">Kelas 11</option>
+                <option value="12">Kelas 12</option>
+                <option value="other">Lainnya</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Paralel</label>
+              <input
+                value={editParalel}
+                onChange={(e) => setEditParalel(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 2))}
+                placeholder="A"
+                className="mt-1 sage-input"
+                required
+              />
+            </div>
+          </div>
           <div>
-            <label className="text-sm font-medium text-slate-700">Nama Kelas</label>
-            <input value={editClassName} onChange={(e) => setEditClassName(e.target.value)} className="mt-1 sage-input" required />
+            <label className="text-sm font-medium text-slate-700">Nama Kelas (opsional override)</label>
+            <input
+              value={editCustomName}
+              onChange={(e) => setEditCustomName(e.target.value)}
+              className="mt-1 sage-input"
+              placeholder={`Default: ${editTingkat}${(editParalel || "A").toUpperCase()}`}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Jika kosong, nama kelas otomatis: <span className="font-medium">{editTingkat}{(editParalel || "A").toUpperCase()}</span>
+            </p>
           </div>
           <div>
             <label className="text-sm font-medium text-slate-700">Deskripsi</label>

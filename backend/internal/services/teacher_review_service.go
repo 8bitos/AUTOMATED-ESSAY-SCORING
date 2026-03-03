@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -21,12 +22,12 @@ func NewTeacherReviewService(db *sql.DB) *TeacherReviewService {
 // CreateTeacherReview creates a new teacher review for a submission.
 func (s *TeacherReviewService) CreateTeacherReview(req *models.CreateTeacherReviewRequest, teacherID string) (*models.TeacherReview, error) {
 	newReview := &models.TeacherReview{
-		SubmissionID:   req.SubmissionID,
-		TeacherID:      teacherID,
-		RevisedScore:   req.RevisedScore,
+		SubmissionID:    req.SubmissionID,
+		TeacherID:       teacherID,
+		RevisedScore:    req.RevisedScore,
 		TeacherFeedback: req.TeacherFeedback,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	query := `
@@ -55,7 +56,7 @@ func (s *TeacherReviewService) CreateTeacherReview(req *models.CreateTeacherRevi
 func (s *TeacherReviewService) UpdateTeacherReview(reviewID string, req *models.UpdateTeacherReviewRequest) (*models.TeacherReview, error) {
 	// For simplicity, this example fetches and then updates.
 	// A more optimized version might use a single UPDATE query.
-	
+
 	// First, get the existing review to check for existence
 	var existing models.TeacherReview
 	err := s.db.QueryRowContext(context.Background(), "SELECT id, submission_id, teacher_id, revised_score, teacher_feedback, created_at, updated_at FROM teacher_reviews WHERE id = $1", reviewID).Scan(
@@ -116,4 +117,73 @@ func (s *TeacherReviewService) GetTeacherReviewBySubmissionID(submissionID strin
 		return nil, fmt.Errorf("error querying teacher review by submission ID: %w", err)
 	}
 	return &review, nil
+}
+
+func (s *TeacherReviewService) UpsertTeacherReviewsBatch(req *models.BatchTeacherReviewRequest, teacherID string) (*models.BatchTeacherReviewResponse, error) {
+	response := &models.BatchTeacherReviewResponse{
+		Updated: 0,
+		Failed:  []models.BatchTeacherReviewItemError{},
+	}
+	if req == nil || len(req.Updates) == 0 {
+		return response, nil
+	}
+
+	for _, item := range req.Updates {
+		submissionID := strings.TrimSpace(item.SubmissionID)
+		if submissionID == "" {
+			response.Failed = append(response.Failed, models.BatchTeacherReviewItemError{
+				SubmissionID: item.SubmissionID,
+				Message:      "submission_id is required",
+			})
+			continue
+		}
+		if item.RevisedScore == nil {
+			response.Failed = append(response.Failed, models.BatchTeacherReviewItemError{
+				SubmissionID: submissionID,
+				Message:      "revised_score is required",
+			})
+			continue
+		}
+		if *item.RevisedScore < 0 || *item.RevisedScore > 100 {
+			response.Failed = append(response.Failed, models.BatchTeacherReviewItemError{
+				SubmissionID: submissionID,
+				Message:      "revised_score must be between 0 and 100",
+			})
+			continue
+		}
+
+		feedback := item.TeacherFeedback
+		if feedback != nil {
+			trimmed := strings.TrimSpace(*feedback)
+			feedback = &trimmed
+			if trimmed == "" {
+				feedback = nil
+			}
+		}
+
+		_, err := s.db.ExecContext(
+			context.Background(),
+			`INSERT INTO teacher_reviews (submission_id, teacher_id, revised_score, teacher_feedback, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, NOW(), NOW())
+			 ON CONFLICT (submission_id) DO UPDATE
+			 SET teacher_id = EXCLUDED.teacher_id,
+			     revised_score = EXCLUDED.revised_score,
+			     teacher_feedback = EXCLUDED.teacher_feedback,
+			     updated_at = NOW()`,
+			submissionID,
+			teacherID,
+			*item.RevisedScore,
+			feedback,
+		)
+		if err != nil {
+			response.Failed = append(response.Failed, models.BatchTeacherReviewItemError{
+				SubmissionID: submissionID,
+				Message:      err.Error(),
+			})
+			continue
+		}
+		response.Updated++
+	}
+
+	return response, nil
 }

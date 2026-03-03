@@ -10,6 +10,7 @@ type EssaySubmission struct {
 	ID              string                  `json:"id"`                         // ID unik submission esai, biasanya UUID.
 	QuestionID      string                  `json:"question_id"`                // ID pertanyaan esai yang dijawab (Foreign Key ke tabel essay_questions).
 	StudentID       string                  `json:"student_id"`                 // ID siswa yang membuat submission (Foreign Key ke tabel users).
+	SubmissionType  string                  `json:"submission_type"`            // essay|task
 	TeksJawaban     string                  `json:"teks_jawaban"`               // Teks jawaban esai yang disubmit.
 	SubmittedAt     time.Time               `json:"submitted_at"`               // Timestamp ketika esai disubmit.
 	AIGradingStatus string                  `json:"ai_grading_status"`          // queued|processing|completed|failed
@@ -36,4 +37,23 @@ type CreateEssaySubmissionRequest struct {
 // untuk sebuah submission esai. Semua field bersifat opsional (omitempty).
 type UpdateEssaySubmissionRequest struct {
 	TeksJawaban *string `json:"teks_jawaban,omitempty"` // Pointer ke string untuk teks jawaban (opsional).
+}
+
+type MaterialStudentSubmissionSummary struct {
+	StudentID           string     `json:"student_id"`
+	StudentName         string     `json:"student_name"`
+	StudentEmail        string     `json:"student_email"`
+	TotalSubmissions    int        `json:"total_submissions"`
+	ReviewedSubmissions int        `json:"reviewed_submissions"`
+	PendingSubmissions  int        `json:"pending_submissions"`
+	AverageFinalScore   *float64   `json:"average_final_score,omitempty"`
+	LatestSubmittedAt   *time.Time `json:"latest_submitted_at,omitempty"`
+}
+
+type MaterialStudentSubmissionSummaryListResponse struct {
+	Items            []MaterialStudentSubmissionSummary `json:"items"`
+	Total            int64                              `json:"total"`
+	Page             int                                `json:"page"`
+	Size             int                                `json:"size"`
+	TotalSubmissions int64                              `json:"total_submissions"`
 }

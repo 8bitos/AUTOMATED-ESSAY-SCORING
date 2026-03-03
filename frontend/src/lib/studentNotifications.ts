@@ -7,6 +7,7 @@ export type StudentNotificationPrefs = {
   newMaterials: boolean;
   reviewedScores: boolean;
   newQuestions: boolean;
+  sidebarIndicators: boolean;
 };
 
 export type StudentNotificationItem = {
@@ -130,6 +131,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
       newMaterials: true,
       reviewedScores: true,
       newQuestions: true,
+      sidebarIndicators: true,
     };
   }
   try {
@@ -142,6 +144,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
         newMaterials: true,
         reviewedScores: true,
         newQuestions: true,
+        sidebarIndicators: true,
       };
     }
     const parsed = JSON.parse(raw) as Partial<StudentNotificationPrefs>;
@@ -152,6 +155,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
       newMaterials: parsed.newMaterials ?? true,
       reviewedScores: parsed.reviewedScores ?? true,
       newQuestions: parsed.newQuestions ?? true,
+      sidebarIndicators: parsed.sidebarIndicators ?? true,
     };
   } catch {
     return {
@@ -161,6 +165,7 @@ export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
       newMaterials: true,
       reviewedScores: true,
       newQuestions: true,
+      sidebarIndicators: true,
     };
   }
 };

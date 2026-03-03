@@ -159,6 +159,53 @@ type materialBlocksPayload struct {
 	} `json:"blocks"`
 }
 
+type sectionCardsPayload struct {
+	Format string `json:"format"`
+	Items  []struct {
+		ID    string `json:"id"`
+		Type  string `json:"type"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Meta  struct {
+			MateriMode        string `json:"materi_mode"`
+			MateriDescription string `json:"materi_description"`
+		} `json:"meta"`
+	} `json:"items"`
+}
+
+func extractSectionMaterialCardText(raw *string, cardID string) (string, string, bool) {
+	if raw == nil || strings.TrimSpace(*raw) == "" || strings.TrimSpace(cardID) == "" {
+		return "", "", false
+	}
+	var parsed sectionCardsPayload
+	if err := json.Unmarshal([]byte(strings.TrimSpace(*raw)), &parsed); err != nil {
+		return "", "", false
+	}
+	if parsed.Format != "sage_section_cards_v1" {
+		return "", "", false
+	}
+	for _, item := range parsed.Items {
+		if strings.TrimSpace(item.ID) != strings.TrimSpace(cardID) {
+			continue
+		}
+		if strings.TrimSpace(item.Type) != "materi" {
+			return strings.TrimSpace(item.Title), "", false
+		}
+		bodyText := compactSpaces(htmlTagRegex.ReplaceAllString(strings.TrimSpace(item.Body), " "))
+		descText := compactSpaces(htmlTagRegex.ReplaceAllString(strings.TrimSpace(item.Meta.MateriDescription), " "))
+		text := bodyText
+		if strings.TrimSpace(item.Meta.MateriMode) == "lengkap" {
+			// Mode lengkap sering memiliki ringkasan pendek pada materi_description.
+			// Gunakan teks yang lebih kaya agar konteks AI tidak terlalu minim.
+			if len([]rune(descText)) > len([]rune(text)) {
+				text = descText
+			}
+		}
+		return strings.TrimSpace(item.Title), text, strings.TrimSpace(text) != ""
+	}
+	return "", "", false
+}
+
 const (
 	maxSingleMaterialChars = 12000
 	maxClassMaterialsChars = 18000
@@ -189,6 +236,28 @@ func normalizeMaterialToPlainText(raw *string) string {
 	trimmed := strings.TrimSpace(*raw)
 	if trimmed == "" {
 		return ""
+	}
+
+	var sectionParsed sectionCardsPayload
+	if err := json.Unmarshal([]byte(trimmed), &sectionParsed); err == nil && sectionParsed.Format == "sage_section_cards_v1" {
+		var b strings.Builder
+		for _, item := range sectionParsed.Items {
+			if strings.TrimSpace(item.Type) != "materi" {
+				continue
+			}
+			bodyText := compactSpaces(htmlTagRegex.ReplaceAllString(strings.TrimSpace(item.Body), " "))
+			descText := compactSpaces(htmlTagRegex.ReplaceAllString(strings.TrimSpace(item.Meta.MateriDescription), " "))
+			text := bodyText
+			if strings.TrimSpace(item.Meta.MateriMode) == "lengkap" && len([]rune(descText)) > len([]rune(bodyText)) {
+				text = descText
+			}
+			if text == "" {
+				continue
+			}
+			b.WriteString(text)
+			b.WriteString("\n")
+		}
+		return strings.TrimSpace(b.String())
 	}
 
 	var parsed materialBlocksPayload
@@ -310,8 +379,31 @@ func (h *EssayQuestionHandlers) AutoGenerateEssayQuestionHandler(w http.Response
 
 	plainContent := normalizeMaterialToPlainText(material.IsiMateri)
 	materialTitle := material.Judul
+	sourceLabel := fmt.Sprintf("SECTION: %s", strings.TrimSpace(material.Judul))
 
-	if req.ReferenceMaterialID != nil && strings.TrimSpace(*req.ReferenceMaterialID) != "" {
+	if req.ReferenceSectionCardID != nil && strings.TrimSpace(*req.ReferenceSectionCardID) != "" {
+		cardTitle, cardText, ok := extractSectionMaterialCardText(material.IsiMateri, strings.TrimSpace(*req.ReferenceSectionCardID))
+		if !ok {
+			respondWithError(w, http.StatusBadRequest, "Card materi acuan tidak ditemukan atau tidak memiliki konten teks")
+			return
+		}
+		cardChars := len([]rune(strings.TrimSpace(cardText)))
+		// Jika konten card terlalu pendek, fallback ke teks section agar AI punya konteks cukup.
+		if cardChars < 80 {
+			plainContent = normalizeMaterialToPlainText(material.IsiMateri)
+			log.Printf("INFO: Card source too short, fallback to section text. material_id=%s card_id=%s card_chars=%d section_chars=%d", materialID, strings.TrimSpace(*req.ReferenceSectionCardID), cardChars, len([]rune(strings.TrimSpace(plainContent))))
+		} else {
+			plainContent = cardText
+			log.Printf("INFO: Card source selected. material_id=%s card_id=%s card_chars=%d", materialID, strings.TrimSpace(*req.ReferenceSectionCardID), cardChars)
+		}
+		plainContent = clampTextForAIPrompt(plainContent, maxSingleMaterialChars)
+		if strings.TrimSpace(cardTitle) != "" {
+			materialTitle = fmt.Sprintf("%s - %s", strings.TrimSpace(material.Judul), strings.TrimSpace(cardTitle))
+			sourceLabel = fmt.Sprintf("CARD: %s", strings.TrimSpace(cardTitle))
+		} else {
+			sourceLabel = "CARD: Materi"
+		}
+	} else if req.ReferenceMaterialID != nil && strings.TrimSpace(*req.ReferenceMaterialID) != "" {
 		refID := strings.TrimSpace(*req.ReferenceMaterialID)
 		if refID != material.ID {
 			refMaterial, refErr := h.MaterialService.GetMaterialByID(refID)
@@ -330,6 +422,7 @@ func (h *EssayQuestionHandlers) AutoGenerateEssayQuestionHandler(w http.Response
 			}
 			materialTitle = refMaterial.Judul
 			plainContent = normalizeMaterialToPlainText(refMaterial.IsiMateri)
+			sourceLabel = fmt.Sprintf("SECTION: %s", strings.TrimSpace(refMaterial.Judul))
 		}
 		if strings.TrimSpace(plainContent) == "" {
 			respondWithError(w, http.StatusBadRequest, "Materi acuan terpilih belum memiliki isi materi")
@@ -337,37 +430,46 @@ func (h *EssayQuestionHandlers) AutoGenerateEssayQuestionHandler(w http.Response
 		}
 		plainContent = clampTextForAIPrompt(plainContent, maxSingleMaterialChars)
 	} else {
-		classMaterials, classErr := h.MaterialService.GetMaterialsByClassID(material.ClassID)
-		if classErr != nil {
-			log.Printf("WARNING: Failed loading class materials for class %s: %v", material.ClassID, classErr)
-		} else {
-			if ctx, count := buildClassMaterialsContext(classMaterials); count > 0 {
-				plainContent = ctx
-				materialTitle = fmt.Sprintf("Gabungan %d materi pada kelas", count)
-			}
-		}
 		if strings.TrimSpace(plainContent) == "" {
-			respondWithError(w, http.StatusBadRequest, "Materi pada kelas ini belum memiliki isi yang bisa dijadikan acuan")
+			respondWithError(w, http.StatusBadRequest, "Materi ini belum memiliki isi yang bisa dijadikan acuan")
 			return
 		}
-		plainContent = clampTextForAIPrompt(plainContent, maxClassMaterialsChars)
+		plainContent = clampTextForAIPrompt(plainContent, maxSingleMaterialChars)
 	}
 
 	rubricType := strings.ToLower(strings.TrimSpace(req.RubricType))
 	if rubricType != "holistik" && rubricType != "analitik" {
 		rubricType = "analitik"
 	}
+	targetLevel := strings.ToUpper(strings.TrimSpace(func() string {
+		if req.LevelKognitif == nil {
+			return ""
+		}
+		return *req.LevelKognitif
+	}()))
+	if targetLevel != "" && targetLevel != "C1" && targetLevel != "C2" && targetLevel != "C3" {
+		respondWithError(w, http.StatusBadRequest, "level_kognitif harus C1, C2, atau C3")
+		return
+	}
 
 	// RAG source dibatasi hanya dari teks materi.
 	// Konten non-teks seperti media/embed/pdf, termasuk modul PDF kelas, diabaikan.
 	teachingModuleContext := ""
+	log.Printf("INFO: Auto-generate source resolved. material_id=%s title=%q chars=%d level=%q", materialID, materialTitle, len([]rune(strings.TrimSpace(plainContent))), targetLevel)
+	if len([]rune(strings.TrimSpace(plainContent))) < 20 {
+		respondWithError(w, http.StatusBadRequest, "Konten materi acuan terlalu pendek. Tambahkan isi materi lebih lengkap sebelum generate.")
+		return
+	}
 
-	draft, err := h.AIService.GenerateEssayQuestionFromMaterial(materialTitle, plainContent, rubricType, teachingModuleContext)
+	draft, err := h.AIService.GenerateEssayQuestionFromMaterial(materialTitle, plainContent, rubricType, targetLevel, teachingModuleContext)
 	if err != nil {
 		log.Printf("ERROR: Failed generating essay question draft for material %s: %v", materialID, err)
 		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to auto-generate question: %v", err))
 		return
 	}
+	draft.SourceLabel = sourceLabel
+	draft.SourceChars = len([]rune(strings.TrimSpace(plainContent)))
+	draft.SourcePreview = clampTextForAIPrompt(strings.TrimSpace(plainContent), 280)
 
 	respondWithJSON(w, http.StatusOK, draft)
 }

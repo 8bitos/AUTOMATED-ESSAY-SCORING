@@ -6,6 +6,7 @@ import ToggleSwitch from "@/components/ToggleSwitch";
 
 type SuperadminNotificationPrefs = {
   approvalRequests: boolean;
+  sidebarIndicators: boolean;
 };
 
 const STORAGE_KEY = "superadmin_notification_preferences";
@@ -13,6 +14,7 @@ const STORAGE_KEY = "superadmin_notification_preferences";
 export default function SuperadminNotificationSettingsPage() {
   const [prefs, setPrefs] = useState<SuperadminNotificationPrefs>({
     approvalRequests: true,
+    sidebarIndicators: true,
   });
   const [pollIntervalSeconds, setPollIntervalSeconds] = useState("30");
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -101,6 +103,21 @@ export default function SuperadminNotificationSettingsPage() {
             checked={prefs.approvalRequests}
             onChange={(value) => {
               setPrefs((prev) => ({ ...prev, approvalRequests: value }));
+              setMessage(null);
+            }}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Indikator update di sidebar</p>
+            <p className="text-xs text-slate-500">Tampilkan dot merah pada menu sidebar yang punya update penting.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle indikator update sidebar superadmin"
+            checked={prefs.sidebarIndicators}
+            onChange={(value) => {
+              setPrefs((prev) => ({ ...prev, sidebarIndicators: value }));
               setMessage(null);
             }}
           />
