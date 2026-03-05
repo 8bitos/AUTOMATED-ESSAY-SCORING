@@ -81,6 +81,17 @@ func (h *ClassTeachingModuleHandlers) DeleteClassTeachingModuleHandler(w http.Re
 		return
 	}
 
+	existingModule, err := h.Service.GetClassTeachingModuleByID(moduleID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			respondWithError(w, http.StatusNotFound, "Class teaching module not found")
+			return
+		}
+		log.Printf("ERROR: Failed to load class teaching module %s before delete: %v", moduleID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to delete class teaching module")
+		return
+	}
+
 	if err := h.Service.DeleteClassTeachingModule(moduleID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			respondWithError(w, http.StatusNotFound, "Class teaching module not found")
@@ -89,6 +100,12 @@ func (h *ClassTeachingModuleHandlers) DeleteClassTeachingModuleHandler(w http.Re
 		log.Printf("ERROR: Failed to delete class teaching module %s: %v", moduleID, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to delete class teaching module")
 		return
+	}
+
+	if existingModule != nil && strings.TrimSpace(existingModule.FileURL) != "" {
+		if cleanupErr := h.Service.CleanupUploadPathIfUnused(existingModule.FileURL); cleanupErr != nil {
+			log.Printf("WARNING: failed cleaning orphan class teaching module file (%s): %v", existingModule.FileURL, cleanupErr)
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

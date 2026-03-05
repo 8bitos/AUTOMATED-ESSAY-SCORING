@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef, JSX } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, JSX, Dispatch, SetStateAction } from 'react';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -39,6 +39,11 @@ import {
   FiMaximize2,
   FiMinimize2,
   FiDownload,
+  FiSettings,
+  FiClock,
+  FiShield,
+  FiShuffle,
+  FiCalendar,
 } from 'react-icons/fi';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import NoticeDialog from '@/components/ui/NoticeDialog';
@@ -73,6 +78,36 @@ interface SectionCardItem {
   body?: string;
   created_at?: string;
   meta?: Record<string, unknown>;
+}
+
+type StudentAnswerMode = "list" | "card";
+type TimerMode = "none" | "per_question" | "all_questions";
+interface SoalQuizSettings {
+  answer_mode: StudentAnswerMode;
+  timer_mode: TimerMode;
+  per_question_seconds: number;
+  total_seconds: number;
+  extra_time_seconds: number;
+  auto_next_on_submit: boolean;
+  allow_back_navigation: boolean;
+  lock_question_after_leave: boolean;
+  randomize_question_order: boolean;
+  random_subset_count: number;
+  schedule_start_at: string;
+  schedule_end_at: string;
+  grace_period_minutes: number;
+  attempt_limit: number;
+  attempt_scoring_method: "best" | "last";
+  attempt_cooldown_minutes: number;
+  auto_submit_on_timeout: boolean;
+  result_release_mode: "immediate" | "after_close" | "manual";
+  result_manual_published: boolean;
+  result_manual_published_at: string;
+  show_ideal_answer: boolean;
+  show_rubric_breakdown: boolean;
+  warn_on_tab_switch: boolean;
+  max_tab_switch: number;
+  auto_lock_on_tab_switch_limit: boolean;
 }
 
 interface EditableDescriptor {
@@ -365,6 +400,87 @@ const parseSectionCards = (raw?: string): SectionCardItem[] | null => {
     return null;
   }
 };
+
+const clampDuration = (value: unknown, fallback: number): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.round(n));
+};
+
+const readBoolean = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === "boolean") return value;
+  return fallback;
+};
+
+const parseSoalQuizSettings = (meta?: Record<string, unknown>): SoalQuizSettings => {
+  const root =
+    typeof meta?.quiz_settings === "object" && meta?.quiz_settings !== null
+      ? (meta.quiz_settings as Record<string, unknown>)
+      : {};
+  const answerModeRaw = typeof root.answer_mode === "string" ? root.answer_mode : "";
+  const timerModeRaw = typeof root.timer_mode === "string" ? root.timer_mode : "";
+  const answer_mode: StudentAnswerMode = answerModeRaw === "card" ? "card" : "list";
+  const timer_mode: TimerMode =
+    timerModeRaw === "per_question" || timerModeRaw === "all_questions" ? timerModeRaw : "none";
+  return {
+    answer_mode,
+    timer_mode,
+    per_question_seconds: clampDuration(root.per_question_seconds, 60),
+    total_seconds: clampDuration(root.total_seconds, 900),
+    extra_time_seconds: clampDuration(root.extra_time_seconds, 0),
+    auto_next_on_submit: readBoolean(root.auto_next_on_submit, true),
+    allow_back_navigation: readBoolean(root.allow_back_navigation, true),
+    lock_question_after_leave: readBoolean(root.lock_question_after_leave, false),
+    randomize_question_order: readBoolean(root.randomize_question_order, false),
+    random_subset_count: clampDuration(root.random_subset_count, 0),
+    schedule_start_at: typeof root.schedule_start_at === "string" ? root.schedule_start_at : "",
+    schedule_end_at: typeof root.schedule_end_at === "string" ? root.schedule_end_at : "",
+    grace_period_minutes: clampDuration(root.grace_period_minutes, 0),
+    attempt_limit: Math.max(0, clampDuration(root.attempt_limit, 1)),
+    attempt_scoring_method: root.attempt_scoring_method === "best" ? "best" : "last",
+    attempt_cooldown_minutes: clampDuration(root.attempt_cooldown_minutes, 0),
+    auto_submit_on_timeout: readBoolean(root.auto_submit_on_timeout, false),
+    result_release_mode:
+      root.result_release_mode === "after_close" || root.result_release_mode === "manual"
+        ? root.result_release_mode
+        : "immediate",
+    result_manual_published: readBoolean(root.result_manual_published, false),
+    result_manual_published_at: typeof root.result_manual_published_at === "string" ? root.result_manual_published_at : "",
+    show_ideal_answer: readBoolean(root.show_ideal_answer, false),
+    show_rubric_breakdown: readBoolean(root.show_rubric_breakdown, true),
+    warn_on_tab_switch: readBoolean(root.warn_on_tab_switch, false),
+    max_tab_switch: clampDuration(root.max_tab_switch, 3),
+    auto_lock_on_tab_switch_limit: readBoolean(root.auto_lock_on_tab_switch_limit, false),
+  };
+};
+
+const toQuizSettingsMeta = (settings: SoalQuizSettings): Record<string, unknown> => ({
+  answer_mode: settings.answer_mode,
+  timer_mode: settings.timer_mode,
+  per_question_seconds: clampDuration(settings.per_question_seconds, 60),
+  total_seconds: clampDuration(settings.total_seconds, 900),
+  extra_time_seconds: clampDuration(settings.extra_time_seconds, 0),
+  auto_next_on_submit: settings.auto_next_on_submit,
+  allow_back_navigation: settings.allow_back_navigation,
+  lock_question_after_leave: settings.lock_question_after_leave,
+  randomize_question_order: settings.randomize_question_order,
+  random_subset_count: clampDuration(settings.random_subset_count, 0),
+  schedule_start_at: settings.schedule_start_at,
+  schedule_end_at: settings.schedule_end_at,
+  grace_period_minutes: clampDuration(settings.grace_period_minutes, 0),
+  attempt_limit: Math.max(0, clampDuration(settings.attempt_limit, 1)),
+  attempt_scoring_method: settings.attempt_scoring_method,
+  attempt_cooldown_minutes: clampDuration(settings.attempt_cooldown_minutes, 0),
+  auto_submit_on_timeout: settings.auto_submit_on_timeout,
+  result_release_mode: settings.result_release_mode,
+  result_manual_published: settings.result_manual_published,
+  result_manual_published_at: settings.result_manual_published_at,
+  show_ideal_answer: settings.show_ideal_answer,
+  show_rubric_breakdown: settings.show_rubric_breakdown,
+  warn_on_tab_switch: settings.warn_on_tab_switch,
+  max_tab_switch: clampDuration(settings.max_tab_switch, 3),
+  auto_lock_on_tab_switch_limit: settings.auto_lock_on_tab_switch_limit,
+});
 
 const serializeSectionCards = (items: SectionCardItem[]) =>
   JSON.stringify({
@@ -2268,6 +2384,7 @@ export default function MaterialDetailsPage() {
     message: "",
     tone: "info",
   });
+  const [isQuizSettingsModalOpen, setQuizSettingsModalOpen] = useState(false);
 
   useEffect(() => {
     if (!material) return;
@@ -2373,6 +2490,18 @@ export default function MaterialDetailsPage() {
             .filter((q): q is EssayQuestion => q !== null)
         : [])
     : questions;
+  const activeSoalCard = useMemo(() => {
+    if (!hasSectionCardScope || !material?.isi_materi) return null;
+    const cards = parseSectionCards(material.isi_materi);
+    if (!cards) return null;
+    return cards.find((card) => card.id === sectionCardId && card.type === "soal") || null;
+  }, [hasSectionCardScope, material?.isi_materi, sectionCardId]);
+  const [quizSettings, setQuizSettings] = useState<SoalQuizSettings>(() => parseSoalQuizSettings(undefined));
+  const [quizSettingsSaving, setQuizSettingsSaving] = useState(false);
+
+  useEffect(() => {
+    setQuizSettings(parseSoalQuizSettings(activeSoalCard?.meta));
+  }, [activeSoalCard?.id, activeSoalCard?.meta]);
 
   useEffect(() => {
     if (!material) return;
@@ -2589,6 +2718,49 @@ export default function MaterialDetailsPage() {
     setEditQuestionModalOpen(true);
   };
 
+  const handleSaveQuizSettings = useCallback(async () => {
+    if (!hasSectionCardScope || !material) return;
+    setQuizSettingsSaving(true);
+    try {
+      const sectionCards = parseSectionCards(material.isi_materi);
+      if (!sectionCards) throw new Error("Konten section tidak valid.");
+      let found = false;
+      const next = sectionCards.map((card) => {
+        if (card.id !== sectionCardId || card.type !== "soal") return card;
+        found = true;
+        return {
+          ...card,
+          meta: {
+            ...(card.meta || {}),
+            quiz_settings: toQuizSettingsMeta(quizSettings),
+          },
+        };
+      });
+      if (!found) throw new Error("Card soal tidak ditemukan.");
+      const updateRes = await fetch(`/api/materials/${material.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isi_materi: serializeSectionCards(next) }),
+      });
+      if (!updateRes.ok) {
+        const errBody = await updateRes.json().catch(() => ({}));
+        throw new Error(errBody?.message || "Gagal menyimpan pengaturan pengerjaan siswa.");
+      }
+      setMaterial((prev) => (prev ? { ...prev, isi_materi: serializeSectionCards(next) } : prev));
+      setNotice({
+        open: true,
+        title: "Berhasil",
+        message: "Pengaturan mode pengerjaan siswa berhasil disimpan.",
+        tone: "success",
+      });
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Gagal menyimpan pengaturan pengerjaan siswa."));
+    } finally {
+      setQuizSettingsSaving(false);
+    }
+  }, [hasSectionCardScope, material, sectionCardId, quizSettings]);
+
   const handleExportMateriPdf = useCallback(() => {
     if (!material) return;
     const html = buildMaterialExportHtml(material, sectionCardId);
@@ -2654,7 +2826,7 @@ export default function MaterialDetailsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="sage-panel p-6">
         <Link href={`/dashboard/teacher/class/${material.class_id}`} className="flex items-center gap-2 text-[color:var(--sage-700)] hover:underline mb-4">
@@ -2671,7 +2843,14 @@ export default function MaterialDetailsPage() {
                   <button onClick={handleExportMateriPdf} className="sage-button-outline"><FiDownload/> Export PDF</button>
                 ) : null}
                 {isSoalRoute ? (
-                  <button onClick={handleOpenAddQuestionModal} className="sage-button-outline"><FiPlus/> Tambah Soal</button>
+                  <button
+                    onClick={() => setQuizSettingsModalOpen(true)}
+                    className="sage-button-outline"
+                    disabled={!hasSectionCardScope}
+                    title={hasSectionCardScope ? "Pengaturan Mode Siswa" : "Buka dari card section soal untuk atur mode siswa"}
+                  >
+                    <FiSettings/> Pengaturan
+                  </button>
                 ) : (
                   <button onClick={() => setEditMaterialModalOpen(true)} className="sage-button-outline"><FiEdit/> Edit Materi</button>
                 )}
@@ -2681,22 +2860,34 @@ export default function MaterialDetailsPage() {
       </div>
 
       {!isMateriRoute && (
-        <div className="border-b border-black/10">
-            <nav className="flex space-x-4" aria-label="Tabs">
-                {!isSoalRoute && (
-                  <button onClick={() => setActiveTab('overview')} className={`px-3 py-2 font-medium text-sm rounded-t-lg ${activeTab === 'overview' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
-                      <FiBookOpen className="inline mr-2" />{isTugasType ? "Detail Tugas" : "Ringkasan"}
-                  </button>
-                )}
-                {!isTugasType && (
-                  <button onClick={() => setActiveTab('questions')} className={`px-3 py-2 font-medium text-sm rounded-t-lg ${activeTab === 'questions' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
-                      <FiHelpCircle className="inline mr-2" />{isSoalType ? `Daftar Soal (${scopedQuestions.length})` : `Daftar Soal(${scopedQuestions.length})`}
-                  </button>
-                )}
-                <button onClick={() => setActiveTab('students')} className={`px-3 py-2 font-medium text-sm rounded-t-lg ${activeTab === 'students' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>
-                    <FiUsers className="inline mr-2" />Submisi Siswa ({submissionStatsLoading ? "..." : submissionStats.totalStudents})
-                </button>
-            </nav>
+        <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <nav className="flex flex-wrap gap-2" aria-label="Tabs">
+            {!isSoalRoute && (
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'overview' ? 'bg-gradient-to-r from-indigo-500 to-sky-500 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                <FiBookOpen />
+                {isTugasType ? "Detail Tugas" : "Ringkasan"}
+              </button>
+            )}
+            {!isTugasType && (
+              <button
+                onClick={() => setActiveTab('questions')}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'questions' ? 'bg-gradient-to-r from-indigo-500 to-sky-500 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                <FiHelpCircle />
+                {isSoalType ? `Daftar Soal (${scopedQuestions.length})` : `Daftar Soal (${scopedQuestions.length})`}
+              </button>
+            )}
+            <button
+              onClick={() => setActiveTab('students')}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'students' ? 'bg-gradient-to-r from-indigo-500 to-sky-500 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <FiUsers />
+              Submisi Siswa ({submissionStatsLoading ? "..." : submissionStats.totalStudents})
+            </button>
+          </nav>
         </div>
       )}
 
@@ -2723,7 +2914,12 @@ export default function MaterialDetailsPage() {
               />
           )}
           {activeTab === 'questions' && !isTugasType && (
-              <QuestionsListSection questions={scopedQuestions} handleOpenAddQuestionModal={handleOpenAddQuestionModal} handleOpenEditQuestionModal={handleOpenEditQuestionModal} handleDeleteQuestion={handleDeleteQuestion} />
+              <QuestionsListSection
+                questions={scopedQuestions}
+                handleOpenAddQuestionModal={handleOpenAddQuestionModal}
+                handleOpenEditQuestionModal={handleOpenEditQuestionModal}
+                handleDeleteQuestion={handleDeleteQuestion}
+              />
           )}
           {activeTab === 'students' && (
               <StudentSubmissionsList
@@ -2790,6 +2986,16 @@ export default function MaterialDetailsPage() {
       />
 
       <LoadingDialog isOpen={actionLoading} message="Sedang memproses permintaan..." />
+
+      <SoalSettingsModal
+        isOpen={isQuizSettingsModalOpen}
+        onClose={() => setQuizSettingsModalOpen(false)}
+        quizSettings={quizSettings}
+        setQuizSettings={setQuizSettings}
+        onSave={handleSaveQuizSettings}
+        saving={quizSettingsSaving}
+        disabled={!hasSectionCardScope}
+      />
     </div>
   );
 }
@@ -2835,6 +3041,227 @@ const OverviewSection = ({
         <MaterialContentRenderer isiMateri={material.isi_materi} fileUrl={material.file_url} sectionCardId={sectionCardId} />
       </div>
     </div>
+  );
+};
+
+const SoalSettingsModal = ({
+  isOpen,
+  onClose,
+  quizSettings,
+  setQuizSettings,
+  onSave,
+  saving,
+  disabled,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  quizSettings: SoalQuizSettings;
+  setQuizSettings: Dispatch<SetStateAction<SoalQuizSettings>>;
+  onSave: () => Promise<void>;
+  saving: boolean;
+  disabled: boolean;
+}) => {
+  const publishedLabel = quizSettings.result_manual_published
+    ? `Dipublish${quizSettings.result_manual_published_at ? `: ${quizSettings.result_manual_published_at}` : ""}`
+    : "Belum dipublish";
+  const toggleManualPublish = (published: boolean) => {
+    setQuizSettings((prev) => ({
+      ...prev,
+      result_manual_published: published,
+      result_manual_published_at: published ? new Date().toISOString() : "",
+    }));
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Pengaturan Mode Pengerjaan Siswa" panelClassName="max-w-6xl">
+      <div className="space-y-5">
+        <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-sky-50 to-cyan-50 p-4">
+          <p className="text-sm font-semibold text-indigo-900">Quiz Setup</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
+              <FiPlayCircle className="h-3.5 w-3.5" />
+              {quizSettings.answer_mode === "card" ? "Kartu per Soal" : "Daftar Soal"}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
+              <FiClock className="h-3.5 w-3.5" />
+              {quizSettings.timer_mode === "none"
+                ? "Tanpa Timer"
+                : quizSettings.timer_mode === "per_question"
+                  ? `Per Soal (${quizSettings.per_question_seconds} dtk)`
+                  : `Total (${quizSettings.total_seconds} dtk)`}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
+              <FiAward className="h-3.5 w-3.5" />
+              Rilis: {quizSettings.result_release_mode}
+            </span>
+          </div>
+        </div>
+
+        {disabled && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Pengaturan ini aktif jika halaman dibuka dari card section soal (`sectionCardId`).
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <section className="space-y-3 rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
+            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-indigo-900">
+              <FiPlayCircle /> Mode Soal
+            </h3>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Mode Jawaban</span>
+              <select
+                className="sage-input"
+                value={quizSettings.answer_mode}
+                disabled={disabled}
+                onChange={(e) => setQuizSettings((prev) => ({ ...prev, answer_mode: e.target.value === "card" ? "card" : "list" }))}
+              >
+                <option value="list">Daftar Soal</option>
+                <option value="card">Kartu per Soal (Quiz)</option>
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Urutan Soal</span>
+              <select
+                className="sage-input"
+                value={quizSettings.randomize_question_order ? "shuffle" : "fixed"}
+                disabled={disabled}
+                onChange={(e) => setQuizSettings((prev) => ({ ...prev, randomize_question_order: e.target.value === "shuffle" }))}
+              >
+                <option value="fixed">Urutan Asli</option>
+                <option value="shuffle">Acak per Siswa</option>
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Question Pool (0 = semua)</span>
+              <input
+                type="number"
+                min={0}
+                className="sage-input"
+                value={quizSettings.random_subset_count}
+                disabled={disabled}
+                onChange={(e) => setQuizSettings((prev) => ({ ...prev, random_subset_count: clampDuration(e.target.value, prev.random_subset_count) }))}
+              />
+            </label>
+            <div className="grid grid-cols-1 gap-2 text-sm">
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5"><input type="checkbox" checked={quizSettings.auto_next_on_submit} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_next_on_submit: e.target.checked }))} />Auto-next</label>
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5"><input type="checkbox" checked={quizSettings.allow_back_navigation} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, allow_back_navigation: e.target.checked }))} />Izinkan kembali ke soal sebelumnya</label>
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5"><input type="checkbox" checked={quizSettings.lock_question_after_leave} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, lock_question_after_leave: e.target.checked }))} />Kunci soal yang sudah dilewati</label>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-sky-200 bg-white p-4 shadow-sm">
+            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-sky-900">
+              <FiClock /> Timer
+            </h3>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Mode Timer</span>
+              <select
+                className="sage-input"
+                value={quizSettings.timer_mode}
+                disabled={disabled}
+                onChange={(e) => setQuizSettings((prev) => ({ ...prev, timer_mode: e.target.value === "per_question" || e.target.value === "all_questions" ? (e.target.value as TimerMode) : "none" }))}
+              >
+                <option value="none">Tanpa Timer</option>
+                <option value="per_question">Per Soal</option>
+                <option value="all_questions">Total</option>
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs text-slate-600">Per Soal (detik)</span>
+                <input type="number" min={0} className="sage-input" disabled={disabled || quizSettings.timer_mode !== "per_question"} value={quizSettings.per_question_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, per_question_seconds: clampDuration(e.target.value, prev.per_question_seconds) }))} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs text-slate-600">Total (detik)</span>
+                <input type="number" min={0} className="sage-input" disabled={disabled || quizSettings.timer_mode !== "all_questions"} value={quizSettings.total_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, total_seconds: clampDuration(e.target.value, prev.total_seconds) }))} />
+              </label>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Extra Time (detik)</span>
+              <input type="number" min={0} className="sage-input" disabled={disabled} value={quizSettings.extra_time_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, extra_time_seconds: clampDuration(e.target.value, prev.extra_time_seconds) }))} />
+            </label>
+            <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-sm"><input type="checkbox" checked={quizSettings.auto_submit_on_timeout} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_submit_on_timeout: e.target.checked }))} />Auto-submit saat habis waktu</label>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-900">
+              <FiCalendar /> Akses & Attempt
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs text-slate-600">Mulai</span>
+                <input type="datetime-local" className="sage-input" disabled={disabled} value={quizSettings.schedule_start_at} onChange={(e) => setQuizSettings((prev) => ({ ...prev, schedule_start_at: e.target.value }))} />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs text-slate-600">Selesai</span>
+                <input type="datetime-local" className="sage-input" disabled={disabled} value={quizSettings.schedule_end_at} onChange={(e) => setQuizSettings((prev) => ({ ...prev, schedule_end_at: e.target.value }))} />
+              </label>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <label className="block space-y-1"><span className="text-xs text-slate-600">Grace (menit)</span><input type="number" min={0} className="sage-input" disabled={disabled} value={quizSettings.grace_period_minutes} onChange={(e) => setQuizSettings((prev) => ({ ...prev, grace_period_minutes: clampDuration(e.target.value, prev.grace_period_minutes) }))} /></label>
+              <label className="block space-y-1"><span className="text-xs text-slate-600">Attempt limit</span><input type="number" min={0} className="sage-input" disabled={disabled} value={quizSettings.attempt_limit} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_limit: clampDuration(e.target.value, prev.attempt_limit) }))} /></label>
+              <label className="block space-y-1"><span className="text-xs text-slate-600">Cooldown</span><input type="number" min={0} className="sage-input" disabled={disabled} value={quizSettings.attempt_cooldown_minutes} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_cooldown_minutes: clampDuration(e.target.value, prev.attempt_cooldown_minutes) }))} /></label>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Skema Nilai Attempt</span>
+              <select className="sage-input" disabled={disabled} value={quizSettings.attempt_scoring_method} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_scoring_method: e.target.value === "best" ? "best" : "last" }))}>
+                <option value="last">Nilai terakhir</option>
+                <option value="best">Nilai terbaik</option>
+              </select>
+            </label>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
+            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-violet-900">
+              <FiShuffle /> Rilis Hasil & Feedback
+            </h3>
+            <label className="block space-y-1">
+              <span className="text-xs text-slate-600">Mode Rilis</span>
+              <select className="sage-input" disabled={disabled} value={quizSettings.result_release_mode} onChange={(e) => setQuizSettings((prev) => ({ ...prev, result_release_mode: e.target.value === "after_close" || e.target.value === "manual" ? (e.target.value as SoalQuizSettings["result_release_mode"]) : "immediate" }))}>
+                <option value="immediate">Langsung</option>
+                <option value="after_close">Setelah ditutup</option>
+                <option value="manual">Manual guru</option>
+              </select>
+            </label>
+            {quizSettings.result_release_mode === "manual" && (
+              <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50 p-3">
+                <p className="text-xs text-violet-700">Status publish: {publishedLabel}</p>
+                <div className="flex gap-2">
+                  <button type="button" className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(true)}>Publish Hasil</button>
+                  <button type="button" className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(false)}>Tarik Hasil</button>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 text-sm">
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5"><input type="checkbox" checked={quizSettings.show_ideal_answer} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_ideal_answer: e.target.checked }))} />Tampilkan jawaban ideal</label>
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5"><input type="checkbox" checked={quizSettings.show_rubric_breakdown} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_rubric_breakdown: e.target.checked }))} />Tampilkan detail rubrik</label>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-sm md:col-span-2">
+            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-rose-900">
+              <FiShield /> Integritas
+            </h3>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-sm"><input type="checkbox" checked={quizSettings.warn_on_tab_switch} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, warn_on_tab_switch: e.target.checked }))} />Warn saat pindah tab</label>
+              <label className="block space-y-1">
+                <span className="text-xs text-slate-600">Batas pindah tab</span>
+                <input type="number" min={0} className="sage-input" disabled={disabled || !quizSettings.warn_on_tab_switch} value={quizSettings.max_tab_switch} onChange={(e) => setQuizSettings((prev) => ({ ...prev, max_tab_switch: clampDuration(e.target.value, prev.max_tab_switch) }))} />
+              </label>
+              <label className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-sm"><input type="checkbox" checked={quizSettings.auto_lock_on_tab_switch_limit} disabled={disabled || !quizSettings.warn_on_tab_switch} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_lock_on_tab_switch_limit: e.target.checked }))} />Auto lock jika melebihi batas</label>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
+          <button type="button" className="sage-button-outline" onClick={onClose}>Batal</button>
+          <button type="button" className="sage-button" disabled={disabled || saving} onClick={() => void onSave()}>
+            {saving ? "Menyimpan..." : "Simpan Pengaturan"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 };
 
@@ -2886,37 +3313,59 @@ const QuestionsListSection = ({
             const rubrics = Array.isArray(q.rubrics) ? q.rubrics : [];
 
             return (
-              <div key={q.id} className="sage-card border border-slate-200 shadow-sm transition hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+              <div key={q.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                 <div
-                  className="grid gap-4 p-5 cursor-pointer sm:grid-cols-[1fr_auto]"
+                  className="grid cursor-pointer gap-4 bg-gradient-to-r from-indigo-50/70 via-sky-50/60 to-cyan-50/50 p-5 sm:grid-cols-[1fr_auto]"
                   onClick={() => setExpandedId(isOpen ? null : q.id)}
                 >
-                  <div className="space-y-2">
-                    <p className="font-semibold text-slate-900 text-justify">
-                      {index + 1}. {q.teks_soal}
-                    </p>
-                    <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-indigo-600 px-2 text-xs font-bold text-white">
+                        {index + 1}
+                      </span>
+                      <p className="font-semibold leading-6 text-slate-900 text-justify">
+                        {q.teks_soal}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
                       {q.level_kognitif && (
-                        <span className="px-2 py-0.5 bg-slate-100 rounded-full">
+                        <span className="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-700">
                           {q.level_kognitif}
                         </span>
                       )}
                       {normalizedKeywords.length > 0 && (
-                        <span>{normalizedKeywords.length} keyword</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-700">
+                          <FiTag className="h-3 w-3" />
+                          {normalizedKeywords.length} keyword
+                        </span>
                       )}
                       {rubrics.length > 0 && (
-                        <span>{rubrics.length} rubrik</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">
+                          <FiAward className="h-3 w-3" />
+                          {rubrics.length} rubrik
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex gap-2 sm:justify-end">
+                  <div className="flex items-start gap-2 sm:justify-end">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedId(isOpen ? null : q.id);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      {isOpen ? <FiChevronUp /> : <FiChevronDown />}
+                      Detail
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleOpenEditQuestionModal(q);
                       }}
-                      className="p-2 text-slate-500 hover:text-slate-800"
+                      className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-slate-800"
+                      title="Edit soal"
                     >
                       <FiEdit />
                     </button>
@@ -2925,41 +3374,38 @@ const QuestionsListSection = ({
                         e.stopPropagation();
                         handleDeleteQuestion(q.id);
                       }}
-                      className="p-2 text-slate-500 hover:text-red-600"
+                      className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-red-600"
+                      title="Hapus soal"
                     >
                       <FiTrash2 />
                     </button>
                   </div>
                 </div>
 
-                {/* DROPDOWN CONTENT */}
                 {isOpen && (
-                  <div className="border-t border-slate-200 px-6 py-4 bg-slate-100 dark:border-slate-700 dark:bg-slate-950 space-y-4 text-sm">
-                    {/* IDEAL ANSWER */}
+                  <div className="space-y-4 border-t border-slate-200 bg-slate-50 px-6 py-5 text-sm">
                     {q.ideal_answer && (
                       <div>
-                        <p className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100 mb-1">
-                          Jawaban Ideal
-                        </p>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-600 dark:bg-slate-900">
-                          <p className="text-[color:var(--ink-500)] dark:text-slate-200">
+                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Jawaban Ideal</p>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[color:var(--ink-500)]">
                             {renderDoubleAsteriskBold(q.ideal_answer)}
                           </p>
                         </div>
                       </div>
                     )}
 
-                    {/* KEYWORDS */}
                     {normalizedKeywords.length > 0 && (
                       <div>
-                        <p className="font-semibold text-[color:var(--ink-700)] mb-1">
+                        <p className="mb-1 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <FiTag className="h-3.5 w-3.5" />
                           Kata Kunci
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {normalizedKeywords.map((k, i) => (
                             <span
                               key={i}
-                              className="px-2 py-1 bg-[color:var(--sand-100)] text-[color:var(--sage-800)] rounded text-xs question-keyword-chip"
+                              className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 question-keyword-chip"
                             >
                               {k}
                             </span>
@@ -2968,22 +3414,14 @@ const QuestionsListSection = ({
                       </div>
                     )}
 
-                    {/* RUBRICS */}
                     {rubrics.length > 0 && (
                       <div>
-                        <p className="font-semibold text-[color:var(--ink-700)] mb-2">
-                          Rubrik Penilaian
-                        </p>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Rubrik Penilaian</p>
                         <div className="space-y-3">
                           {rubrics.map((r: Rubric, ri: number) => (
-                            <div
-                              key={ri}
-                              className="border rounded-lg bg-white p-3"
-                            >
-                              <p className="font-semibold text-[color:var(--ink-900)] mb-1">
-                                {r.nama_aspek}
-                              </p>
-                              <ul className="text-xs text-[color:var(--ink-500)] space-y-1">
+                            <div key={ri} className="rounded-xl border border-slate-200 bg-white p-3">
+                              <p className="mb-1 font-semibold text-[color:var(--ink-900)]">{r.nama_aspek}</p>
+                              <ul className="space-y-1 text-xs text-[color:var(--ink-500)]">
                                 {r.descriptors &&
                                   Object.entries(r.descriptors).map(
                                     ([score, desc]: [string, RubricDescriptorValue]) => (

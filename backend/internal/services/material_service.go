@@ -6,6 +6,11 @@ import (
 	"database/sql"                // Mengimpor package database/sql untuk interaksi dengan database.
 	"encoding/json"
 	"fmt"     // Mengimpor package fmt untuk format string dan error.
+	"net/url"
+	"os"
+	pathpkg "path"
+	"path/filepath"
+	"regexp"
 	"strings" // Mengimpor package strings untuk manipulasi string (membangun query update, split keywords).
 	"time"    // Mengimpor package time untuk timestamp.
 
@@ -14,6 +19,7 @@ import (
 )
 
 const materialTypeKeywordPrefix = "__type:"
+var uploadPathPattern = regexp.MustCompile(`/uploads/[A-Za-z0-9._-]+`)
 
 func normalizeMaterialType(value string) string {
 	v := strings.ToLower(strings.TrimSpace(value))
@@ -25,6 +31,42 @@ func normalizeMaterialType(value string) string {
 	default:
 		return "materi"
 	}
+}
+
+func normalizeUploadPath(raw string) (string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", false
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		if parsed, err := url.Parse(trimmed); err == nil {
+			trimmed = parsed.Path
+		}
+	}
+	if idx := strings.IndexAny(trimmed, "?#"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	clean := pathpkg.Clean(trimmed)
+	if !strings.HasPrefix(clean, "/uploads/") {
+		return "", false
+	}
+	return clean, true
+}
+
+func extractUploadPathsFromText(raw string) map[string]struct{} {
+	result := make(map[string]struct{})
+	if strings.TrimSpace(raw) == "" {
+		return result
+	}
+	for _, m := range uploadPathPattern.FindAllString(raw, -1) {
+		if normalized, ok := normalizeUploadPath(m); ok {
+			result[normalized] = struct{}{}
+		}
+	}
+	if normalized, ok := normalizeUploadPath(raw); ok {
+		result[normalized] = struct{}{}
+	}
+	return result
 }
 
 func extractMaterialTypeAndKeywords(keywords []string) (string, []string) {
@@ -516,6 +558,87 @@ func (s *MaterialService) ReorderMaterials(classID, teacherID string, orderedMat
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit reorder transaction: %w", err)
+	}
+	return nil
+}
+
+// CollectUploadPathsFromMaterial returns distinct /uploads paths referenced by a material.
+func (s *MaterialService) CollectUploadPathsFromMaterial(material *models.Material) []string {
+	if material == nil {
+		return []string{}
+	}
+	paths := make(map[string]struct{})
+	if material.FileUrl != nil {
+		if normalized, ok := normalizeUploadPath(*material.FileUrl); ok {
+			paths[normalized] = struct{}{}
+		}
+	}
+	if material.IsiMateri != nil {
+		for p := range extractUploadPathsFromText(*material.IsiMateri) {
+			paths[p] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(paths))
+	for p := range paths {
+		out = append(out, p)
+	}
+	return out
+}
+
+func (s *MaterialService) isUploadPathReferenced(uploadPath string) (bool, error) {
+	var referenced bool
+	err := s.db.QueryRowContext(
+		context.Background(),
+		`
+		SELECT (
+			(SELECT COUNT(1) FROM materials WHERE file_url = $1) +
+			(SELECT COUNT(1) FROM materials WHERE COALESCE(isi_materi, '') LIKE '%' || $1 || '%') +
+			(SELECT COUNT(1) FROM class_teaching_modules WHERE file_url = $1) +
+			(SELECT COUNT(1) FROM modules WHERE file_url = $1) +
+			(SELECT COUNT(1) FROM users WHERE foto_profil_url = $1)
+		) > 0
+		`,
+		uploadPath,
+	).Scan(&referenced)
+	if err != nil {
+		return false, err
+	}
+	return referenced, nil
+}
+
+// DeleteUploadPathIfUnused removes file under ./uploads when it is no longer referenced in DB.
+func (s *MaterialService) DeleteUploadPathIfUnused(rawPath string) error {
+	uploadPath, ok := normalizeUploadPath(rawPath)
+	if !ok {
+		return nil
+	}
+	referenced, err := s.isUploadPathReferenced(uploadPath)
+	if err != nil {
+		return fmt.Errorf("failed to check upload references: %w", err)
+	}
+	if referenced {
+		return nil
+	}
+
+	fileName := strings.TrimPrefix(uploadPath, "/uploads/")
+	if strings.TrimSpace(fileName) == "" {
+		return nil
+	}
+	uploadsAbs, err := filepath.Abs("uploads")
+	if err != nil {
+		return fmt.Errorf("failed to resolve uploads directory: %w", err)
+	}
+	targetPath := filepath.Join("uploads", filepath.FromSlash(fileName))
+	targetAbs, err := filepath.Abs(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve target upload path: %w", err)
+	}
+	if targetAbs != uploadsAbs && !strings.HasPrefix(targetAbs, uploadsAbs+string(os.PathSeparator)) {
+		return fmt.Errorf("invalid upload path outside uploads directory")
+	}
+
+	if err := os.Remove(targetAbs); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed removing orphan upload file: %w", err)
 	}
 	return nil
 }

@@ -298,6 +298,18 @@ func (h *MaterialHandlers) UpdateMaterialHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
+	existingMaterial, err := h.Service.GetMaterialByID(materialID)
+	if err != nil {
+		if err.Error() == "material not found" {
+			respondWithError(w, http.StatusNotFound, "Material not found")
+			return
+		}
+		log.Printf("ERROR: Failed to load material %s before update: %v", materialID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to load material")
+		return
+	}
+	oldUploadPaths := h.Service.CollectUploadPathsFromMaterial(existingMaterial)
+
 	// For UpdateMaterial, we also need to handle multipart/form-data if a file might be updated
 	if err := r.ParseMultipartForm(5 << 20); err != nil && err != http.ErrNotMultipart { // Allow non-multipart forms for text-only updates
 		respondWithError(w, http.StatusBadRequest, "File size exceeds 5MB or invalid form data")
@@ -387,6 +399,19 @@ func (h *MaterialHandlers) UpdateMaterialHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
+	newUploadPathSet := make(map[string]struct{})
+	for _, p := range h.Service.CollectUploadPathsFromMaterial(updatedMaterial) {
+		newUploadPathSet[p] = struct{}{}
+	}
+	for _, oldPath := range oldUploadPaths {
+		if _, stillUsedByMaterial := newUploadPathSet[oldPath]; stillUsedByMaterial {
+			continue
+		}
+		if cleanupErr := h.Service.DeleteUploadPathIfUnused(oldPath); cleanupErr != nil {
+			log.Printf("WARNING: failed cleaning orphan upload after material update (%s): %v", oldPath, cleanupErr)
+		}
+	}
+
 	respondWithJSON(w, http.StatusOK, updatedMaterial)
 }
 
@@ -399,7 +424,19 @@ func (h *MaterialHandlers) DeleteMaterialHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	err := h.Service.DeleteMaterial(materialID)
+	existingMaterial, err := h.Service.GetMaterialByID(materialID)
+	if err != nil {
+		if err.Error() == "material not found" {
+			respondWithError(w, http.StatusNotFound, "Material not found")
+			return
+		}
+		log.Printf("ERROR: Failed to load material %s before delete: %v", materialID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to load material")
+		return
+	}
+	oldUploadPaths := h.Service.CollectUploadPathsFromMaterial(existingMaterial)
+
+	err = h.Service.DeleteMaterial(materialID)
 	if err != nil {
 		log.Printf("ERROR: Failed to delete material %s: %v", materialID, err)
 		if err.Error() == "material not found with ID "+materialID {
@@ -408,6 +445,12 @@ func (h *MaterialHandlers) DeleteMaterialHandler(w http.ResponseWriter, r *http.
 		}
 		respondWithError(w, http.StatusInternalServerError, "Failed to delete material")
 		return
+	}
+
+	for _, oldPath := range oldUploadPaths {
+		if cleanupErr := h.Service.DeleteUploadPathIfUnused(oldPath); cleanupErr != nil {
+			log.Printf("WARNING: failed cleaning orphan upload after material delete (%s): %v", oldPath, cleanupErr)
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

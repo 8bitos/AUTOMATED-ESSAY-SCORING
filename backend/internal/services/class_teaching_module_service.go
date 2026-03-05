@@ -85,6 +85,33 @@ func (s *ClassTeachingModuleService) GetClassTeachingModulesByClassID(classID st
 	return modules, nil
 }
 
+func (s *ClassTeachingModuleService) GetClassTeachingModuleByID(moduleID string) (*models.ClassTeachingModule, error) {
+	query := `
+		SELECT id, class_id, uploaded_by, nama_modul, file_url, created_at, updated_at
+		FROM class_teaching_modules
+		WHERE id = $1
+	`
+	var m models.ClassTeachingModule
+	if err := s.db.QueryRow(
+		query,
+		moduleID,
+	).Scan(
+		&m.ID,
+		&m.ClassID,
+		&m.UploadedBy,
+		&m.NamaModul,
+		&m.FileURL,
+		&m.CreatedAt,
+		&m.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("class teaching module not found")
+		}
+		return nil, fmt.Errorf("error querying class teaching module: %w", err)
+	}
+	return &m, nil
+}
+
 func (s *ClassTeachingModuleService) DeleteClassTeachingModule(moduleID string) error {
 	result, err := s.db.Exec("DELETE FROM class_teaching_modules WHERE id = $1", moduleID)
 	if err != nil {
@@ -98,4 +125,9 @@ func (s *ClassTeachingModuleService) DeleteClassTeachingModule(moduleID string) 
 		return fmt.Errorf("class teaching module not found")
 	}
 	return nil
+}
+
+func (s *ClassTeachingModuleService) CleanupUploadPathIfUnused(rawPath string) error {
+	helper := NewMaterialService(s.db)
+	return helper.DeleteUploadPathIfUnused(rawPath)
 }

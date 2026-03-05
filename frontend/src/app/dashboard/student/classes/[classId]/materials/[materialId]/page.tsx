@@ -38,6 +38,7 @@ interface QuestionRubric {
 interface EssayQuestion {
   id: string;
   teks_soal: string;
+  ideal_answer?: string;
   weight?: number;
   created_at?: string;
   updated_at?: string;
@@ -92,6 +93,36 @@ interface SectionTaskMeta {
   tugas_max_file_mb?: number;
   tugas_attachment_url?: string;
   tugas_attachment_name?: string;
+}
+
+type StudentAnswerMode = "list" | "card";
+type TimerMode = "none" | "per_question" | "all_questions";
+interface SectionQuizSettings {
+  answer_mode: StudentAnswerMode;
+  timer_mode: TimerMode;
+  per_question_seconds: number;
+  total_seconds: number;
+  extra_time_seconds: number;
+  auto_next_on_submit: boolean;
+  allow_back_navigation: boolean;
+  lock_question_after_leave: boolean;
+  randomize_question_order: boolean;
+  random_subset_count: number;
+  schedule_start_at: string;
+  schedule_end_at: string;
+  grace_period_minutes: number;
+  attempt_limit: number;
+  attempt_scoring_method: "best" | "last";
+  attempt_cooldown_minutes: number;
+  auto_submit_on_timeout: boolean;
+  result_release_mode: "immediate" | "after_close" | "manual";
+  result_manual_published: boolean;
+  result_manual_published_at: string;
+  show_ideal_answer: boolean;
+  show_rubric_breakdown: boolean;
+  warn_on_tab_switch: boolean;
+  max_tab_switch: number;
+  auto_lock_on_tab_switch_limit: boolean;
 }
 
 interface SectionTaskCard {
@@ -249,6 +280,69 @@ const parseDueDate = (value?: string): Date | null => {
   return parsed;
 };
 
+const clampDuration = (value: unknown, fallback: number): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.round(n));
+};
+
+const readBoolean = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === "boolean") return value;
+  return fallback;
+};
+
+const parseSectionQuizSettings = (activeCard: SectionSoalCard | null): SectionQuizSettings => {
+  const meta = (activeCard?.meta || {}) as Record<string, unknown>;
+  const raw =
+    typeof meta.quiz_settings === "object" && meta.quiz_settings !== null
+      ? (meta.quiz_settings as Record<string, unknown>)
+      : {};
+  const answerModeRaw = typeof raw.answer_mode === "string" ? raw.answer_mode : "";
+  const timerModeRaw = typeof raw.timer_mode === "string" ? raw.timer_mode : "";
+  return {
+    answer_mode: answerModeRaw === "card" ? "card" : "list",
+    timer_mode:
+      timerModeRaw === "per_question" || timerModeRaw === "all_questions" ? (timerModeRaw as TimerMode) : "none",
+    per_question_seconds: clampDuration(raw.per_question_seconds, 60),
+    total_seconds: clampDuration(raw.total_seconds, 900),
+    extra_time_seconds: clampDuration(raw.extra_time_seconds, 0),
+    auto_next_on_submit: readBoolean(raw.auto_next_on_submit, true),
+    allow_back_navigation: readBoolean(raw.allow_back_navigation, true),
+    lock_question_after_leave: readBoolean(raw.lock_question_after_leave, false),
+    randomize_question_order: readBoolean(raw.randomize_question_order, false),
+    random_subset_count: clampDuration(raw.random_subset_count, 0),
+    schedule_start_at: typeof raw.schedule_start_at === "string" ? raw.schedule_start_at : "",
+    schedule_end_at: typeof raw.schedule_end_at === "string" ? raw.schedule_end_at : "",
+    grace_period_minutes: clampDuration(raw.grace_period_minutes, 0),
+    attempt_limit: Math.max(0, clampDuration(raw.attempt_limit, 1)),
+    attempt_scoring_method: raw.attempt_scoring_method === "best" ? "best" : "last",
+    attempt_cooldown_minutes: clampDuration(raw.attempt_cooldown_minutes, 0),
+    auto_submit_on_timeout: readBoolean(raw.auto_submit_on_timeout, false),
+    result_release_mode:
+      raw.result_release_mode === "after_close" || raw.result_release_mode === "manual"
+        ? raw.result_release_mode
+        : "immediate",
+    result_manual_published: readBoolean(raw.result_manual_published, false),
+    result_manual_published_at: typeof raw.result_manual_published_at === "string" ? raw.result_manual_published_at : "",
+    show_ideal_answer: readBoolean(raw.show_ideal_answer, false),
+    show_rubric_breakdown: readBoolean(raw.show_rubric_breakdown, true),
+    warn_on_tab_switch: readBoolean(raw.warn_on_tab_switch, false),
+    max_tab_switch: clampDuration(raw.max_tab_switch, 3),
+    auto_lock_on_tab_switch_limit: readBoolean(raw.auto_lock_on_tab_switch_limit, false),
+  };
+};
+
+const shuffleQuestions = (items: EssayQuestion[]): EssayQuestion[] => {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return out;
+};
+
 const isImageLikeUrl = (url: string): boolean =>
   /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?.*)?$/i.test((url || "").trim());
 
@@ -384,6 +478,9 @@ export default function StudentMaterialDetailPage() {
   const [taskPendingFile, setTaskPendingFile] = useState<File | null>(null);
   const [taskUploading, setTaskUploading] = useState(false);
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [tabLocked, setTabLocked] = useState(false);
+  const [lockedQuestionIds, setLockedQuestionIds] = useState<Record<string, boolean>>({});
 
   const fetchData = useCallback(async (showLoader = true): Promise<Material | null> => {
     if (!classId || !materialId) return null;
@@ -428,11 +525,17 @@ export default function StudentMaterialDetailPage() {
     () => (sectionCardId ? sectionCards.find((card) => card.id === sectionCardId) || null : null),
     [sectionCardId, sectionCards]
   );
+  const sectionQuizSettings = useMemo(() => parseSectionQuizSettings(activeCard), [activeCard]);
   const questions = useMemo(() => {
     if (!activeCard) return allQuestions;
     if (!Array.isArray(activeCard.questionIds) || activeCard.questionIds.length === 0) {
       return activeCard.type === "tugas" ? [] : allQuestions;
     }
+    const byId = new Map(allQuestions.map((q) => [q.id, q]));
+    const ordered = activeCard.questionIds
+      .map((id) => byId.get(id) || null)
+      .filter((q): q is EssayQuestion => q !== null);
+    if (ordered.length > 0) return ordered;
     return allQuestions.filter((q) => activeCard.questionIds.includes(q.id));
   }, [allQuestions, activeCard]);
   const materialType = (material?.material_type || "materi") as "materi" | "soal" | "tugas";
@@ -442,6 +545,7 @@ export default function StudentMaterialDetailPage() {
   const forceTugasView = viewMode === "tugas" || activeCard?.type === "tugas";
   const isSoalContext = isSoalType || forceSoalView;
   const isTugasContext = isTugasType || forceTugasView;
+  const isCardAnswerMode = isSoalContext && !isTugasContext && sectionQuizSettings.answer_mode === "card";
   const taskCardConfig = useMemo(() => {
     if (activeCard?.type === "tugas") {
       return {
@@ -468,23 +572,67 @@ export default function StudentMaterialDetailPage() {
   const taskRequiresBoth = taskSubmissionType === "keduanya";
   const taskDueAtDate = useMemo(() => parseDueDate(taskCardConfig?.meta?.tugas_due_at), [taskCardConfig?.meta?.tugas_due_at]);
   const isTaskLate = Boolean(taskDueAtDate && new Date().getTime() > taskDueAtDate.getTime());
-  const submittedCount = questions.filter((q) => !!q.submission_id).length;
-  const reviewedCount = questions.filter(
+  const questionPool = useMemo(() => {
+    if (!isSoalContext || isTugasContext) return questions;
+    if (sectionQuizSettings.random_subset_count <= 0 || sectionQuizSettings.random_subset_count >= questions.length) {
+      return questions;
+    }
+    const base = sectionQuizSettings.randomize_question_order ? shuffleQuestions(questions) : [...questions];
+    return base.slice(0, sectionQuizSettings.random_subset_count);
+  }, [isSoalContext, isTugasContext, questions, sectionQuizSettings.random_subset_count, sectionQuizSettings.randomize_question_order]);
+  const cardModeQuestions = useMemo(() => {
+    if (!isCardAnswerMode) return questionPool;
+    if (!sectionQuizSettings.randomize_question_order) return questionPool;
+    return shuffleQuestions(questionPool);
+  }, [isCardAnswerMode, sectionQuizSettings.randomize_question_order, questionPool]);
+  const displayQuestions = isSoalContext && !isTugasContext ? questionPool : questions;
+  const submittedCount = displayQuestions.filter((q) => !!q.submission_id).length;
+  const reviewedCount = displayQuestions.filter(
     (q) => !!q.submission_id && (q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0)
   ).length;
-  const pendingEvaluationCount = questions.filter((q) => {
+  const pendingEvaluationCount = displayQuestions.filter((q) => {
     const state = getQuestionGradingState(q);
     return state === "queued" || state === "processing" || state === "waiting_result";
   }).length;
   const canShowResults = isSoalContext || isTugasContext;
+  const nowMs = Date.now();
+  const scheduleStartDate = useMemo(
+    () => parseDueDate(sectionQuizSettings.schedule_start_at || undefined),
+    [sectionQuizSettings.schedule_start_at]
+  );
+  const scheduleEndDate = useMemo(
+    () => parseDueDate(sectionQuizSettings.schedule_end_at || undefined),
+    [sectionQuizSettings.schedule_end_at]
+  );
+  const scheduleEndWithGraceMs =
+    scheduleEndDate?.getTime() != null
+      ? scheduleEndDate.getTime() + sectionQuizSettings.grace_period_minutes * 60 * 1000
+      : null;
+  const isBeforeSchedule = Boolean(scheduleStartDate && nowMs < scheduleStartDate.getTime());
+  const isAfterSchedule = Boolean(scheduleEndWithGraceMs !== null && nowMs > scheduleEndWithGraceMs);
+  const isSoalSubmissionBlockedBySchedule = isSoalContext && !isTugasContext && (isBeforeSchedule || isAfterSchedule);
+  const canSubmitInCurrentState = !isSoalSubmissionBlockedBySchedule && !tabLocked;
+  const isResultReleased = (() => {
+    if (!isSoalContext || isTugasContext) return true;
+    if (sectionQuizSettings.result_release_mode === "immediate") return true;
+    if (sectionQuizSettings.result_release_mode === "manual") return sectionQuizSettings.result_manual_published;
+    if (!scheduleEndDate) return false;
+    return nowMs >= scheduleEndDate.getTime();
+  })();
+  const canOpenResultsTab = canShowResults && isResultReleased;
+  const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
+  const [currentTickSec, setCurrentTickSec] = useState(() => Math.floor(Date.now() / 1000));
+  const [attemptStartSec, setAttemptStartSec] = useState<number | null>(null);
+  const [questionStartSecMap, setQuestionStartSecMap] = useState<Record<string, number>>({});
+  const [autoAdvancedTimeoutIds, setAutoAdvancedTimeoutIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!canShowResults || pendingEvaluationCount === 0) return;
+    if (!canOpenResultsTab || pendingEvaluationCount === 0) return;
     const timer = setInterval(() => {
       void fetchData(false);
     }, 4000);
     return () => clearInterval(timer);
-  }, [canShowResults, pendingEvaluationCount, fetchData]);
+  }, [canOpenResultsTab, pendingEvaluationCount, fetchData]);
 
   useEffect(() => {
     if (!material) return;
@@ -492,16 +640,153 @@ export default function StudentMaterialDetailPage() {
       setActiveSection("questions");
       return;
     }
-    if (!canShowResults && activeSection === "results") {
+    if (!canOpenResultsTab && activeSection === "results") {
       setActiveSection("overview");
       return;
     }
     if (!isSoalContext && !isTugasContext && activeSection !== "overview") {
       setActiveSection("overview");
     }
-  }, [material, isSoalContext, isTugasContext, canShowResults, activeSection]);
+  }, [material, isSoalContext, isTugasContext, canOpenResultsTab, activeSection]);
+
+  useEffect(() => {
+    if (!isCardAnswerMode) {
+      setQuizQuestionIndex(0);
+      setQuestionStartSecMap({});
+      setAutoAdvancedTimeoutIds({});
+      return;
+    }
+    setQuizQuestionIndex((prev) => {
+      if (cardModeQuestions.length === 0) return 0;
+      return Math.max(0, Math.min(prev, cardModeQuestions.length - 1));
+    });
+  }, [isCardAnswerMode, cardModeQuestions.length]);
+
+  useEffect(() => {
+    if (!isCardAnswerMode || activeSection !== "questions") return;
+    const timer = setInterval(() => setCurrentTickSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [isCardAnswerMode, activeSection]);
+
+  const attemptStorageKey = useMemo(
+    () => `sage_quiz_attempt_start:${classId}:${materialId}:${sectionCardId || "all"}`,
+    [classId, materialId, sectionCardId]
+  );
+
+  useEffect(() => {
+    if (!isCardAnswerMode || sectionQuizSettings.timer_mode !== "all_questions" || sectionQuizSettings.total_seconds <= 0) {
+      setAttemptStartSec(null);
+      return;
+    }
+    if (typeof window === "undefined") return;
+    const existing = window.localStorage.getItem(attemptStorageKey);
+    const parsed = existing ? Number(existing) : NaN;
+    const now = Math.floor(Date.now() / 1000);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setAttemptStartSec(parsed);
+    } else {
+      setAttemptStartSec(now);
+      window.localStorage.setItem(attemptStorageKey, String(now));
+    }
+  }, [isCardAnswerMode, sectionQuizSettings.timer_mode, sectionQuizSettings.total_seconds, attemptStorageKey]);
+
+  const currentCardQuestion = isCardAnswerMode
+    ? cardModeQuestions[Math.max(0, Math.min(quizQuestionIndex, Math.max(0, cardModeQuestions.length - 1)))] || null
+    : null;
+  const totalTimerRemainingSec =
+    sectionQuizSettings.timer_mode === "all_questions" && sectionQuizSettings.total_seconds > 0 && attemptStartSec
+      ? Math.max(
+          0,
+          sectionQuizSettings.total_seconds + sectionQuizSettings.extra_time_seconds - Math.max(0, currentTickSec - attemptStartSec)
+        )
+      : null;
+
+  useEffect(() => {
+    if (!isCardAnswerMode || sectionQuizSettings.timer_mode !== "per_question" || sectionQuizSettings.per_question_seconds <= 0) return;
+    if (!currentCardQuestion) return;
+    setQuestionStartSecMap((prev) => {
+      if (typeof prev[currentCardQuestion.id] === "number") return prev;
+      return { ...prev, [currentCardQuestion.id]: Math.floor(Date.now() / 1000) };
+    });
+  }, [isCardAnswerMode, sectionQuizSettings.timer_mode, sectionQuizSettings.per_question_seconds, currentCardQuestion?.id]);
+
+  const perQuestionTimerRemainingSec =
+    sectionQuizSettings.timer_mode === "per_question" &&
+    sectionQuizSettings.per_question_seconds > 0 &&
+    currentCardQuestion &&
+    typeof questionStartSecMap[currentCardQuestion.id] === "number"
+      ? Math.max(
+          0,
+          sectionQuizSettings.per_question_seconds +
+            sectionQuizSettings.extra_time_seconds -
+            Math.max(0, currentTickSec - Number(questionStartSecMap[currentCardQuestion.id]))
+        )
+      : null;
+  const activeTimerRemainingSec =
+    sectionQuizSettings.timer_mode === "all_questions" ? totalTimerRemainingSec : perQuestionTimerRemainingSec;
+  const isActiveTimerExpired =
+    sectionQuizSettings.timer_mode !== "none" &&
+    typeof activeTimerRemainingSec === "number" &&
+    activeTimerRemainingSec <= 0;
+  const goToCardQuestionIndex = useCallback(
+    (targetIndex: number) => {
+      if (!isCardAnswerMode) return;
+      const normalized = Math.max(0, Math.min(targetIndex, Math.max(0, cardModeQuestions.length - 1)));
+      if (sectionQuizSettings.lock_question_after_leave && currentCardQuestion?.id) {
+        setLockedQuestionIds((prev) => ({ ...prev, [currentCardQuestion.id]: true }));
+      }
+      setQuizQuestionIndex(normalized);
+    },
+    [isCardAnswerMode, cardModeQuestions.length, sectionQuizSettings.lock_question_after_leave, currentCardQuestion?.id]
+  );
+
+  useEffect(() => {
+    if (!isCardAnswerMode || sectionQuizSettings.timer_mode !== "per_question") return;
+    if (!currentCardQuestion || !isActiveTimerExpired) return;
+    if (autoAdvancedTimeoutIds[currentCardQuestion.id]) return;
+    setAutoAdvancedTimeoutIds((prev) => ({ ...prev, [currentCardQuestion.id]: true }));
+    if (quizQuestionIndex < cardModeQuestions.length - 1) {
+      goToCardQuestionIndex(quizQuestionIndex + 1);
+    }
+  }, [
+    isCardAnswerMode,
+    sectionQuizSettings.timer_mode,
+    currentCardQuestion,
+    isActiveTimerExpired,
+    autoAdvancedTimeoutIds,
+    quizQuestionIndex,
+    cardModeQuestions.length,
+    goToCardQuestionIndex,
+  ]);
+
+  useEffect(() => {
+    if (!isSoalContext || isTugasContext) return;
+    if (!sectionQuizSettings.warn_on_tab_switch) return;
+    const handler = () => {
+      if (document.visibilityState !== "hidden") return;
+      setTabSwitchCount((prev) => {
+        const next = prev + 1;
+        if (
+          sectionQuizSettings.auto_lock_on_tab_switch_limit &&
+          sectionQuizSettings.max_tab_switch > 0 &&
+          next >= sectionQuizSettings.max_tab_switch
+        ) {
+          setTabLocked(true);
+        }
+        return next;
+      });
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [
+    isSoalContext,
+    isTugasContext,
+    sectionQuizSettings.warn_on_tab_switch,
+    sectionQuizSettings.auto_lock_on_tab_switch_limit,
+    sectionQuizSettings.max_tab_switch,
+  ]);
   const sortedQuestions = useMemo(() => {
-    const withIndex = questions.map((q, index) => ({ q, index }));
+    const withIndex = displayQuestions.map((q, index) => ({ q, index }));
     switch (questionSort) {
       case "weight_desc":
         return [...withIndex]
@@ -527,9 +812,9 @@ export default function StudentMaterialDetailPage() {
           .map((item) => item.q);
       case "default":
       default:
-        return questions;
+        return displayQuestions;
     }
-  }, [questions, questionSort]);
+  }, [displayQuestions, questionSort]);
 
   const visibleQuestions = useMemo(() => {
     if (!hideAnsweredQuestions) return sortedQuestions;
@@ -537,10 +822,10 @@ export default function StudentMaterialDetailPage() {
   }, [sortedQuestions, hideAnsweredQuestions]);
 
   const resultItems = useMemo(() => {
-    const base = questions
+    const base = displayQuestions
       .filter((q) => !!q.submission_id)
       .map((q, filteredIndex) => {
-        const originalOrder = questions.findIndex((item) => item.id === q.id);
+        const originalOrder = displayQuestions.findIndex((item) => item.id === q.id);
         const rubricEntries = getRubricScoreEntries(q);
         const hasTeacherPane = q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0;
         const hasAIPane = q.skor_ai !== undefined || rubricEntries.length > 0;
@@ -605,15 +890,15 @@ export default function StudentMaterialDetailPage() {
         break;
     }
     return sorted;
-  }, [questions, resultSort]);
+  }, [displayQuestions, resultSort]);
 
   const finalMaterialScore = useMemo(() => {
-    const totalQuestions = questions.length;
+    const totalQuestions = displayQuestions.length;
     if (totalQuestions === 0) {
       return { score: null as number | null, counted: 0, totalWeight: 0, totalQuestions: 0 };
     }
 
-    const scoredQuestions = questions.filter((q) => {
+    const scoredQuestions = displayQuestions.filter((q) => {
       const score = q.revised_score ?? q.skor_ai;
       return q.submission_id && typeof score === "number";
     });
@@ -639,7 +924,7 @@ export default function StudentMaterialDetailPage() {
     const completionFactor = scoredQuestions.length / totalQuestions;
     const score = weightedAverage * completionFactor;
     return { score, counted: scoredQuestions.length, totalWeight, totalQuestions };
-  }, [questions]);
+  }, [displayQuestions]);
 
   useEffect(() => {
     if (activeSection !== "results" || !selectedResultQuestionId) return;
@@ -666,6 +951,18 @@ export default function StudentMaterialDetailPage() {
   };
 
   const handleSubmitAnswer = async (questionId: string) => {
+    if (!canSubmitInCurrentState) {
+      setSubmitMessage((prev) => ({ ...prev, [questionId]: "Pengerjaan ditutup atau attempt dikunci." }));
+      return;
+    }
+    if (lockedQuestionIds[questionId]) {
+      setSubmitMessage((prev) => ({ ...prev, [questionId]: "Soal ini sudah dikunci setelah dilewati." }));
+      return;
+    }
+    if (isCardAnswerMode && currentCardQuestion?.id === questionId && isActiveTimerExpired) {
+      setSubmitMessage((prev) => ({ ...prev, [questionId]: "Waktu untuk soal ini sudah habis." }));
+      return;
+    }
     const answer = (answerInputs[questionId] ?? "").trim();
     if (!answer) {
       setSubmitMessage((prev) => ({ ...prev, [questionId]: "Jawaban tidak boleh kosong." }));
@@ -700,6 +997,9 @@ export default function StudentMaterialDetailPage() {
             : "Jawaban diterima dan sedang diproses AI.";
       setSubmitMessage((prev) => ({ ...prev, [questionId]: data?.grading_message || defaultMessage }));
       await fetchData(false);
+      if (isCardAnswerMode && sectionQuizSettings.auto_next_on_submit) {
+        goToCardQuestionIndex(quizQuestionIndex + 1);
+      }
     } catch (err: any) {
       setSubmitMessage((prev) => ({ ...prev, [questionId]: err.message || "Terjadi kesalahan saat submit." }));
     } finally {
@@ -863,7 +1163,7 @@ export default function StudentMaterialDetailPage() {
           >
             Tipe: {isSoalContext ? "Soal" : isTugasContext ? "Tugas" : "Materi"}
           </span>
-          <span className="sage-pill">{isTugasContext ? "1 Form Submisi" : `${questions.length} Soal`}</span>
+          <span className="sage-pill">{isTugasContext ? "1 Form Submisi" : `${displayQuestions.length} Soal`}</span>
           <span className="sage-pill">{submittedCount} Sudah Submit</span>
           <span className="sage-pill">{reviewedCount} Sudah Direview</span>
           {pendingEvaluationCount > 0 && <span className="sage-pill bg-amber-100 text-amber-800">{pendingEvaluationCount} Sedang Dinilai AI</span>}
@@ -890,7 +1190,7 @@ export default function StudentMaterialDetailPage() {
               {isTugasContext ? "Submisi" : "Soal"}
             </button>
           )}
-          {canShowResults && (
+          {canOpenResultsTab && (
             <button
               type="button"
               onClick={() => setActiveSection("results")}
@@ -1055,7 +1355,7 @@ export default function StudentMaterialDetailPage() {
 
       {activeSection === "questions" && (isSoalContext || isTugasContext) && (
         <section className="space-y-4">
-          {!isTugasContext && (
+          {!isTugasContext && !isCardAnswerMode && (
             <div className="sage-panel p-4">
               <div className="flex flex-wrap items-center gap-3">
                 <label className="text-sm text-[color:var(--ink-600)]">Urutkan Soal:</label>
@@ -1080,6 +1380,64 @@ export default function StudentMaterialDetailPage() {
                 </label>
               </div>
             </div>
+          )}
+          {!isTugasContext && isCardAnswerMode && (
+            <div className="sage-panel p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-[color:var(--ink-700)]">
+                    Mode Kartu Soal {sectionQuizSettings.randomize_question_order ? "(acak)" : ""}
+                  </p>
+                  <p className="text-xs text-[color:var(--ink-600)]">
+                    Soal {cardModeQuestions.length === 0 ? 0 : quizQuestionIndex + 1} / {cardModeQuestions.length}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {sectionQuizSettings.timer_mode !== "none" && typeof activeTimerRemainingSec === "number" && (
+                    <span
+                      className={`sage-pill ${isActiveTimerExpired ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}
+                    >
+                      Sisa Waktu: {Math.floor(activeTimerRemainingSec / 60)}:{String(activeTimerRemainingSec % 60).padStart(2, "0")}
+                    </span>
+                  )}
+                  <span className="sage-pill">{submittedCount} Sudah Submit</span>
+                </div>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-[color:var(--sage-600)] transition-all"
+                  style={{
+                    width: `${cardModeQuestions.length === 0 ? 0 : ((quizQuestionIndex + 1) / cardModeQuestions.length) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {!isTugasContext && isSoalContext && (
+            <>
+              {isBeforeSchedule && (
+                <div className="sage-panel p-3 border border-amber-200 bg-amber-50 text-sm text-amber-800">
+                  Kuis belum dibuka. Mulai pada {sectionQuizSettings.schedule_start_at || "-"}.
+                </div>
+              )}
+              {isAfterSchedule && (
+                <div className="sage-panel p-3 border border-red-200 bg-red-50 text-sm text-red-700">
+                  Waktu pengerjaan sudah ditutup.
+                </div>
+              )}
+              {sectionQuizSettings.warn_on_tab_switch && (
+                <div className="sage-panel p-3 border border-slate-200 bg-slate-50 text-sm text-slate-700">
+                  Pindah tab terdeteksi: {tabSwitchCount}
+                  {sectionQuizSettings.max_tab_switch > 0 ? ` / ${sectionQuizSettings.max_tab_switch}` : ""}
+                  {tabLocked && " (attempt dikunci)"}
+                </div>
+              )}
+              {!canOpenResultsTab && (
+                <div className="sage-panel p-3 border border-blue-200 bg-blue-50 text-sm text-blue-700">
+                  Hasil penilaian belum dirilis guru.
+                </div>
+              )}
+            </>
           )}
 
           {isTugasContext && (
@@ -1242,11 +1600,11 @@ export default function StudentMaterialDetailPage() {
             </div>
           )}
 
-          {!isTugasContext && questions.length === 0 && <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada soal.</div>}
-          {!isTugasContext && questions.length > 0 && visibleQuestions.length === 0 && (
+          {!isTugasContext && displayQuestions.length === 0 && <div className="sage-panel p-6 text-[color:var(--ink-500)]">Belum ada soal.</div>}
+          {!isTugasContext && !isCardAnswerMode && displayQuestions.length > 0 && visibleQuestions.length === 0 && (
             <div className="sage-panel p-6 text-[color:var(--ink-500)]">Semua soal sudah dijawab.</div>
           )}
-          {!isTugasContext && visibleQuestions.map((q, index) => (
+          {!isTugasContext && !isCardAnswerMode && visibleQuestions.map((q, index) => (
             <div key={q.id} className="sage-card p-5">
               <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
               <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
@@ -1302,13 +1660,14 @@ export default function StudentMaterialDetailPage() {
                     className="sage-input min-h-32"
                     placeholder="Tulis jawaban kamu di sini..."
                     value={answerInputs[q.id] ?? ""}
+                    readOnly={!canSubmitInCurrentState || !!lockedQuestionIds[q.id]}
                     onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [q.id]: e.target.value }))}
                   />
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
                       className="sage-button"
-                      disabled={!!submitLoading[q.id]}
+                      disabled={!!submitLoading[q.id] || !canSubmitInCurrentState || !!lockedQuestionIds[q.id]}
                       onClick={() => handleSubmitAnswer(q.id)}
                     >
                       {submitLoading[q.id] ? "Mengirim..." : "Submit Jawaban"}
@@ -1346,10 +1705,114 @@ export default function StudentMaterialDetailPage() {
               )}
             </div>
           ))}
+          {!isTugasContext && isCardAnswerMode && cardModeQuestions.length > 0 && currentCardQuestion && (
+            <div className="sage-card p-6 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">
+                  Soal {quizQuestionIndex + 1} dari {cardModeQuestions.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="sage-pill">
+                    Bobot: {typeof currentCardQuestion.weight === "number" && currentCardQuestion.weight > 0 ? currentCardQuestion.weight : 1}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                      currentCardQuestion.submission_id ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {currentCardQuestion.submission_id ? "Sudah Submit" : "Belum Submit"}
+                  </span>
+                </div>
+              </div>
+              <p className="text-lg text-[color:var(--ink-900)]">{currentCardQuestion.teks_soal}</p>
+
+              {!currentCardQuestion.submission_id ? (
+                <div className="space-y-3">
+                  {isActiveTimerExpired && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      Waktu soal ini sudah habis.
+                    </div>
+                  )}
+                  <textarea
+                    className="sage-input min-h-36"
+                    placeholder="Tulis jawaban kamu di sini..."
+                    value={answerInputs[currentCardQuestion.id] ?? ""}
+                    readOnly={!canSubmitInCurrentState || !!lockedQuestionIds[currentCardQuestion.id]}
+                    onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [currentCardQuestion.id]: e.target.value }))}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="sage-button"
+                      disabled={
+                        !!submitLoading[currentCardQuestion.id] ||
+                        isActiveTimerExpired ||
+                        !canSubmitInCurrentState ||
+                        !!lockedQuestionIds[currentCardQuestion.id]
+                      }
+                      onClick={() => handleSubmitAnswer(currentCardQuestion.id)}
+                    >
+                      {submitLoading[currentCardQuestion.id] ? "Mengirim..." : "Submit Jawaban"}
+                    </button>
+                    {submitMessage[currentCardQuestion.id] && (
+                      <span
+                        className={`text-sm ${
+                          submitMessage[currentCardQuestion.id].toLowerCase().includes("berhasil")
+                            ? "text-[color:var(--sage-700)]"
+                            : "text-red-500"
+                        }`}
+                      >
+                        {submitMessage[currentCardQuestion.id]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-white border border-black/5 rounded-xl p-4">
+                    <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Jawaban Anda</p>
+                    <p className="mt-2 text-[color:var(--ink-800)] whitespace-pre-line">
+                      {currentCardQuestion.student_essay_text || "-"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedResultQuestionId(currentCardQuestion.id);
+                        setActiveSection("results");
+                      }}
+                      className="sage-button-outline"
+                    >
+                      Lihat Hasil
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-black/5">
+                <button
+                  type="button"
+                  className="sage-button-outline"
+                  disabled={quizQuestionIndex <= 0 || !sectionQuizSettings.allow_back_navigation}
+                  onClick={() => goToCardQuestionIndex(quizQuestionIndex - 1)}
+                >
+                  Soal Sebelumnya
+                </button>
+                <button
+                  type="button"
+                  className="sage-button-outline"
+                  disabled={quizQuestionIndex >= cardModeQuestions.length - 1}
+                  onClick={() => goToCardQuestionIndex(quizQuestionIndex + 1)}
+                >
+                  Soal Berikutnya
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
-      {activeSection === "results" && canShowResults && (
+      {activeSection === "results" && canOpenResultsTab && (
         <section className="space-y-5">
           {(pendingEvaluationCount > 0 || backgroundSyncing) && (
             <div className="sage-panel p-4 border border-amber-300 bg-amber-50">
@@ -1434,6 +1897,14 @@ export default function StudentMaterialDetailPage() {
                     <p className="text-sm text-[color:var(--ink-500)]">
                       Bobot: {typeof question.weight === "number" && question.weight > 0 ? question.weight : 1}
                     </p>
+                    {sectionQuizSettings.show_ideal_answer && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Jawaban Ideal</p>
+                        <p className="mt-1 text-sm text-slate-700 whitespace-pre-line">
+                          {(question.ideal_answer || "").trim() || "Belum tersedia."}
+                        </p>
+                      </div>
+                    )}
 
                     {isPendingResult && !hasAIPane && !hasTeacherPane && (
                       <div className="bg-amber-50 rounded-2xl border border-amber-200 p-4">
@@ -1479,7 +1950,7 @@ export default function StudentMaterialDetailPage() {
                               )}
                             </div>
                           )}
-                          {rubricEntries.length > 0 && (
+                          {sectionQuizSettings.show_rubric_breakdown && rubricEntries.length > 0 && (
                             <div>
                               <p className="font-medium text-sm mb-1">Skor Per Aspek</p>
                               <div className="space-y-1">
@@ -1520,7 +1991,7 @@ export default function StudentMaterialDetailPage() {
                       )}
                     </div>
 
-                    {radarData.length > 0 && (
+                    {sectionQuizSettings.show_rubric_breakdown && radarData.length > 0 && (
                       <div className="h-72 bg-white rounded-2xl border border-black/5 p-4">
                         <ResponsiveContainer>
                           {radarData.length === 2 ? (

@@ -150,7 +150,7 @@ const TASK_FORMAT_GROUPS: Array<{ label: string; items: string[] }> = [
 const API_URL = "/api";
 
 export default function ClassDetailsPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const params = useParams();
   const classId = params.classId as string;
 
@@ -474,6 +474,7 @@ export default function ClassDetailsPage() {
             <div className="bg-slate-50 p-4 sm:p-6">
             <MaterialsPane
               classId={classId}
+              userId={user?.id || ""}
               items={filteredMaterials}
               query={materialQuery}
               sort={materialSort}
@@ -579,6 +580,7 @@ function SearchInput({
 
 function MaterialsPane({
   classId,
+  userId,
   items,
   query,
   sort,
@@ -588,6 +590,7 @@ function MaterialsPane({
   onUpdated,
 }: {
   classId: string;
+  userId: string;
   items: Material[];
   query: string;
   sort: "newest" | "alpha";
@@ -618,6 +621,7 @@ function MaterialsPane({
   const [contentActionError, setContentActionError] = useState("");
   const [sectionCrudError, setSectionCrudError] = useState("");
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
+  const [showSectionOrdinalBadge, setShowSectionOrdinalBadge] = useState(true);
   const [typeFilter, setTypeFilter] = useState<"all" | "materi" | "soal" | "tugas">("all");
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState<"" | "duplicate" | "delete">("");
@@ -639,6 +643,25 @@ function MaterialsPane({
   useEffect(() => {
     setLocalMaterials(items);
   }, [items]);
+
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      const stored = window.localStorage.getItem(`teacher-class:show-section-ordinal:${userId}`);
+      setShowSectionOrdinalBadge(stored !== "0");
+    } catch {
+      setShowSectionOrdinalBadge(true);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      window.localStorage.setItem(`teacher-class:show-section-ordinal:${userId}`, showSectionOrdinalBadge ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [showSectionOrdinalBadge, userId]);
 
   useEffect(() => {
     if (localMaterials.length === 0) {
@@ -1599,6 +1622,17 @@ function MaterialsPane({
             >
               Table
             </button>
+            <button
+              type="button"
+              onClick={() => setShowSectionOrdinalBadge((prev) => !prev)}
+              className={`rounded-md px-2.5 py-1 text-xs ${
+                showSectionOrdinalBadge ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"
+              }`}
+              title={showSectionOrdinalBadge ? "Sembunyikan label Section 1/2/..." : "Tampilkan label Section 1/2/..."}
+              aria-label={showSectionOrdinalBadge ? "Sembunyikan label section" : "Tampilkan label section"}
+            >
+              {showSectionOrdinalBadge ? "Hide Section #" : "Show Section #"}
+            </button>
           </div>
         </div>
         {selectedSectionIds.length > 0 && (
@@ -1820,7 +1854,9 @@ function MaterialsPane({
                         }
                         className="flex min-w-0 items-center gap-2 text-left"
                       >
-                        <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">Section {index + 1}</span>
+                        {showSectionOrdinalBadge && (
+                          <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">Section {index + 1}</span>
+                        )}
                         <span className="truncate text-base font-semibold text-slate-900">{material.judul}</span>
                       </button>
                       <label className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
@@ -1880,7 +1916,9 @@ function MaterialsPane({
                           ↓
                         </button>
                       </div>
-                      <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">Section {index + 1}</span>
+                      {showSectionOrdinalBadge && (
+                        <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">Section {index + 1}</span>
+                      )}
                       <span className="min-w-0 truncate text-base font-semibold text-slate-900">{material.judul}</span>
                       <label className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
                         <input
@@ -2208,9 +2246,23 @@ function MaterialsPane({
                                       ) : card.type === "upload" ? (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                                           {card.body ? (
-                                            <a href={card.body} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 underline">
-                                              <FiFileText size={14} /> Buka Dokumen
-                                            </a>
+                                            <div className="space-y-1">
+                                              {card.body
+                                                .split("\n")
+                                                .map((x) => x.trim())
+                                                .filter(Boolean)
+                                                .map((url, idx) => (
+                                                  <a
+                                                    key={`${url}-${idx}`}
+                                                    href={url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 underline"
+                                                  >
+                                                    <FiFileText size={14} /> Buka Dokumen {idx + 1}
+                                                  </a>
+                                                ))}
+                                            </div>
                                           ) : (
                                             <p className="text-sm text-slate-500">Dokumen belum diupload.</p>
                                           )}
@@ -2991,6 +3043,10 @@ function RichTextEditorField({
   onChange: (html: string) => void;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const draggingMediaIdRef = useRef<string | null>(null);
+  const [pendingImageFiles, setPendingImageFiles] = useState<Array<{ id: string; file: File; previewUrl: string }>>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -2998,6 +3054,12 @@ function RichTextEditorField({
       editorRef.current.innerHTML = value || "<p></p>";
     }
   }, [value]);
+
+  useEffect(() => {
+    return () => {
+      pendingImageFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+    };
+  }, [pendingImageFiles]);
 
   const runCommand = (command: string, commandValue?: string) => {
     const editor = editorRef.current;
@@ -3009,6 +3071,110 @@ function RichTextEditorField({
       document.execCommand(command, false, commandValue);
     }
     onChange(editor.innerHTML);
+  };
+
+  const triggerImagePicker = () => {
+    imageInputRef.current?.click();
+  };
+
+  const handlePickImages = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const valid: Array<{ id: string; file: File; previewUrl: string }> = [];
+    const rejected: string[] = [];
+    Array.from(files).forEach((file) => {
+      const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
+      if (!mimeOk) {
+        rejected.push(`${file.name}: format harus PNG/JPG`);
+        return;
+      }
+      if (file.size > 1024 * 1024) {
+        rejected.push(`${file.name}: maksimal 1MB`);
+        return;
+      }
+      valid.push({
+        id: `imgpick_${Math.random().toString(36).slice(2, 9)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    });
+    if (rejected.length > 0) {
+      window.alert(`Sebagian file ditolak:\n${rejected.join("\n")}`);
+    }
+    if (valid.length === 0) return;
+    setPendingImageFiles((prev) => [...prev, ...valid]);
+  };
+
+  const removePendingImage = (id: string) => {
+    setPendingImageFiles((prev) => {
+      const target = prev.find((x) => x.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((x) => x.id !== id);
+    });
+  };
+
+  const insertUploadedImageBlock = (imageUrl: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const mediaId = `imgblk_${Math.random().toString(36).slice(2, 9)}`;
+    editor.focus();
+    const safeUrl = escapeHtml(imageUrl);
+    document.execCommand(
+      "insertHTML",
+      false,
+      `<p><br/></p><div data-media-block="1" data-media-id="${mediaId}" draggable="true" contenteditable="false" style="position:relative;resize:both;overflow:auto;width:420px;max-width:100%;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px auto 8px 0;cursor:move;background:#fff;user-select:none;">
+        <button type="button" data-media-drag-handle="1" draggable="true" style="position:absolute;left:8px;top:8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;padding:2px 6px;font-size:11px;color:#475569;cursor:grab;z-index:4;">drag</button>
+        <img src="${safeUrl}" alt="Gambar materi" style="width:100%;height:auto;display:block;border-radius:8px;pointer-events:none;" />
+        <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ resize / drag</div>
+      </div><p><br/></p>`
+    );
+    onChange(editor.innerHTML);
+  };
+
+  const uploadSelectedImages = async () => {
+    if (pendingImageFiles.length === 0) return;
+    setUploadingImages(true);
+    try {
+      for (const item of pendingImageFiles) {
+        const formData = new FormData();
+        formData.append("file", item.file);
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body?.filePath) {
+          throw new Error(body?.message || `Gagal upload ${item.file.name}`);
+        }
+        insertUploadedImageBlock(body.filePath);
+      }
+      pendingImageFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      setPendingImageFiles([]);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    } catch (err: any) {
+      window.alert(err?.message || "Gagal upload gambar.");
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
+  const getCaretRangeFromPoint = (x: number, y: number): Range | null => {
+    const doc = document as Document & {
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+    if (typeof doc.caretRangeFromPoint === "function") {
+      return doc.caretRangeFromPoint(x, y);
+    }
+    if (typeof doc.caretPositionFromPoint === "function") {
+      const pos = doc.caretPositionFromPoint(x, y);
+      if (!pos) return null;
+      const range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+      return range;
+    }
+    return null;
   };
 
   const toolbarButton = "sage-button-outline !px-2 !py-1 text-xs";
@@ -3046,13 +3212,127 @@ function RichTextEditorField({
         >
           Link
         </button>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handlePickImages(e.target.files);
+          }}
+        />
+        <button
+          type="button"
+          className={toolbarButton}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            triggerImagePicker();
+          }}
+          title="Pilih banyak gambar (PNG/JPG, maks 1MB per file)"
+          aria-label="Pilih gambar"
+        >
+          <FiPlus />
+        </button>
+        <button
+          type="button"
+          className={toolbarButton}
+          disabled={uploadingImages || pendingImageFiles.length === 0}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            void uploadSelectedImages();
+          }}
+          title="Upload semua gambar terpilih dan sisipkan ke editor"
+          aria-label="Upload gambar"
+        >
+          <FiUploadCloud />
+        </button>
+        {pendingImageFiles.length > 0 && (
+          <span className="text-xs text-slate-500">({pendingImageFiles.length})</span>
+        )}
       </div>
+      {pendingImageFiles.length > 0 && (
+        <div className="border-b border-slate-200 bg-slate-50 p-2">
+          <p className="text-[11px] font-medium text-slate-600">Preview gambar yang akan di-upload</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {pendingImageFiles.map((item) => (
+              <div key={item.id} className="rounded-md border border-slate-200 bg-white p-1.5">
+                <img src={item.previewUrl} alt={item.file.name} className="h-20 w-full rounded object-cover border border-slate-200" />
+                <p className="mt-1 truncate text-[11px] text-slate-600" title={item.file.name}>{item.file.name}</p>
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] text-red-600 hover:underline"
+                  onClick={() => removePendingImage(item.id)}
+                >
+                  Hapus
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
         className="min-h-[180px] w-full p-3 text-sm text-slate-800 outline-none"
         onInput={() => onChange(editorRef.current?.innerHTML || "")}
+        onDragStart={(e) => {
+          const target = e.target as HTMLElement;
+          const media =
+            (target.closest("[data-media-drag-handle='1']")?.closest("[data-media-block='1']") as HTMLDivElement | null) ||
+            (target.closest("[data-media-block='1']") as HTMLDivElement | null);
+          if (!media) return;
+          const mediaId = media.getAttribute("data-media-id");
+          if (!mediaId) return;
+          draggingMediaIdRef.current = mediaId;
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", mediaId);
+        }}
+        onDragEnd={() => {
+          draggingMediaIdRef.current = null;
+        }}
+        onDragOver={(e) => {
+          if (!draggingMediaIdRef.current) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(e) => {
+          if (!draggingMediaIdRef.current || !editorRef.current) return;
+          e.preventDefault();
+          const editor = editorRef.current;
+          const dragged = editor.querySelector<HTMLElement>(`[data-media-id='${draggingMediaIdRef.current}']`);
+          if (!dragged) {
+            draggingMediaIdRef.current = null;
+            return;
+          }
+          const dropRange = getCaretRangeFromPoint(e.clientX, e.clientY);
+          if (dropRange && editor.contains(dropRange.startContainer) && !dragged.contains(dropRange.startContainer)) {
+            dropRange.collapse(true);
+            dropRange.insertNode(dragged);
+            const after = document.createRange();
+            after.setStartAfter(dragged);
+            after.collapse(true);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(after);
+          } else {
+            const targetEl = (e.target as HTMLElement).closest("[data-media-block='1']") as HTMLElement | null;
+            if (targetEl && targetEl !== dragged && editor.contains(targetEl)) {
+              const rect = targetEl.getBoundingClientRect();
+              const shouldInsertAfter = e.clientY > rect.top + rect.height / 2;
+              if (shouldInsertAfter) {
+                targetEl.parentNode?.insertBefore(dragged, targetEl.nextSibling);
+              } else {
+                targetEl.parentNode?.insertBefore(dragged, targetEl);
+              }
+            } else {
+              editor.appendChild(dragged);
+            }
+          }
+          draggingMediaIdRef.current = null;
+          onChange(editor.innerHTML);
+        }}
       />
     </div>
   );
@@ -3198,7 +3478,9 @@ function QuickAddSectionContentModal({
   });
   const draftStoreRef = useRef<Record<string, QuickAddDraft>>({});
 
-  const [type, setType] = useState<SectionContentType>(initialType || "materi");
+  const [type, setType] = useState<SectionContentType>(
+    initialType === "penilaian" ? "materi" : (initialType || "materi")
+  );
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [body, setBody] = useState("");
@@ -3209,7 +3491,7 @@ function QuickAddSectionContentModal({
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [pendingImagePreviewUrl, setPendingImagePreviewUrl] = useState("");
-  const [pendingDocumentFile, setPendingDocumentFile] = useState<File | null>(null);
+  const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
   const [taskInstruction, setTaskInstruction] = useState("");
   const [taskDueAt, setTaskDueAt] = useState("");
   const [taskSubmissionType, setTaskSubmissionType] = useState<TaskSubmissionType>("teks");
@@ -3286,7 +3568,7 @@ function QuickAddSectionContentModal({
 
   useEffect(() => {
     if (isOpen && lockType) {
-      setType(initialType || "materi");
+      setType(initialType === "penilaian" ? "materi" : (initialType || "materi"));
       setMateriMode("singkat");
       const lockKey = "materi_singkat";
       const targetDraft = draftStoreRef.current[lockKey] || createDefaultDraft(lockKey);
@@ -3416,47 +3698,63 @@ function QuickAddSectionContentModal({
     setVideoUrl("");
   };
 
-  const handlePickDocumentFile = (file: File | null) => {
-    if (!file) return;
-    const lower = (file.name || "").toLowerCase();
-    const hasAllowedExt = /\.(pdf|docx|ppt|pptx)$/.test(lower);
+  const handlePickDocumentFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
     const allowedMime = [
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.ms-powerpoint",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ];
-    if (!hasAllowedExt && !allowedMime.includes(file.type)) {
-      setError("Dokumen harus berformat PPT, PDF, atau DOCX.");
-      return;
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    Array.from(files).forEach((file) => {
+      const lower = (file.name || "").toLowerCase();
+      const hasAllowedExt = /\.(pdf|docx|ppt|pptx)$/.test(lower);
+      if (!hasAllowedExt && !allowedMime.includes(file.type)) {
+        rejected.push(file.name);
+        return;
+      }
+      accepted.push(file);
+    });
+    if (rejected.length > 0) {
+      setError(`Sebagian file ditolak (format): ${rejected.join(", ")}`);
+    } else {
+      setError("");
     }
-    setError("");
-    setPendingDocumentFile(file);
+    if (accepted.length === 0) return;
+    setPendingDocumentFiles((prev) => [...prev, ...accepted]);
   };
 
   const handleUploadDocument = async () => {
-    if (!pendingDocumentFile) return;
+    if (pendingDocumentFiles.length === 0) return;
     setError("");
     setIsUploadingAsset(true);
     try {
-      const formData = new FormData();
-      formData.append("file", pendingDocumentFile);
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      const uploadBody = await uploadRes.json().catch(() => ({}));
-      if (!uploadRes.ok) {
-        throw new Error(uploadBody?.message || "Gagal upload dokumen.");
+      const uploadedPaths: string[] = [];
+      const uploadedNames: string[] = [];
+      for (const pendingDocumentFile of pendingDocumentFiles) {
+        const formData = new FormData();
+        formData.append("file", pendingDocumentFile);
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const uploadBody = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok) {
+          throw new Error(uploadBody?.message || `Gagal upload dokumen: ${pendingDocumentFile.name}`);
+        }
+        const uploadedPath = typeof uploadBody?.filePath === "string" ? uploadBody.filePath : "";
+        if (!uploadedPath) {
+          throw new Error(`Respons upload dokumen tidak valid: ${pendingDocumentFile.name}`);
+        }
+        uploadedPaths.push(uploadedPath);
+        uploadedNames.push(pendingDocumentFile.name);
       }
-      const uploadedPath = typeof uploadBody?.filePath === "string" ? uploadBody.filePath : "";
-      if (!uploadedPath) {
-        throw new Error("Respons upload dokumen tidak valid.");
-      }
-      setBody(uploadedPath);
-      setUploadedFileName(pendingDocumentFile.name);
-      setPendingDocumentFile(null);
+      setBody(uploadedPaths.join("\n"));
+      setUploadedFileName(uploadedNames.join(", "));
+      setPendingDocumentFiles([]);
     } catch (err: any) {
       setError(err?.message || "Gagal upload dokumen.");
     } finally {
@@ -3581,7 +3879,6 @@ function QuickAddSectionContentModal({
                 <option value="materi_lengkap">Materi Lengkap</option>
                 <option value="soal">Soal</option>
                 <option value="tugas">Tugas</option>
-                <option value="penilaian">Penilaian</option>
                 <option value="gambar">Gambar</option>
                 <option value="video">Video</option>
                 <option value="upload">Upload</option>
@@ -3808,29 +4105,50 @@ function QuickAddSectionContentModal({
                     ref={documentFileInputRef}
                     type="file"
                     accept=".pdf,.docx,.ppt,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    multiple
                     className="hidden"
-                    onChange={(e) => handlePickDocumentFile(e.target.files?.[0] || null)}
+                    onChange={(e) => handlePickDocumentFiles(e.target.files)}
                   />
                   <button
                     type="button"
                     onClick={() => documentFileInputRef.current?.click()}
-                    className="sage-button-outline !py-2 !px-3 text-xs"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100"
                     disabled={isUploadingAsset}
+                    title="Pilih banyak dokumen (PPT/PDF/DOCX)"
+                    aria-label="Pilih banyak dokumen"
                   >
-                    Pilih Dokumen (PPT/PDF/DOCX)
+                    <FiPlus />
                   </button>
                   <button
                     type="button"
                     onClick={() => void handleUploadDocument()}
-                    className="sage-button-outline !py-2 !px-3 text-xs"
-                    disabled={!pendingDocumentFile || isUploadingAsset}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={pendingDocumentFiles.length === 0 || isUploadingAsset}
+                    title="Upload semua dokumen yang dipilih"
+                    aria-label="Upload semua dokumen"
                   >
-                    Upload Sekarang
+                    <FiUploadCloud />
                   </button>
                 </div>
-                {pendingDocumentFile && (
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                    Preview: {pendingDocumentFile.name} ({Math.ceil(pendingDocumentFile.size / 1024)} KB)
+                {pendingDocumentFiles.length > 0 && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                    <p className="mb-2 font-medium text-slate-700">Preview dokumen terpilih ({pendingDocumentFiles.length})</p>
+                    <div className="space-y-1">
+                      {pendingDocumentFiles.map((file, idx) => (
+                        <div key={`${file.name}-${idx}`} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1">
+                          <span className="truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            className="text-red-600 hover:underline"
+                            onClick={() =>
+                              setPendingDocumentFiles((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {uploadedFileName && <p className="text-xs text-slate-500 truncate">File: {uploadedFileName}</p>}
