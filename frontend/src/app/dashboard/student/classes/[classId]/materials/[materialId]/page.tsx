@@ -120,6 +120,7 @@ interface SectionQuizSettings {
   result_manual_published_at: string;
   show_ideal_answer: boolean;
   show_rubric_breakdown: boolean;
+  show_rubric_in_question: boolean;
   warn_on_tab_switch: boolean;
   max_tab_switch: number;
   auto_lock_on_tab_switch_limit: boolean;
@@ -326,6 +327,7 @@ const parseSectionQuizSettings = (activeCard: SectionSoalCard | null): SectionQu
     result_manual_published_at: typeof raw.result_manual_published_at === "string" ? raw.result_manual_published_at : "",
     show_ideal_answer: readBoolean(raw.show_ideal_answer, false),
     show_rubric_breakdown: readBoolean(raw.show_rubric_breakdown, true),
+    show_rubric_in_question: readBoolean(raw.show_rubric_in_question, false),
     warn_on_tab_switch: readBoolean(raw.warn_on_tab_switch, false),
     max_tab_switch: clampDuration(raw.max_tab_switch, 3),
     auto_lock_on_tab_switch_limit: readBoolean(raw.auto_lock_on_tab_switch_limit, false),
@@ -402,13 +404,34 @@ const PdfBlockCard = ({ url }: { url: string }) => {
   );
 };
 
-const getRubricMaxScore = (rubric?: QuestionRubric): number => {
-  if (!rubric?.descriptors) return 0;
-  const entries = Array.isArray(rubric.descriptors)
+const normalizeRubricDescriptors = (
+  rubric?: QuestionRubric
+): Array<{ score: string; description: string }> => {
+  if (!rubric?.descriptors) return [];
+  const rows = Array.isArray(rubric.descriptors)
     ? rubric.descriptors
     : Object.entries(rubric.descriptors).map(([score, description]) => ({ score, description }));
+  return rows
+    .map((row) => {
+      const score = String((row as RubricDescriptor).score ?? "").trim();
+      const rawDesc = (row as RubricDescriptor).description;
+      const description =
+        typeof rawDesc === "string"
+          ? rawDesc
+          : typeof rawDesc === "number"
+            ? String(rawDesc)
+            : typeof rawDesc === "object" && rawDesc !== null
+              ? String((rawDesc as Record<string, unknown>).description ?? (rawDesc as Record<string, unknown>).deskripsi ?? "").trim()
+              : "";
+      return { score, description: description || "-" };
+    })
+    .filter((row) => row.score.length > 0);
+};
+
+const getRubricMaxScore = (rubric?: QuestionRubric): number => {
+  const entries = normalizeRubricDescriptors(rubric);
   return entries.reduce((max, item) => {
-    const value = Number((item as RubricDescriptor).score);
+    const value = Number(item.score);
     if (!Number.isFinite(value)) return max;
     return value > max ? value : max;
   }, 0);
@@ -1608,6 +1631,32 @@ export default function StudentMaterialDetailPage() {
             <div key={q.id} className="sage-card p-5">
               <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
               <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
+              {sectionQuizSettings.show_rubric_in_question && Array.isArray(q.rubrics) && q.rubrics.length > 0 && (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
+                  <div className="mt-2 space-y-2">
+                    {q.rubrics.map((rubric, rubricIndex) => {
+                      const descriptors = normalizeRubricDescriptors(rubric);
+                      return (
+                        <div key={`${q.id}-rubric-${rubricIndex}`} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                          <p className="text-sm font-semibold text-slate-800">{rubric.nama_aspek || `Aspek ${rubricIndex + 1}`}</p>
+                          {descriptors.length > 0 ? (
+                            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                              {descriptors.map((row) => (
+                                <li key={`${q.id}-${rubricIndex}-${row.score}`}>
+                                  <span className="font-semibold">{row.score}</span>: {row.description}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-1 text-xs text-slate-500">Deskriptor rubrik belum tersedia.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="sage-pill">Bobot: {typeof q.weight === "number" && q.weight > 0 ? q.weight : 1}</span>
                 <span
@@ -1725,6 +1774,32 @@ export default function StudentMaterialDetailPage() {
                 </div>
               </div>
               <p className="text-lg text-[color:var(--ink-900)]">{currentCardQuestion.teks_soal}</p>
+              {sectionQuizSettings.show_rubric_in_question && Array.isArray(currentCardQuestion.rubrics) && currentCardQuestion.rubrics.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
+                  <div className="mt-2 space-y-2">
+                    {currentCardQuestion.rubrics.map((rubric, rubricIndex) => {
+                      const descriptors = normalizeRubricDescriptors(rubric);
+                      return (
+                        <div key={`${currentCardQuestion.id}-card-rubric-${rubricIndex}`} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                          <p className="text-sm font-semibold text-slate-800">{rubric.nama_aspek || `Aspek ${rubricIndex + 1}`}</p>
+                          {descriptors.length > 0 ? (
+                            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                              {descriptors.map((row) => (
+                                <li key={`${currentCardQuestion.id}-${rubricIndex}-${row.score}`}>
+                                  <span className="font-semibold">{row.score}</span>: {row.description}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-1 text-xs text-slate-500">Deskriptor rubrik belum tersedia.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {!currentCardQuestion.submission_id ? (
                 <div className="space-y-3">

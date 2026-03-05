@@ -17,6 +17,10 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
       "Merapikan struktur toolbar Section Workspace di halaman detail kelas teacher agar alur utama lebih fokus: heading workspace, primary action Tambah Section, search section, sort, filter, dan mode view.",
       "Menyederhanakan aksi per-section dengan tombol aksi langsung berbasis ikon (Tambah Konten, Edit, Hapus, Expand/Collapse), lengkap tooltip hover, warna aksi yang dibedakan, dan dukungan dark mode agar interaksi lebih cepat tanpa membuka menu overflow.",
       "Menyamakan pola aksi Table Mode dengan Card Mode melalui kontrol aksi langsung per-section agar interaksi lintas mode tetap konsisten.",
+      "Merombak UI halaman Teacher Soal (route berbasis sectionCardId) agar lebih rapi dan fokus: tab bernuansa kapsul, kartu soal lebih terstruktur, serta kontrol aksi yang lebih cepat dipindai.",
+      "Mendesain ulang modal Pengaturan Mode Pengerjaan Siswa dengan grouping berbasis kartu, segmented/capsule controls untuk opsi eksklusif, dan pemisahan section konfigurasi agar setup kuis lebih cepat.",
+      "Menambahkan pengaturan baru `show_rubric_in_question` agar guru bisa menentukan rubrik ditampilkan atau disembunyikan saat siswa mengerjakan soal.",
+      "Menambahkan pengurutan soal berbasis card section dengan tombol naik/turun serta drag-and-drop langsung pada daftar soal, lengkap persist urutan ke metadata `question_ids`.",
     ],
     minorUpdates: [
       "Menambahkan ringkasan konteks workspace pada panel sticky untuk memperjelas fokus kerja (kelola urutan section, konten, dan aksi cepat).",
@@ -30,6 +34,12 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
       "Menstabilkan auto-refresh data setelah CRUD utama section/konten (tambah, edit, hapus) agar panel dan badge tidak perlu refresh manual.",
       "Menambahkan setting tampilan di workspace untuk show/hide label ordinal section (\"Section 1/2/...\"), termasuk persist preferensi per kelas.",
       "Menambahkan alur edit detail Materi Lengkap langsung dari modal edit konten melalui aksi \"edit di sini\" yang membuka popup editor rich text.",
+      "Menghilangkan spinner panah atas/bawah pada seluruh input angka di modal pengaturan kuis agar tampilan lebih bersih dan konsisten.",
+      "Mengembalikan border warna-warni per section pada modal pengaturan kuis (indigo/sky/emerald/violet/rose) sesuai preferensi visual terbaru.",
+      "Menyempurnakan tampilan kartu daftar soal dengan badge nomor, chip metadata, panel detail yang lebih jelas, dan affordance kontrol urutan di sisi kiri.",
+      "Menambahkan helper normalisasi deskriptor rubrik di halaman siswa untuk memastikan rendering rubrik stabil saat sumber data array maupun object.",
+      "Mengoptimalkan performa render halaman Teacher Soal lewat memoisasi parsing section card, memo lookup soal by-id, dan normalisasi data list soal.",
+      "Memecah komponen daftar soal menjadi sub-komponen terarah untuk memudahkan maintenance tanpa mengubah perilaku fitur.",
     ],
   },
   {
