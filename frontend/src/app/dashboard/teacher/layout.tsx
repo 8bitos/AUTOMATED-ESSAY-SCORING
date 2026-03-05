@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
@@ -9,7 +9,12 @@ import Topbar from '@/components/Topbar';
 const TeacherDashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const { user, loading: authLoading, isAuthenticated } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isPopupOnlyMateri =
+    (pathname || "").includes("/dashboard/teacher/materi/") &&
+    (searchParams.get("popupOnly") === "1" || searchParams.get("openEditMaterial") === "1");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -28,7 +33,18 @@ const TeacherDashboardLayout = ({ children }: { children: React.ReactNode }) => 
 
   if (authLoading || !user || user.peran !== 'teacher') {
     // Show a loading indicator or redirect if not authorized as a teacher.
-    return <div className="flex justify-center items-center min-h-screen text-xl">Loading teacher dashboard...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
+          <span className="inline-block h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+          Memuat dashboard guru...
+        </div>
+      </div>
+    );
+  }
+
+  if (isPopupOnlyMateri) {
+    return <>{children}</>;
   }
 
   return (

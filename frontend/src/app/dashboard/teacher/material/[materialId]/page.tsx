@@ -1010,6 +1010,7 @@ const EssayQuestionFormModal = ({
   const [bankNotice, setBankNotice] = useState('');
   const [lastSavedBankSignature, setLastSavedBankSignature] = useState<string>('');
   const [generatedSourceMeta, setGeneratedSourceMeta] = useState<{ label: string; chars: number; preview: string; forcedHolisticC1: boolean } | null>(null);
+  const [showTopControlPanel, setShowTopControlPanel] = useState(true);
   const wasEditingExistingRef = useRef(false);
   const resetQuestionForm = useCallback(() => {
     setTeksSoal('');
@@ -1040,6 +1041,7 @@ const EssayQuestionFormModal = ({
     setBankNotice('');
     setLastSavedBankSignature('');
     setGeneratedSourceMeta(null);
+    setShowTopControlPanel(true);
   }, [materialId]);
 
   useEffect(() => {
@@ -1566,13 +1568,165 @@ const EssayQuestionFormModal = ({
   const stepLabel = step === 1 ? 'Soal Inti' : step === 2 ? 'Rubrik' : 'Preview';
   const hasValidWeight = !(weight === '' || Number.isNaN(Number(weight)) || Number(weight) <= 0);
   const canSubmitQuestion = teksSoal.trim().length > 0 && hasValidWeight && activeRubrics.length > 0;
+  const parameterPanel = (
+    <div className="space-y-4">
+      <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Parameter Soal</h3>
+          <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">Global</span>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <label className="text-sm font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
+            Materi Acuan RAG
+            <span
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-600 dark:border-slate-600 dark:text-slate-300 cursor-help"
+              title="Pilih acuan RAG: seluruh SECTION atau card materi tertentu di dalam section ini."
+            >
+              ?
+            </span>
+          </label>
+          <select value={selectedRAGReference} onChange={(e) => setSelectedRAGReference(e.target.value)} className="sage-input mt-1">
+            {ragReferenceOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          {localRAGPreview && (
+            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="text-[11px] font-medium text-slate-600">Preview acuan (lokal)</p>
+              <p className="mt-1 text-xs text-slate-700 line-clamp-4 whitespace-pre-wrap">{localRAGPreview}</p>
+            </div>
+          )}
+          {ragReferenceOptions.length === 0 && (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Acuan RAG belum tersedia. Default tetap section saat ini.</p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Level Kognitif</label>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+            Jika dipilih, AI wajib generate sesuai level ini. Jika kosong, AI memilih acak (C1-C3) sesuai prompt.
+          </p>
+          <select
+            value={levelKognitif}
+            onChange={(e) => setLevelKognitif(e.target.value)}
+            className="sage-input mt-1"
+            title="Pilih level kognitif target. Kosongkan agar AI memilih level secara otomatis."
+          >
+            <option value="">Opsional</option>
+            {cognitiveLevels.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Bobot Soal <span className="text-red-600">*</span></label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            className="sage-input mt-1"
+            placeholder="Wajib diisi. Contoh: 20"
+            title="Bobot nilai soal. Wajib diisi dan harus lebih dari 0."
+            required
+          />
+        </div>
+
+        <label className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <div>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-100">Bulatkan Nilai</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+              Post-processing skor AI ke kelipatan {formatNumeric(activeRoundingStep)} terdekat. Contoh: {roundingExamples}.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={roundScoreTo5}
+            onChange={(e) => setRoundScoreTo5(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-900"
+            title="Aktifkan pembulatan skor AI ke kelipatan yang dipilih."
+          />
+        </label>
+        {roundScoreTo5 && (
+          <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 space-y-2">
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-100">Kelipatan Pembulatan</label>
+            <select
+              value={roundingPreset}
+              onChange={(e) => setRoundingPreset(e.target.value as "2" | "5" | "10" | "custom")}
+              className="sage-input mt-1"
+              title="Pilih kelipatan pembulatan skor otomatis."
+            >
+              <option value="2">Kelipatan 2</option>
+              <option value="5">Kelipatan 5</option>
+              <option value="10">Kelipatan 10</option>
+              <option value="custom">Custom</option>
+            </select>
+            {roundingPreset === "custom" && (
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={customRoundingStep}
+                onChange={(e) => setCustomRoundingStep(e.target.value)}
+                className="sage-input"
+                placeholder="Contoh: 2.5"
+                title="Masukkan nilai kelipatan custom untuk pembulatan skor."
+              />
+            )}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((prev) => !prev)}
+          title="Buka/tutup pengaturan jawaban ideal dan kata kunci."
+          className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--sage-700)] dark:text-slate-200"
+        >
+          {showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
+          Jawaban Ideal & Kata Kunci
+        </button>
+
+        {showAdvanced && (
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+            <textarea
+              placeholder="Jawaban ideal (opsional)"
+              value={idealAnswer}
+              onChange={(e) => setIdealAnswer(e.target.value)}
+              rows={3}
+              className="sage-input"
+              title="Contoh jawaban ideal untuk membantu AI menilai."
+            />
+            <p className="text-right text-[11px] text-slate-500 dark:text-slate-300">
+              {idealAnswer.trim().length} karakter jawaban ideal
+            </p>
+            <textarea
+              placeholder="Kata kunci, pisahkan dengan koma"
+              value={keywords}
+              onChange={(e) => setKeywords(e.target.value)}
+              rows={2}
+              className="sage-input"
+              title="Daftar kata kunci penting yang diharapkan muncul pada jawaban siswa."
+            />
+            <p className="text-right text-[11px] text-slate-500 dark:text-slate-300">
+              {parsedKeywords.length} kata kunci terdeteksi
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={existingQuestion ? 'Edit Soal Essay' : 'Buat Soal Essay'}
-      panelClassName="max-w-[98vw] lg:max-w-6xl h-[88vh] overflow-hidden"
+      panelClassName="max-w-[98vw] lg:max-w-6xl h-[92vh] sm:h-[88vh] overflow-hidden"
     >
       <form onSubmit={handleSubmit} className="h-full flex flex-col gap-4">
         {error && (
@@ -1585,26 +1739,38 @@ const EssayQuestionFormModal = ({
             {bankNotice}
           </div>
         )}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Kontrol Cepat</p>
+            <button
+              type="button"
+              onClick={() => setShowTopControlPanel((prev) => !prev)}
+              className="sage-button-outline !py-1 !px-2 text-[11px] sm:text-xs"
+            >
+              {showTopControlPanel ? "Sembunyikan" : "Tampilkan"}
+            </button>
+          </div>
+          {showTopControlPanel && (
+          <>
+          <div className="mt-2 flex flex-col gap-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             {hasLocalDraft ? (
-              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 sm:py-1 sm:text-[11px]">
                 Draft tersimpan lokal
               </span>
             ) : (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 sm:py-1 sm:text-[11px]">
                 Draft kosong
               </span>
             )}
-            <button type="button" onClick={resetQuestionForm} className="sage-button-outline !py-1 !px-2 text-xs">Buat Baru</button>
+            <button type="button" onClick={resetQuestionForm} className="sage-button-outline !py-1 !px-2 text-[11px] sm:text-xs">Buat Baru</button>
           </div>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm dark:border-slate-700 dark:bg-slate-800">
+          <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs dark:border-slate-700 dark:bg-slate-800 sm:w-auto sm:p-1 sm:text-sm">
             <button
               type="button"
               onClick={() => setQuestionMode('manual')}
               title="Isi soal, parameter, dan rubrik secara manual."
-              className={`rounded-md px-3 py-1.5 font-medium transition ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+              className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:flex-none sm:px-3 sm:py-1.5 ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
             >
               Mode Manual
             </button>
@@ -1612,7 +1778,7 @@ const EssayQuestionFormModal = ({
               type="button"
               onClick={() => setQuestionMode('auto')}
               title="Gunakan AI untuk menghasilkan draft soal dari materi acuan."
-              className={`rounded-md px-3 py-1.5 font-medium transition ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+              className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:flex-none sm:px-3 sm:py-1.5 ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
             >
               Mode Auto (AI)
             </button>
@@ -1626,7 +1792,7 @@ const EssayQuestionFormModal = ({
                   loadQuestionBankEntries();
                 }}
                 title="Buka bank soal dan pilih soal yang sudah pernah disimpan."
-                className="sage-button-outline"
+                className="sage-button-outline !py-1 !px-2 text-[11px] sm:!py-2 sm:!px-3 sm:text-sm"
               >
                 Panggil Bank Soal
               </button>
@@ -1635,7 +1801,7 @@ const EssayQuestionFormModal = ({
                 onClick={handleAutoGenerate}
                 disabled={isGenerating}
                 title="Generate draft soal otomatis dari materi acuan RAG yang dipilih."
-                className="sage-button"
+                className="sage-button !py-1 !px-2 text-[11px] sm:!py-2 sm:!px-3 sm:text-sm"
               >
                 {isGenerating ? 'Generating...' : 'Generate dari Materi'}
               </button>
@@ -1649,7 +1815,7 @@ const EssayQuestionFormModal = ({
                 loadQuestionBankEntries();
               }}
               title="Buka bank soal dan gunakan soal yang sudah ada."
-              className="sage-button-outline"
+              className="sage-button-outline !py-1 !px-2 text-[11px] sm:!py-2 sm:!px-3 sm:text-sm"
             >
               Panggil Bank Soal
             </button>
@@ -1664,8 +1830,10 @@ const EssayQuestionFormModal = ({
               {generatedSourceMeta.preview && <p className="mt-1 line-clamp-3 whitespace-pre-wrap">{generatedSourceMeta.preview}</p>}
             </div>
           )}
+          </>
+          )}
         </div>
-        <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-sm sm:text-sm dark:border-slate-700 dark:bg-slate-900">
           {[1, 2, 3].map((i) => (
             <button
               key={i}
@@ -1680,6 +1848,14 @@ const EssayQuestionFormModal = ({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => setShowParameterPanel((prev) => !prev)}
+          className="lg:hidden inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm"
+        >
+          {showParameterPanel ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+          {showParameterPanel ? "Sembunyikan Parameter" : "Tampilkan Parameter"}
+        </button>
 
         <div className="relative flex-1 min-h-0 overflow-hidden">
           <div className={`h-full overflow-y-auto pr-1 transition-[padding] duration-300 ${showParameterPanel ? 'lg:pr-[356px]' : ''}`}>
@@ -1958,185 +2134,40 @@ const EssayQuestionFormModal = ({
               )}
             </div>
 
+            {showParameterPanel && (
+              <div className="mt-4 lg:hidden">
+                {parameterPanel}
+              </div>
+            )}
             </div>
           <button
             type="button"
             onClick={() => setShowParameterPanel((prev) => !prev)}
-            className="flex absolute right-0 top-1/2 -translate-y-1/2 z-20 h-12 w-8 items-center justify-center rounded-l-md border border-r-0 border-slate-300 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 h-12 w-8 items-center justify-center rounded-l-md border border-r-0 border-slate-300 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             title={showParameterPanel ? "Sembunyikan panel parameter" : "Tampilkan panel parameter"}
             aria-label={showParameterPanel ? "Sembunyikan panel parameter" : "Tampilkan panel parameter"}
           >
             {showParameterPanel ? <FiChevronRight size={16} /> : <FiChevronLeft size={16} />}
           </button>
           <aside
-            className={`absolute inset-y-0 right-0 w-[86vw] max-w-[340px] transition-transform duration-300 ease-in-out ${showParameterPanel ? 'translate-x-0' : 'translate-x-full'}`}
+            className={`hidden lg:block absolute inset-y-0 right-0 w-[86vw] max-w-[340px] transition-transform duration-300 ease-in-out ${showParameterPanel ? 'translate-x-0' : 'translate-x-full'}`}
           >
             <div className="h-full overflow-y-auto pl-4 pr-1">
-            <div className="space-y-4">
-              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Parameter Soal</h3>
-                  <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">Global</span>
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                    Materi Acuan RAG
-                    <span
-                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-600 dark:border-slate-600 dark:text-slate-300 cursor-help"
-                      title="Pilih acuan RAG: seluruh SECTION atau card materi tertentu di dalam section ini."
-                    >
-                      ?
-                    </span>
-                  </label>
-                  <select value={selectedRAGReference} onChange={(e) => setSelectedRAGReference(e.target.value)} className="sage-input mt-1">
-                    {ragReferenceOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                  {localRAGPreview && (
-                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-                      <p className="text-[11px] font-medium text-slate-600">Preview acuan (lokal)</p>
-                      <p className="mt-1 text-xs text-slate-700 line-clamp-4 whitespace-pre-wrap">{localRAGPreview}</p>
-                    </div>
-                  )}
-                  {ragReferenceOptions.length === 0 && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Acuan RAG belum tersedia. Default tetap section saat ini.</p>
-                  )}
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Level Kognitif</label>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-                    Jika dipilih, AI wajib generate sesuai level ini. Jika kosong, AI memilih acak (C1-C3) sesuai prompt.
-                  </p>
-                  <select
-                    value={levelKognitif}
-                    onChange={(e) => setLevelKognitif(e.target.value)}
-                    className="sage-input mt-1"
-                    title="Pilih level kognitif target. Kosongkan agar AI memilih level secara otomatis."
-                  >
-                    <option value="">Opsional</option>
-                    {cognitiveLevels.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Bobot Soal <span className="text-red-600">*</span></label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={weight}
-                    onChange={(e) => setWeight(e.target.value)}
-                    className="sage-input mt-1"
-                    placeholder="Wajib diisi. Contoh: 20"
-                    title="Bobot nilai soal. Wajib diisi dan harus lebih dari 0."
-                    required
-                  />
-                </div>
-
-                <label className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-100">Bulatkan Nilai</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-                      Post-processing skor AI ke kelipatan {formatNumeric(activeRoundingStep)} terdekat. Contoh: {roundingExamples}.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={roundScoreTo5}
-                    onChange={(e) => setRoundScoreTo5(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-900"
-                    title="Aktifkan pembulatan skor AI ke kelipatan yang dipilih."
-                  />
-                </label>
-                {roundScoreTo5 && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 space-y-2">
-                    <label className="text-sm font-medium text-slate-700 dark:text-slate-100">Kelipatan Pembulatan</label>
-                    <select
-                      value={roundingPreset}
-                      onChange={(e) => setRoundingPreset(e.target.value as "2" | "5" | "10" | "custom")}
-                      className="sage-input mt-1"
-                      title="Pilih kelipatan pembulatan skor otomatis."
-                    >
-                      <option value="2">Kelipatan 2</option>
-                      <option value="5">Kelipatan 5</option>
-                      <option value="10">Kelipatan 10</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    {roundingPreset === "custom" && (
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={customRoundingStep}
-                        onChange={(e) => setCustomRoundingStep(e.target.value)}
-                        className="sage-input"
-                        placeholder="Contoh: 2.5"
-                        title="Masukkan nilai kelipatan custom untuk pembulatan skor."
-                      />
-                    )}
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced((prev) => !prev)}
-                  title="Buka/tutup pengaturan jawaban ideal dan kata kunci."
-                  className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--sage-700)] dark:text-slate-200"
-                >
-                  {showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
-                  Jawaban Ideal & Kata Kunci
-                </button>
-
-                {showAdvanced && (
-                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                    <textarea
-                      placeholder="Jawaban ideal (opsional)"
-                      value={idealAnswer}
-                      onChange={(e) => setIdealAnswer(e.target.value)}
-                      rows={3}
-                      className="sage-input"
-                      title="Contoh jawaban ideal untuk membantu AI menilai."
-                    />
-                    <p className="text-right text-[11px] text-slate-500 dark:text-slate-300">
-                      {idealAnswer.trim().length} karakter jawaban ideal
-                    </p>
-                    <textarea
-                      placeholder="Kata kunci, pisahkan dengan koma"
-                      value={keywords}
-                      onChange={(e) => setKeywords(e.target.value)}
-                      rows={2}
-                      className="sage-input"
-                      title="Daftar kata kunci penting yang diharapkan muncul pada jawaban siswa."
-                    />
-                    <p className="text-right text-[11px] text-slate-500 dark:text-slate-300">
-                      {parsedKeywords.length} kata kunci terdeteksi
-                    </p>
-                  </div>
-                )}
-              </div>
-
-            </div>
+            {parameterPanel}
             </div>
           </aside>
         </div>
 
-        <div className="sticky bottom-0 z-10 border-t border-slate-200 bg-white pt-3 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={onClose} className="sage-button-outline" title="Tutup popup. Input tetap tersimpan sebagai draft lokal.">Batal</button>
-            <button type="button" onClick={resetQuestionForm} className="sage-button-outline" title="Kosongkan semua input dan mulai draft baru.">Reset</button>
+        <div className="border-t border-slate-200 bg-white pt-2 sm:sticky sm:bottom-0 sm:z-10 sm:pt-3 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+            <button type="button" onClick={onClose} className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm" title="Tutup popup. Input tetap tersimpan sebagai draft lokal.">Batal</button>
+            <button type="button" onClick={resetQuestionForm} className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm" title="Kosongkan semua input dan mulai draft baru.">Reset</button>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:justify-end sm:overflow-visible sm:pb-0">
             <button
               type="button"
-              className="sage-button-outline"
+              className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
               onClick={handleSaveToQuestionBank}
               disabled={isSavingToBank || isCurrentDraftSavedToBank}
               title="Simpan draft soal saat ini ke Bank Soal untuk dipakai ulang."
@@ -2145,7 +2176,7 @@ const EssayQuestionFormModal = ({
             </button>
             <button
               type="button"
-              className="sage-button-outline"
+              className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
               onClick={() => setStep((s) => Math.max(1, s - 1))}
               disabled={step === 1}
               title="Kembali ke langkah sebelumnya."
@@ -2155,7 +2186,7 @@ const EssayQuestionFormModal = ({
             {step < 3 ? (
               <button
                 type="button"
-                className="sage-button"
+                className="sage-button shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
                 onClick={() => goToStep(step + 1)}
                 title="Lanjut ke langkah berikutnya."
               >
@@ -2164,7 +2195,7 @@ const EssayQuestionFormModal = ({
             ) : (
               <button
                 type="submit"
-                className="sage-button"
+                className="sage-button shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
                 disabled={!canSubmitQuestion}
                 title="Simpan soal dan rubrik ke database."
               >
@@ -2204,6 +2235,8 @@ export default function MaterialDetailsPage() {
   const isSoalRoute = (pathname || "").includes("/dashboard/teacher/soal/");
   const isMateriRoute = (pathname || "").includes("/dashboard/teacher/materi/");
   const sectionCardId = searchParams.get("sectionCardId") || "";
+  const openEditMaterialFromQuery = searchParams.get("openEditMaterial") === "1";
+  const popupOnlyMode = searchParams.get("popupOnly") === "1" || (isMateriRoute && openEditMaterialFromQuery);
 
   const [material, setMaterial] = useState<MaterialDetail | null>(null);
   const [questions, setQuestions] = useState<EssayQuestion[]>([]);
@@ -2222,7 +2255,7 @@ export default function MaterialDetailsPage() {
     setReviewModalOpen(true);
   };
 
-  const [isEditMaterialModalOpen, setEditMaterialModalOpen] = useState(false); // New state for Edit Material modal
+  const [isEditMaterialModalOpen, setEditMaterialModalOpen] = useState(popupOnlyMode); // New state for Edit Material modal
   const [isEditQuestionModalOpen, setEditQuestionModalOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<EssayQuestion | null>(null);
   const [activeTab, setActiveTab] = useState(isSoalRoute ? "questions" : "overview");
@@ -2236,47 +2269,68 @@ export default function MaterialDetailsPage() {
     tone: "info",
   });
 
+  useEffect(() => {
+    if (!material) return;
+    if (!openEditMaterialFromQuery) return;
+    setEditMaterialModalOpen(true);
+  }, [material, openEditMaterialFromQuery]);
+
+  useEffect(() => {
+    if (!popupOnlyMode || isLoading) return;
+    if (typeof window !== "undefined" && window.parent !== window) {
+      window.parent.postMessage({ type: "sage:materi-editor-ready" }, window.location.origin);
+    }
+  }, [popupOnlyMode, isLoading]);
+
   const fetchData = useCallback(async () => {
     if (!materialId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const [materialRes, questionsRes] = await Promise.all([
-        fetch(`/api/materials/${materialId}`),
-        fetch(`/api/materials/${materialId}/essay-questions`),
-      ]);
+      if (popupOnlyMode) {
+        const materialRes = await fetch(`/api/materials/${materialId}`);
+        if (!materialRes.ok) throw new Error("Gagal memuat detail materi.");
+        const materialData = await materialRes.json();
+        setMaterial(materialData);
+        setQuestions([]);
+      } else {
+        const [materialRes, questionsRes] = await Promise.all([
+          fetch(`/api/materials/${materialId}`),
+          fetch(`/api/materials/${materialId}/essay-questions`),
+        ]);
 
-      if (!materialRes.ok) throw new Error('Gagal memuat detail materi.');
-      if (!questionsRes.ok) throw new Error('Gagal memuat soal-soal untuk materi ini.');
-      
-      const materialData = await materialRes.json();
-      const questionsData = await questionsRes.json();
+        if (!materialRes.ok) throw new Error("Gagal memuat detail materi.");
+        if (!questionsRes.ok) throw new Error("Gagal memuat soal-soal untuk materi ini.");
 
-      const processedQuestions = questionsData.map((q: EssayQuestion) => {
-          let rubricsArray: Rubric[] = [];
-          if (Array.isArray(q.rubrics)) {
-              rubricsArray = q.rubrics;
-          }
-          return {
-              ...q,
-              rubrics: rubricsArray.map((rubric) => ({
-                  ...rubric,
-                  descriptors: Object.entries(rubric.descriptors || {}).map(([score, description]) => ({
-                    score: String(score),
-                    description: formatDescriptor(description),
-                  }))
-              }))
-          };
-      });
+        const materialData = await materialRes.json();
+        const questionsData = await questionsRes.json();
 
-      setMaterial(materialData);
-      setQuestions(processedQuestions || []);
+        const processedQuestions = questionsData.map((q: EssayQuestion) => {
+            let rubricsArray: Rubric[] = [];
+            if (Array.isArray(q.rubrics)) {
+                rubricsArray = q.rubrics;
+            }
+            return {
+                ...q,
+                rubrics: rubricsArray.map((rubric) => ({
+                    ...rubric,
+                    descriptors: Object.entries(rubric.descriptors || {}).map(([score, description]) => ({
+                      score: String(score),
+                      description: formatDescriptor(description),
+                    }))
+                }))
+            };
+        });
+
+        setMaterial(materialData);
+        setQuestions(processedQuestions || []);
+      }
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Gagal memuat data materi."));
     } finally {
       setIsLoading(false);
     }
-  }, [materialId]);
+  }, [materialId, popupOnlyMode]);
 
   const fetchSubmissionStats = useCallback(async () => {
     setSubmissionStatsLoading(true);
@@ -2301,8 +2355,9 @@ export default function MaterialDetailsPage() {
   }, [fetchData]);
 
   useEffect(() => {
+    if (popupOnlyMode) return;
     fetchSubmissionStats();
-  }, [fetchSubmissionStats]);
+  }, [fetchSubmissionStats, popupOnlyMode]);
 
   const hasSectionCardScope = isSoalRoute && Boolean(sectionCardId);
   const scopedQuestionIds = (() => {
@@ -2332,10 +2387,6 @@ export default function MaterialDetailsPage() {
         : type === "tugas"
           ? ["overview", "students"]
           : ["overview", "questions", "students"];
-    if (isSoalRoute && allowedTabs.includes("questions") && activeTab !== "questions") {
-      setActiveTab("questions");
-      return;
-    }
     if (!allowedTabs.includes(activeTab)) {
       setActiveTab(allowedTabs[0]);
     }
@@ -2564,7 +2615,16 @@ export default function MaterialDetailsPage() {
   );
 
 
-  if (isLoading) return <div className="p-8 text-center">Memuat data materi...</div>;
+  if (isLoading) {
+    return (
+      <div className={`${popupOnlyMode ? "min-h-screen" : "min-h-[40vh]"} flex items-center justify-center`}>
+        <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
+          <span className="inline-block h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+          Memuat data materi...
+        </div>
+      </div>
+    );
+  }
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
   if (!material) return <div className="p-8 text-center">Materi tidak ditemukan.</div>;
 
@@ -2572,6 +2632,26 @@ export default function MaterialDetailsPage() {
   const isSoalType = contentType === "soal";
   const isTugasType = contentType === "tugas";
   const contentTypeLabel = isSoalType ? "Soal" : isTugasType ? "Tugas" : "Materi";
+
+  if (popupOnlyMode) {
+    return (
+      <div className="min-h-screen bg-transparent">
+        <EditMaterialModal
+          isOpen={isEditMaterialModalOpen}
+          onClose={() => {
+            setEditMaterialModalOpen(false);
+            if (typeof window !== "undefined" && window.parent !== window) {
+              window.parent.postMessage({ type: "sage:close-materi-editor" }, window.location.origin);
+            }
+          }}
+          material={material}
+          sectionCardId={sectionCardId}
+          onFinished={fetchData}
+          startInFocusMode
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -3537,9 +3617,10 @@ interface EditMaterialModalProps {
     material: MaterialDetail;
     sectionCardId?: string;
     onFinished: () => void;
+    startInFocusMode?: boolean;
 }
 
-const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinished }: EditMaterialModalProps) => {
+const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinished, startInFocusMode = false }: EditMaterialModalProps) => {
     const [judul, setJudul] = useState(material.judul);
     const [editorHtml, setEditorHtml] = useState("");
     const [textColor, setTextColor] = useState("#111827");
@@ -3578,8 +3659,8 @@ const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinishe
         setFontSizePx(16);
         setShowFontSizeMenu(false);
         setShowTablePicker(false);
-        setIsFocusMode(false);
-    }, [material, isOpen, sectionCardId]);
+        setIsFocusMode(startInFocusMode);
+    }, [material, isOpen, sectionCardId, startInFocusMode]);
 
     useEffect(() => {
       const handleOutsideClick = (event: MouseEvent) => {
@@ -4111,6 +4192,9 @@ const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinishe
             }
 
             onFinished();
+            if (typeof window !== "undefined" && window.parent !== window) {
+              window.parent.postMessage({ type: "sage:materi-editor-saved" }, window.location.origin);
+            }
             onClose();
 
         } catch (err: unknown) {

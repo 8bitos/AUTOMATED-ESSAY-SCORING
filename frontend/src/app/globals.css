@@ -116,6 +116,34 @@
 }
 
 @layer utilities {
+  @keyframes sage-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes sage-pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .animate-fade-in {
+    animation: sage-fade-in 160ms ease-out both;
+  }
+
+  .animate-pop-in {
+    animation: sage-pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
   html[data-theme='dark'] .bg-slate-50,
   html[data-theme='dark'] .bg-\[color\:var\(--sand-100\)\] {
     background-color: var(--dark-layer-1) !important;
@@ -349,6 +377,91 @@
     background-color: #0f172a !important;
     border-color: #334155 !important;
     color: #ffffff !important;
+  }
+
+  /* Global fallback so floating panels/modals outside <main> still respect dark theme */
+  html[data-theme='dark'] :is(.bg-white, .sage-card, .sage-panel) {
+    background-color: var(--dark-layer-2) !important;
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme='dark'] :is(.border-slate-100, .border-slate-200, .border-slate-300) {
+    border-color: rgba(148, 163, 184, 0.28) !important;
+  }
+
+  html[data-theme='dark'] :is(.text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500) {
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme='dark'] .text-slate-400 {
+    color: #94a3b8 !important;
+  }
+
+  html[data-theme='dark'] .sage-input {
+    background-color: var(--dark-layer-2) !important;
+    border-color: rgba(148, 163, 184, 0.4) !important;
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme='dark'] .sage-button-outline {
+    background-color: var(--dark-layer-3) !important;
+    border-color: rgba(148, 163, 184, 0.35) !important;
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme='dark'] :is(.bg-slate-50, .hover\:bg-slate-50:hover) {
+    background-color: var(--dark-layer-1) !important;
+  }
+
+  html[data-theme='dark'] :is(.bg-slate-100, .hover\:bg-slate-100:hover) {
+    background-color: var(--dark-layer-3) !important;
+  }
+
+  /* Student class detail page: force dark surfaces for mixed utility-heavy cards */
+  html[data-theme='dark'] .student-class-view .bg-gradient-to-br {
+    background-image: none !important;
+    background-color: var(--dark-layer-2) !important;
+  }
+
+  html[data-theme='dark'] .student-class-view :is(.bg-amber-50, .bg-emerald-50, .bg-blue-50, .bg-purple-50, .bg-sky-50) {
+    background-color: var(--dark-layer-3) !important;
+  }
+
+  html[data-theme='dark'] .student-class-view :is(.text-amber-700, .text-emerald-700, .text-blue-700, .text-purple-700, .text-sky-700) {
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme='dark'] .student-class-view input[type="file"]::file-selector-button {
+    background-color: #24364f !important;
+    color: #e2e8f0 !important;
+  }
+
+  /* System updates page: explicit dark surface mapping (don't rely on dark: variant only) */
+  html[data-theme='dark'] .system-updates-page .updates-hero {
+    background-color: #1b2a3f !important;
+    border-color: rgba(125, 211, 252, 0.45) !important;
+  }
+
+  html[data-theme='dark'] .system-updates-page .updates-card {
+    background-color: var(--dark-layer-2) !important;
+    border-color: rgba(148, 163, 184, 0.3) !important;
+  }
+
+  html[data-theme='dark'] .system-updates-page .updates-major,
+  html[data-theme='dark'] .system-updates-page .updates-minor {
+    background-color: #24364f !important;
+  }
+
+  html[data-theme='dark'] .system-updates-page .updates-major {
+    border-color: rgba(251, 113, 133, 0.55) !important;
+  }
+
+  html[data-theme='dark'] .system-updates-page .updates-minor {
+    border-color: rgba(56, 189, 248, 0.55) !important;
+  }
+
+  html[data-theme='dark'] .system-updates-page :is(.text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500) {
+    color: #f1f5f9 !important;
   }
 }
 

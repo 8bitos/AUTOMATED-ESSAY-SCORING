@@ -139,6 +139,7 @@ type AdminUserItem struct {
 	KelasTingkat      *string    `json:"kelas_tingkat,omitempty"`
 	MataPelajaran     *string    `json:"mata_pelajaran,omitempty"`
 	Institusi         *string    `json:"institusi,omitempty"`
+	TanggalLahir      *time.Time `json:"tanggal_lahir,omitempty"`
 	LastLoginAt       *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 }

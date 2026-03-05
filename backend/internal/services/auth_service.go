@@ -1359,7 +1359,7 @@ func (s *AuthService) GetAdminAPIHealth() (*models.AdminAPIHealthResponse, error
 func (s *AuthService) ListUsersForAdmin(role, query, sort string) ([]models.AdminUserItem, error) {
 	baseQuery := `
 		SELECT id, nama_lengkap, email, peran::text, is_teacher_verified, username, nomor_identitas, foto_profil_url,
-		       kelas_tingkat, mata_pelajaran, institusi, last_login_at, created_at
+		       kelas_tingkat, mata_pelajaran, institusi, tanggal_lahir, last_login_at, created_at
 		FROM users
 	`
 
@@ -1406,6 +1406,7 @@ func (s *AuthService) ListUsersForAdmin(role, query, sort string) ([]models.Admi
 		var kelasTingkat sql.NullString
 		var mataPelajaran sql.NullString
 		var institusi sql.NullString
+		var tanggalLahir sql.NullTime
 		var lastLoginAt sql.NullTime
 		if err := rows.Scan(
 			&item.ID,
@@ -1419,6 +1420,7 @@ func (s *AuthService) ListUsersForAdmin(role, query, sort string) ([]models.Admi
 			&kelasTingkat,
 			&mataPelajaran,
 			&institusi,
+			&tanggalLahir,
 			&lastLoginAt,
 			&item.CreatedAt,
 		); err != nil {
@@ -1441,6 +1443,9 @@ func (s *AuthService) ListUsersForAdmin(role, query, sort string) ([]models.Admi
 		}
 		if institusi.Valid {
 			item.Institusi = &institusi.String
+		}
+		if tanggalLahir.Valid {
+			item.TanggalLahir = &tanggalLahir.Time
 		}
 		if lastLoginAt.Valid {
 			item.LastLoginAt = &lastLoginAt.Time

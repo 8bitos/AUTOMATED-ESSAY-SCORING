@@ -121,7 +121,7 @@ func (s *GradeAppealService) ListStudentAppeals(studentID string, classID string
 		 LEFT JOIN ai_results ar ON ar.submission_id = ga.submission_id
 		 LEFT JOIN teacher_reviews tr ON tr.submission_id = ga.submission_id
 		 WHERE ga.student_id = $1
-		   AND ($2 = '' OR ga.class_id = $2)
+		   AND ($2 = '' OR ga.class_id::text = $2)
 		 ORDER BY ga.created_at DESC`,
 		studentID,
 		strings.TrimSpace(classID),
@@ -184,7 +184,7 @@ func (s *GradeAppealService) ListTeacherAppeals(teacherID string, classID string
 		 LEFT JOIN ai_results ar ON ar.submission_id = ga.submission_id
 		 LEFT JOIN teacher_reviews tr ON tr.submission_id = ga.submission_id
 		 WHERE c.teacher_id = $1
-		   AND ($2 = '' OR ga.class_id = $2)
+		   AND ($2 = '' OR ga.class_id::text = $2)
 		   AND ($3 = '' OR ga.status = $3)
 		 ORDER BY CASE WHEN ga.status IN ('open','in_review') THEN 0 ELSE 1 END, ga.created_at DESC`,
 		teacherID,

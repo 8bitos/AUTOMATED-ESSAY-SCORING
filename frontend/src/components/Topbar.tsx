@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { useTheme } from '@/context/ThemeContext';
@@ -27,9 +27,103 @@ type SuperadminNotificationPrefs = {
   approvalRequests: boolean;
 };
 
+type AdminProfileRequestItem = {
+  id: string;
+  user_name?: string;
+  request_type?: string;
+  created_at?: string;
+};
+
 const TEACHER_NOTIFICATION_PREFS_KEY = 'teacher_notification_preferences';
 const SUPERADMIN_NOTIFICATION_PREFS_KEY = 'superadmin_notification_preferences';
 const NOTIF_READ_STORAGE_PREFIX = 'read_notifications_';
+const SEARCH_RECENT_PREFIX = 'topbar_command_recent_';
+
+type CommandCategory = 'Terakhir' | 'Navigasi' | 'Aksi' | 'Kelas' | 'Siswa' | 'Konten';
+type SearchKind = 'materi' | 'soal' | 'tugas' | 'general';
+
+type SearchClassItem = {
+  id: string;
+  name: string;
+  code?: string;
+  status?: string;
+};
+
+type SearchStudentItem = {
+  id: string;
+  name: string;
+  email?: string;
+  classId?: string;
+  className?: string;
+  status?: string;
+};
+
+type SearchContentItem = {
+  id: string;
+  title: string;
+  classId?: string;
+  className?: string;
+  materialId?: string;
+  kind: SearchKind;
+  status?: string;
+};
+
+type CommandItem = {
+  id: string;
+  label: string;
+  description?: string;
+  href?: string;
+  category: CommandCategory;
+  keywords: string[];
+  actionKey?: string;
+  meta?: {
+    classId?: string;
+    className?: string;
+    status?: string;
+    kind?: SearchKind;
+  };
+};
+
+type ParsedSearch = {
+  text: string;
+  kelas: string;
+  status: string;
+  jenis: string;
+};
+
+const parseCommandSearch = (raw: string): ParsedSearch => {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  const parsed: ParsedSearch = { text: '', kelas: '', status: '', jenis: '' };
+  const free: string[] = [];
+  for (const token of tokens) {
+    const [k, ...rest] = token.split(':');
+    if (!rest.length) {
+      free.push(token);
+      continue;
+    }
+    const key = k.toLowerCase().trim();
+    const value = rest.join(':').toLowerCase().trim();
+    if (!value) continue;
+    if (key === 'kelas' || key === 'class') {
+      parsed.kelas = value;
+      continue;
+    }
+    if (key === 'status') {
+      parsed.status = value;
+      continue;
+    }
+    if (key === 'jenis' || key === 'type') {
+      parsed.jenis = value;
+      continue;
+    }
+    free.push(token);
+  }
+  parsed.text = free.join(' ').toLowerCase();
+  return parsed;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user, logout } = useAuth();
@@ -65,16 +159,32 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const [impersonationActive, setImpersonationActive] = useState(false);
   const [impersonationBusy, setImpersonationBusy] = useState(false);
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(DEFAULT_NOTIFICATION_POLL_INTERVAL_MS);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
+  const [commandLoading, setCommandLoading] = useState(false);
+  const [commandDataLoaded, setCommandDataLoaded] = useState(false);
+  const [commandClasses, setCommandClasses] = useState<SearchClassItem[]>([]);
+  const [commandStudents, setCommandStudents] = useState<SearchStudentItem[]>([]);
+  const [commandContents, setCommandContents] = useState<SearchContentItem[]>([]);
+  const [recentCommands, setRecentCommands] = useState<CommandItem[]>([]);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  const [shortcutHint, setShortcutHint] = useState('Ctrl+K');
 
   const trigger = useRef<HTMLButtonElement>(null);
   const dropdown = useRef<HTMLDivElement>(null);
   const notifTrigger = useRef<HTMLButtonElement>(null);
   const notifPanel = useRef<HTMLDivElement>(null);
+  const commandInputRef = useRef<HTMLInputElement>(null);
 
-  const getReadStorageKey = () => {
+  const getReadStorageKey = useCallback(() => {
     const userKey = user?.id || user?.nama_lengkap || 'anon';
     return `${NOTIF_READ_STORAGE_PREFIX}${userKey}`;
-  };
+  }, [user?.id, user?.nama_lengkap]);
+
+  const getRecentCommandStorageKey = useCallback(() => {
+    const userKey = user?.id || user?.nama_lengkap || 'anon';
+    return `${SEARCH_RECENT_PREFIX}${userKey}`;
+  }, [user?.id, user?.nama_lengkap]);
 
   const loadReadNotifications = () => {
     if (typeof window === 'undefined') return;
@@ -97,6 +207,27 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     window.localStorage.setItem(getReadStorageKey(), JSON.stringify(ids));
     setReadNotificationIds(ids);
   };
+
+  const loadRecentCommands = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.localStorage.getItem(getRecentCommandStorageKey());
+    if (!raw) {
+      setRecentCommands([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      setRecentCommands(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setRecentCommands([]);
+    }
+  }, [getRecentCommandStorageKey]);
+
+  const persistRecentCommands = useCallback((items: CommandItem[]) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(getRecentCommandStorageKey(), JSON.stringify(items.slice(0, 8)));
+    setRecentCommands(items.slice(0, 8));
+  }, [getRecentCommandStorageKey]);
 
   const loadTeacherNotifPrefs = () => {
     if (typeof window === 'undefined') return;
@@ -269,14 +400,14 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
         const pendingRes = await fetch('/api/admin/profile-requests?status=pending', { credentials: 'include' });
         if (pendingRes.ok) {
           const items = await pendingRes.json();
-          const mapped = (Array.isArray(items) ? items : []).map((item: any) => ({
+          const mapped = (Array.isArray(items) ? (items as AdminProfileRequestItem[]) : []).map((item) => ({
             id: `profile-${item.id}`,
             title: 'Approval Pending',
             message: `${item.user_name || 'User'} menunggu approval (${item.request_type || 'profile_change'}).`,
             createdAt: item.created_at || new Date().toISOString(),
             href: '/dashboard/superadmin/profile-requests?status=pending',
           }));
-          mapped.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           setNotifications(mapped.slice(0, 12));
           return;
         }
@@ -301,6 +432,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     if (user?.peran === 'superadmin') loadSuperadminNotifPrefs();
     if (user?.peran === 'student') hydrateStudentNotifPrefs();
     if (user) loadReadNotifications();
+    if (user) loadRecentCommands();
   }, [user?.peran, user?.id, user?.nama_lengkap]);
 
   useEffect(() => {
@@ -414,6 +546,315 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     router.push(item.href || notificationPageByRole(user?.peran));
   };
 
+  const ensureCommandData = useCallback(async () => {
+    if (!user || commandDataLoaded || commandLoading) return;
+    setCommandLoading(true);
+    try {
+      if (user.peran === 'teacher') {
+        const classRes = await fetch('/api/classes', { credentials: 'include' });
+        const classesRaw = classRes.ok ? await classRes.json() : [];
+        const classes = (Array.isArray(classesRaw) ? classesRaw : []).map((rawCls) => {
+          const cls = asRecord(rawCls);
+          return {
+          id: String(cls.id || ''),
+          name: String(cls.class_name || 'Tanpa nama kelas'),
+          code: String(cls.class_code || ''),
+          status: 'aktif',
+        };}).filter((cls: SearchClassItem) => cls.id);
+        setCommandClasses(classes);
+
+        const materialBuckets = await Promise.all(
+          classes.map(async (cls: SearchClassItem) => {
+            const matRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: 'include' });
+            const mats = matRes.ok ? await matRes.json() : [];
+            return (Array.isArray(mats) ? mats : []).map((rawMaterial) => {
+              const m = asRecord(rawMaterial);
+              return {
+              id: String(m.id || ''),
+              title: String(m.judul || 'Untitled'),
+              classId: cls.id,
+              className: cls.name,
+              materialId: String(m.id || ''),
+              kind: (String(m.material_type || 'materi').toLowerCase() as SearchKind),
+              status: 'aktif',
+            };}).filter((m: SearchContentItem) => m.id);
+          })
+        );
+        setCommandContents(materialBuckets.flat());
+
+        const studentBuckets = await Promise.all(
+          classes.map(async (cls: SearchClassItem) => {
+            const stdRes = await fetch(`/api/classes/${cls.id}/students`, { credentials: 'include' });
+            const students = stdRes.ok ? await stdRes.json() : [];
+            return (Array.isArray(students) ? students : []).map((rawStudent) => {
+              const s = asRecord(rawStudent);
+              return {
+              id: String(s.id || s.member_id || ''),
+              name: String(s.student_name || 'Siswa'),
+              email: String(s.student_email || ''),
+              classId: cls.id,
+              className: cls.name,
+              status: 'aktif',
+            };}).filter((s: SearchStudentItem) => s.id);
+          })
+        );
+        const byStudent = new Map<string, SearchStudentItem>();
+        for (const item of studentBuckets.flat()) {
+          if (!byStudent.has(item.id)) byStudent.set(item.id, item);
+        }
+        setCommandStudents(Array.from(byStudent.values()));
+      } else if (user.peran === 'student') {
+        const [myClassesRes, pendingRes] = await Promise.all([
+          fetch('/api/student/my-classes', { credentials: 'include' }),
+          fetch('/api/student/pending-classes', { credentials: 'include' }),
+        ]);
+        const myClassesRaw = myClassesRes.ok ? await myClassesRes.json() : [];
+        const pendingRaw = pendingRes.ok ? await pendingRes.json() : [];
+        const merged = [
+          ...(Array.isArray(myClassesRaw) ? myClassesRaw : []).map((rawCls) => {
+            const cls = asRecord(rawCls);
+            return {
+            id: String(cls.id || ''),
+            name: String(cls.class_name || 'Kelas'),
+            code: String(cls.class_code || ''),
+            status: 'aktif',
+          };}),
+          ...(Array.isArray(pendingRaw) ? pendingRaw : []).map((rawCls) => {
+            const cls = asRecord(rawCls);
+            return {
+            id: String(cls.id || ''),
+            name: String(cls.class_name || 'Kelas'),
+            code: String(cls.class_code || ''),
+            status: 'pending',
+          };}),
+        ].filter((c: SearchClassItem) => c.id);
+        const dedup = new Map<string, SearchClassItem>();
+        for (const item of merged) dedup.set(item.id, item);
+        setCommandClasses(Array.from(dedup.values()));
+      } else if (user.peran === 'superadmin') {
+        const usersRes = await fetch('/api/admin/users?sort=last_login', { credentials: 'include' });
+        const usersRaw = usersRes.ok ? await usersRes.json() : [];
+        const users = Array.isArray(usersRaw) ? usersRaw : [];
+        const students = users
+          .filter((rawUser) => {
+            const u = asRecord(rawUser);
+            return String(u.peran || '').toLowerCase() === 'student';
+          })
+          .map((rawUser) => {
+            const u = asRecord(rawUser);
+            return {
+            id: String(u.id || ''),
+            name: String(u.nama_lengkap || u.username || 'Student'),
+            email: String(u.email || ''),
+            status: String(u.status || 'aktif'),
+          };})
+          .filter((u: SearchStudentItem) => u.id);
+        setCommandStudents(students);
+      }
+      setCommandDataLoaded(true);
+    } catch {
+      setCommandDataLoaded(true);
+    } finally {
+      setCommandLoading(false);
+    }
+  }, [commandDataLoaded, commandLoading, user]);
+
+  const navigationCommands = useMemo<CommandItem[]>(() => {
+    if (!user) return [];
+    if (user.peran === 'teacher') {
+      return [
+        { id: 'nav-t-home', label: 'Beranda Teacher', description: 'Buka dashboard utama teacher', href: '/dashboard/teacher', category: 'Navigasi', keywords: ['beranda', 'home', 'dashboard', 'teacher'] },
+        { id: 'nav-t-classes', label: 'Kelas', description: 'Kelola kelas dan section', href: '/dashboard/teacher/classes', category: 'Navigasi', keywords: ['kelas', 'class', 'teacher'] },
+        { id: 'nav-t-assess', label: 'Penilaian', description: 'Review submission siswa', href: '/dashboard/teacher/penilaian', category: 'Navigasi', keywords: ['penilaian', 'review', 'submission'] },
+        { id: 'nav-t-bank', label: 'Bank Soal', description: 'Kelola bank soal reusable', href: '/dashboard/teacher/bank-soal', category: 'Navigasi', keywords: ['bank', 'soal', 'question bank'] },
+        { id: 'nav-t-reports', label: 'Laporan Nilai', description: 'Lihat laporan nilai kelas', href: '/dashboard/teacher/laporan-nilai', category: 'Navigasi', keywords: ['laporan', 'nilai', 'report'] },
+      ];
+    }
+    if (user.peran === 'student') {
+      return [
+        { id: 'nav-s-home', label: 'Beranda Student', description: 'Buka dashboard student', href: '/dashboard/student', category: 'Navigasi', keywords: ['beranda', 'student', 'dashboard'] },
+        { id: 'nav-s-classes', label: 'Kelas Saya', description: 'Daftar kelas yang diikuti', href: '/dashboard/student/my-classes', category: 'Navigasi', keywords: ['kelas', 'my classes'] },
+        { id: 'nav-s-assign', label: 'Tugas', description: 'Daftar tugas siswa', href: '/dashboard/student/assignments', category: 'Navigasi', keywords: ['tugas', 'assignment'] },
+        { id: 'nav-s-grades', label: 'Nilai', description: 'Lihat nilai dan status grading', href: '/dashboard/student/grades', category: 'Navigasi', keywords: ['nilai', 'grade'] },
+      ];
+    }
+    if (user.peran === 'superadmin') {
+      return [
+        { id: 'nav-sa-home', label: 'Beranda Superadmin', description: 'Ringkasan sistem', href: '/dashboard/superadmin', category: 'Navigasi', keywords: ['beranda', 'superadmin', 'dashboard'] },
+        { id: 'nav-sa-users', label: 'Users', description: 'Kelola user sistem', href: '/dashboard/superadmin/users', category: 'Navigasi', keywords: ['users', 'user', 'akun'] },
+        { id: 'nav-sa-queue', label: 'Queue Monitor', description: 'Monitor grading queue', href: '/dashboard/superadmin/queue-monitor', category: 'Navigasi', keywords: ['queue', 'monitor', 'grading'] },
+        { id: 'nav-sa-config', label: 'Config Center', description: 'Pengaturan sistem', href: '/dashboard/superadmin/config', category: 'Navigasi', keywords: ['config', 'setting', 'pengaturan'] },
+      ];
+    }
+    return [];
+  }, [user]);
+
+  const actionCommands = useMemo<CommandItem[]>(() => {
+    if (!user) return [];
+    const base: CommandItem[] = [
+      { id: 'action-theme', label: theme === 'dark' ? 'Pakai Light Mode' : 'Pakai Dark Mode', description: 'Toggle tema sekarang', category: 'Aksi', keywords: ['theme', 'dark', 'light', 'mode'], actionKey: 'toggle-theme' },
+      { id: 'action-notif', label: 'Buka Notifikasi', description: 'Lihat daftar notifikasi terbaru', category: 'Aksi', keywords: ['notif', 'notifikasi'], actionKey: 'open-notif' },
+    ];
+    if (user.peran === 'teacher') {
+      base.push(
+        { id: 'action-t-add-question', label: 'Tambah Soal (via Kelas)', description: 'Buka kelas untuk tambah soal', href: '/dashboard/teacher/classes', category: 'Aksi', keywords: ['tambah', 'soal', 'buat soal'] },
+        { id: 'action-t-pending', label: 'Lihat Submission Pending', description: 'Buka penilaian dengan fokus pending', href: '/dashboard/teacher/penilaian?status=pending', category: 'Aksi', keywords: ['pending', 'submission', 'review'] },
+      );
+    }
+    return base;
+  }, [user, theme]);
+
+  const dynamicCommands = useMemo<CommandItem[]>(() => {
+    const classCommands: CommandItem[] = commandClasses.map((cls) => ({
+      id: `class-${cls.id}`,
+      label: cls.name,
+      description: cls.code ? `Kode: ${cls.code}` : 'Kelas',
+      href: user?.peran === 'student' ? `/dashboard/student/classes/${cls.id}` : `/dashboard/teacher/class/${cls.id}`,
+      category: 'Kelas',
+      keywords: [cls.name, cls.code || '', cls.status || '', 'kelas'],
+      meta: { classId: cls.id, className: cls.name, status: cls.status || 'aktif', kind: 'general' },
+    }));
+    const studentCommands: CommandItem[] = commandStudents.map((s) => ({
+      id: `student-${s.id}`,
+      label: s.name,
+      description: s.className ? `${s.className} • ${s.email || '-'}` : (s.email || 'Siswa'),
+      href: user?.peran === 'superadmin' ? '/dashboard/superadmin/users' : '/dashboard/teacher/penilaian',
+      category: 'Siswa',
+      keywords: [s.name, s.email || '', s.className || '', s.status || '', 'siswa', 'student'],
+      meta: { classId: s.classId, className: s.className, status: s.status || 'aktif', kind: 'general' },
+    }));
+    const contentCommands: CommandItem[] = commandContents.map((c) => ({
+      id: `content-${c.id}`,
+      label: c.title,
+      description: `${c.className || '-'} • ${c.kind.toUpperCase()}`,
+      href: c.materialId ? `/dashboard/teacher/material/${c.materialId}` : undefined,
+      category: 'Konten',
+      keywords: [c.title, c.className || '', c.kind, c.status || '', 'materi', 'soal', 'tugas'],
+      meta: { classId: c.classId, className: c.className, status: c.status || 'aktif', kind: c.kind },
+    }));
+    return [...classCommands, ...studentCommands, ...contentCommands];
+  }, [commandClasses, commandStudents, commandContents, user?.peran]);
+
+  const allCommandItems = useMemo<CommandItem[]>(
+    () => [...navigationCommands, ...actionCommands, ...dynamicCommands],
+    [navigationCommands, actionCommands, dynamicCommands]
+  );
+
+  const filteredCommandItems = useMemo<CommandItem[]>(() => {
+    const parsed = parseCommandSearch(commandQuery);
+    const q = parsed.text;
+    const list = allCommandItems.filter((item) => {
+      if (parsed.kelas) {
+        const classText = `${item.meta?.className || ''} ${item.meta?.classId || ''}`.toLowerCase();
+        if (!classText.includes(parsed.kelas)) return false;
+      }
+      if (parsed.status) {
+        const statusText = (item.meta?.status || '').toLowerCase();
+        if (!statusText.includes(parsed.status)) return false;
+      }
+      if (parsed.jenis) {
+        const kindText = (item.meta?.kind || '').toLowerCase();
+        if (!kindText.includes(parsed.jenis)) return false;
+      }
+      if (!q) return true;
+      const haystack = `${item.label} ${item.description || ''} ${item.keywords.join(' ')}`.toLowerCase();
+      return q.split(/\s+/).every((term) => haystack.includes(term));
+    });
+    if (!commandQuery.trim()) {
+      return [...recentCommands.slice(0, 5), ...list.filter((x) => x.category === 'Aksi').slice(0, 5), ...list.filter((x) => x.category === 'Navigasi').slice(0, 8)];
+    }
+    return list.slice(0, 50);
+  }, [allCommandItems, commandQuery, recentCommands]);
+
+  const groupedCommandItems = useMemo(() => {
+    const groups: Record<CommandCategory, CommandItem[]> = {
+      Terakhir: [],
+      Navigasi: [],
+      Aksi: [],
+      Kelas: [],
+      Siswa: [],
+      Konten: [],
+    };
+    for (const item of filteredCommandItems) {
+      groups[item.category].push(item);
+    }
+    return groups;
+  }, [filteredCommandItems]);
+
+  const flatCommandItems = useMemo(
+    () => (['Terakhir', 'Aksi', 'Navigasi', 'Kelas', 'Siswa', 'Konten'] as CommandCategory[]).flatMap((cat) => groupedCommandItems[cat]),
+    [groupedCommandItems]
+  );
+
+  const executeCommand = useCallback((item: CommandItem) => {
+    const cleanedRecent = recentCommands.filter((cmd) => cmd.id !== item.id);
+    persistRecentCommands([{ ...item, category: 'Terakhir' }, ...cleanedRecent]);
+    setCommandOpen(false);
+    setCommandQuery('');
+
+    if (item.actionKey === 'toggle-theme') {
+      toggleTheme();
+      return;
+    }
+    if (item.actionKey === 'open-notif') {
+      setNotifOpen(true);
+      return;
+    }
+    if (item.href) {
+      router.push(item.href);
+    }
+  }, [persistRecentCommands, recentCommands, router, toggleTheme]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    setShortcutHint(navigator.platform.toLowerCase().includes('mac') ? 'Cmd+K' : 'Ctrl+K');
+  }, []);
+
+  useEffect(() => {
+    if (!commandOpen) return;
+    void ensureCommandData();
+    window.setTimeout(() => {
+      commandInputRef.current?.focus();
+    }, 10);
+  }, [commandOpen, ensureCommandData]);
+
+  useEffect(() => {
+    setSelectedCommandIndex(0);
+  }, [commandQuery, filteredCommandItems.length]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
+      if (isShortcut) {
+        event.preventDefault();
+        setCommandOpen(true);
+        return;
+      }
+      if (!commandOpen) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setCommandOpen(false);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSelectedCommandIndex((prev) => Math.min(prev + 1, Math.max(flatCommandItems.length - 1, 0)));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSelectedCommandIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (event.key === 'Enter' && flatCommandItems[selectedCommandIndex]) {
+        event.preventDefault();
+        executeCommand(flatCommandItems[selectedCommandIndex]);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [commandOpen, executeCommand, flatCommandItems, selectedCommandIndex]);
+
   // Close on click outside
   useEffect(() => {
     const clickHandler = ({ target }: MouseEvent) => {
@@ -441,11 +882,11 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const handleLogout = async () => {
     setDropdownOpen(false);
     await logout();
-    router.push('/login'); // Ensure redirect to login after logout
+    router.push('/login');
   };
 
   return (
-    <header className="topbar-shell sticky top-0 z-30 border-b border-slate-200 bg-white">
+    <header className="topbar-shell sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
       {impersonationActive && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6 lg:px-8 flex items-center justify-between">
           <span>Mode impersonation aktif. Kamu sedang login sebagai user lain.</span>
@@ -459,36 +900,32 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
           </button>
         </div>
       )}
-      <div className="topbar-surface px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 -mb-px">
+      <div className="topbar-surface px-3 sm:px-6 lg:px-8">
+        <div className="flex h-14 items-center justify-between gap-2 sm:h-16 -mb-px">
           {/* Header: Left side */}
-          <div className="flex">
-            {/* Hamburger button */}
+          <div className="flex items-center">
+            {/* Mobile drawer button */}
             <button
-              className="text-slate-500 hover:text-slate-700 md:hidden"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
               aria-controls="sidebar"
               aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
-              <span className="sr-only">Open sidebar</span>
-              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <rect x="4" y="5" width="16" height="2" />
-                <rect x="4" y="11" width="16" height="2" />
-                <rect x="4" y="17" width="16" height="2" />
-              </svg>
+              <span className="sr-only">Buka sidebar</span>
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-xs font-semibold text-white">S</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700">SAGE</span>
             </button>
           </div>
 
           {/* Header: Right side */}
-          <div className="flex items-center space-x-3">
-            {/* Search input */}
-            <div className="relative">
-              <input
-                type="search"
-                className="topbar-input w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300 md:w-64"
-                placeholder="Cari kelas, materi, siswa..."
-              />
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Search / Command */}
+            <button
+              type="button"
+              onClick={() => setCommandOpen(true)}
+              className="topbar-input hidden md:inline-flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 md:w-[360px]"
+            >
+              <span className="inline-flex items-center gap-2 text-slate-500">
                 <svg className="h-5 w-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
@@ -496,8 +933,12 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     clipRule="evenodd"
                   />
                 </svg>
-              </div>
-            </div>
+                Cari kelas, materi, siswa...
+              </span>
+              <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-500">
+                {shortcutHint}
+              </span>
+            </button>
             
             <button
               type="button"
@@ -583,11 +1024,11 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                   )}
                 </div>
 
-                <div className="relative inline-block text-left">
+                <div className="relative hidden md:inline-block text-left">
                   <button
                     ref={trigger}
                     type="button"
-                    className="topbar-chip inline-flex justify-center items-center gap-x-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="topbar-chip inline-flex items-center justify-center gap-x-2 rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:px-3"
                     id="menu-button"
                     aria-expanded={dropdownOpen}
                     aria-haspopup="true"
@@ -597,12 +1038,11 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     <span className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-xs font-semibold">
                       {user.nama_lengkap ? user.nama_lengkap.charAt(0) : '?'}
                     </span>
-                    {user.nama_lengkap || 'Loading...'} ({user.peran})
-                    <svg className="-mr-1 h-5 w-5 text-slate-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <span className="hidden lg:inline">{user.nama_lengkap || 'Loading...'} ({user.peran})</span>
+                    <svg className="-mr-1 hidden h-5 w-5 text-slate-400 sm:block" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                       <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.21 8.27a.75.75 0 01.02-1.06z" clipRule="evenodd" />
                     </svg>
                   </button>
-                  {/* Dropdown menu */}
                   {dropdownOpen && (
                     <div
                       ref={dropdown}
@@ -620,11 +1060,71 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     </div>
                   )}
                 </div>
+
               </div>
             )}
           </div>
         </div>
       </div>
+      {commandOpen && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] p-3 sm:p-6" onClick={() => setCommandOpen(false)}>
+          <div
+            className="mx-auto mt-6 w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-slate-200 p-3">
+              <input
+                ref={commandInputRef}
+                type="text"
+                value={commandQuery}
+                onChange={(e) => setCommandQuery(e.target.value)}
+                placeholder="Cari... (contoh: kelas:12A status:pending jenis:soal)"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+              />
+              <p className="mt-2 text-[11px] text-slate-500">
+                Shortcut: <span className="font-semibold">Ctrl/Cmd+K</span> • Arrow untuk navigasi • Enter untuk buka
+              </p>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto p-2">
+              {commandLoading ? (
+                <p className="px-2 py-4 text-sm text-slate-500">Memuat data pencarian...</p>
+              ) : flatCommandItems.length === 0 ? (
+                <p className="px-2 py-4 text-sm text-slate-500">Tidak ada hasil. Coba kata kunci lain.</p>
+              ) : (
+                (['Terakhir', 'Aksi', 'Navigasi', 'Kelas', 'Siswa', 'Konten'] as CommandCategory[]).map((cat) => {
+                  const items = groupedCommandItems[cat];
+                  if (!items.length) return null;
+                  return (
+                    <div key={cat} className="mb-2">
+                      <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{cat}</p>
+                      <div className="space-y-1">
+                        {items.map((item) => {
+                          const absoluteIndex = flatCommandItems.findIndex((x) => x.id === item.id);
+                          const active = absoluteIndex === selectedCommandIndex;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => executeCommand(item)}
+                              onMouseEnter={() => setSelectedCommandIndex(absoluteIndex)}
+                              className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                                active ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'
+                              }`}
+                            >
+                              <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                              {item.description && <p className="text-xs text-slate-600">{item.description}</p>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

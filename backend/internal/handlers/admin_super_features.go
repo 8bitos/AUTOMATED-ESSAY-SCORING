@@ -24,6 +24,13 @@ var featureFlagWhitelist = map[string]string{
 	"feature_enable_impersonation":  "Aktifkan mode impersonate user",
 	"feature_enable_anomaly_alerts": "Aktifkan deteksi alert anomali",
 	"feature_enable_report_builder": "Aktifkan report builder superadmin",
+	"feature_show_updates_sidebar":  "Tampilkan menu Update Sistem/Revisi di sidebar semua role",
+}
+
+// Public flags are safe to expose to all authenticated users.
+// Use this list for UI-level toggles that must be consistent across roles.
+var publicFeatureFlagWhitelist = map[string]string{
+	"feature_show_updates_sidebar": "Tampilkan menu Update Sistem/Revisi di sidebar semua role",
 }
 
 func boolFromSettingValue(raw string, defaultValue bool) bool {
@@ -282,6 +289,24 @@ func (h *AdminOpsHandlers) AdminUpdateFeatureFlagHandler(w http.ResponseWriter, 
 		"key":   key,
 		"value": payload.Value,
 	})
+}
+
+func (h *AdminOpsHandlers) ListPublicFeatureFlagsHandler(w http.ResponseWriter, r *http.Request) {
+	items := make([]featureFlagMeta, 0, len(publicFeatureFlagWhitelist))
+	for key, desc := range publicFeatureFlagWhitelist {
+		enabled, err := h.isFeatureEnabled(key, true)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to load public feature flags")
+			return
+		}
+		items = append(items, featureFlagMeta{
+			Key:         key,
+			Description: desc,
+			Value:       enabled,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{"items": items})
 }
 
 func (h *AdminOpsHandlers) AdminAnomalyAlertsHandler(w http.ResponseWriter, r *http.Request) {

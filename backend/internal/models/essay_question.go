@@ -23,6 +23,8 @@ type EssayQuestion struct {
 	// Fields for student's submission data (denormalized for student view)
 	SubmissionID     *string                 `json:"submission_id,omitempty"`
 	StudentEssayText *string                 `json:"student_essay_text,omitempty"`
+	AIGradingStatus  *string                 `json:"ai_grading_status,omitempty"`
+	AIGradingError   *string                 `json:"ai_grading_error,omitempty"`
 	SkorAI           *float64                `json:"skor_ai,omitempty"`
 	UmpanBalikAI     *string                 `json:"umpan_balik_ai,omitempty"`
 	RevisedScore     *float64                `json:"revised_score,omitempty"`

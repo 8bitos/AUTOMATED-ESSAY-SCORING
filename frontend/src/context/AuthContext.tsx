@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export interface User {
   id: string;
@@ -28,6 +28,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isPopupOnlyMateri =
+    (pathname || "").includes("/dashboard/teacher/materi/") &&
+    (searchParams.get("popupOnly") === "1" || searchParams.get("openEditMaterial") === "1");
 
   const checkUserLoggedIn = async () => {
     setLoading(true);
@@ -77,7 +82,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Render a loading state while we check for an active session
   if (loading) {
-    return <div>Loading...</div>; // Or a proper spinner component
+    if (isPopupOnlyMateri) return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
+          <span className="inline-block h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+          Memuat sesi...
+        </div>
+      </div>
+    );
   }
 
   return (

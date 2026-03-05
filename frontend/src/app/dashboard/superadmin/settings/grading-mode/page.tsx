@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { FiInfo } from "react-icons/fi";
 
 type GradingMode = "instant" | "queued";
+type AdminSettingItem = { key?: string; value?: string };
+
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
 
 const modeDescriptions: Record<GradingMode, string> = {
   instant:
@@ -30,17 +34,20 @@ export default function GradingModeSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/settings/grading-mode", {
+      const res = await fetch("/api/admin/settings", {
         credentials: "include",
       });
       if (!res.ok) {
-        throw new Error("Gagal memuat mode penilaian");
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Gagal memuat mode penilaian");
       }
       const data = await res.json();
-      const current = data?.mode === "instant" ? "instant" : "queued";
+      const items: AdminSettingItem[] = Array.isArray(data?.items) ? data.items : [];
+      const setting = items.find((item) => item?.key === "grading_mode");
+      const current = setting?.value === "instant" ? "instant" : "queued";
       setMode(current);
-    } catch (err: any) {
-      setError(err?.message || "Tidak dapat membaca mode penilaian.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Tidak dapat membaca mode penilaian."));
     } finally {
       setLoading(false);
     }
@@ -55,20 +62,22 @@ export default function GradingModeSettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/settings/grading-mode", {
+      const res = await fetch("/api/admin/settings/grading_mode", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ mode: nextMode }),
+        body: JSON.stringify({ value: nextMode }),
       });
       if (!res.ok) {
-        throw new Error("Gagal memperbarui mode");
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Gagal memperbarui mode");
       }
       const payload = await res.json();
-      setMode(payload?.mode === "instant" ? "instant" : "queued");
-      setMessage(`Mode penilaian berubah ke ${payload.mode === "instant" ? "Instant" : "Queued"}.`);
-    } catch (err: any) {
-      setError(err?.message || "Tidak dapat mengubah mode penilaian.");
+      const updated = payload?.value === "instant" ? "instant" : "queued";
+      setMode(updated);
+      setMessage(`Mode penilaian berubah ke ${updated === "instant" ? "Instant" : "Queued"}.`);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Tidak dapat mengubah mode penilaian."));
     } finally {
       setSaving(false);
     }

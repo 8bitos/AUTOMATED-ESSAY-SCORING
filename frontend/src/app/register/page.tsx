@@ -65,8 +65,8 @@ export default function RegisterPage() {
         router.push('/login');
       }, 700);
 
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Gagal untuk mendaftar.'));
     } finally {
       setLoading(false);
     }
@@ -75,8 +75,31 @@ export default function RegisterPage() {
   return (
     <>
     <main className="min-h-screen">
-      <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 gap-10 px-6 py-12 md:grid-cols-[1fr_1fr] md:items-center">
-        <section className="space-y-6">
+      <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 gap-6 px-4 py-8 sm:px-6 sm:py-10 md:grid-cols-[1fr_1fr] md:items-center md:gap-10 md:py-12">
+        <section className="order-2 space-y-4 md:order-1 md:space-y-6">
+          <details className="group rounded-2xl border border-slate-200/80 bg-white/70 p-4 md:hidden">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-[color:var(--ink-900)]">
+              Lihat info SAGE
+            </summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-base text-[color:var(--ink-900)]">
+                Mulai perjalanan belajar dengan SAGE.
+              </p>
+              <p className="text-sm text-[color:var(--ink-500)]">
+                Buat akun untuk mengakses kelas, rubrik, dan hasil penilaian yang transparan.
+              </p>
+              <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
+                <p className="text-sm font-semibold text-[color:var(--ink-900)]">Kenapa SAGE</p>
+                <div className="mt-3 space-y-2 text-sm text-[color:var(--ink-500)]">
+                  <p>• LMS akademik dengan grading berbasis rubrik</p>
+                  <p>• Kontrol penuh guru atas nilai akhir</p>
+                  <p>• Pelacakan progres belajar per siswa</p>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div className="hidden space-y-6 md:block">
           <span className="sage-pill">Onboarding Akademik</span>
           <h1 className="text-4xl text-[color:var(--ink-900)] md:text-5xl">
             Mulai perjalanan belajar dengan SAGE.
@@ -92,14 +115,15 @@ export default function RegisterPage() {
               <p>• Pelacakan progres belajar per siswa</p>
             </div>
           </div>
+          </div>
         </section>
 
-        <section className="sage-panel p-8 sm:p-10">
+        <section className="order-1 sage-panel p-5 sm:p-8 md:order-2 md:p-10">
           <div className="mb-6">
             <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--sage-700)] text-white">
               <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4s1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z"/></svg>
             </div>
-            <h2 className="text-2xl font-semibold text-[color:var(--ink-900)]">Daftar Akun</h2>
+            <h2 className="text-xl font-semibold text-[color:var(--ink-900)] sm:text-2xl">Daftar Akun</h2>
             <p className="text-sm text-[color:var(--ink-500)]">Lengkapi data untuk akses LMS.</p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -208,4 +232,11 @@ export default function RegisterPage() {
       <LoadingDialog isOpen={loading} message="Mendaftarkan akun..." />
     </>
   );
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
 }

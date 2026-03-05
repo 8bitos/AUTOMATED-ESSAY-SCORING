@@ -240,6 +240,14 @@ const getInitial = (name: string): string => {
   return trimmed.charAt(0).toUpperCase();
 };
 
+const getAppealStatusMeta = (status: GradeAppealRow["status"]) => {
+  if (status === "open") return { label: "Menunggu Review", cls: "border border-amber-200 bg-amber-50 text-amber-700" };
+  if (status === "in_review") return { label: "Diproses", cls: "border border-sky-200 bg-sky-50 text-sky-700" };
+  if (status === "resolved_accepted") return { label: "Diterima", cls: "border border-emerald-200 bg-emerald-50 text-emerald-700" };
+  if (status === "resolved_rejected") return { label: "Ditolak", cls: "border border-rose-200 bg-rose-50 text-rose-700" };
+  return { label: "Dibatalkan", cls: "border border-slate-200 bg-slate-50 text-slate-700" };
+};
+
 const TASK_TEXT_MARKER = "Jawaban Teks:";
 const TASK_FILE_MARKER = "File Jawaban:";
 
@@ -550,9 +558,27 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
       const params = new URLSearchParams();
       params.set("status", appealStatusFilter);
       if (appealClassFilter !== "all") params.set("class_id", appealClassFilter);
-      const res = await fetch(`/api/teacher/grade-appeals?${params.toString()}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Gagal memuat banding nilai.");
-      const rows = (await res.json()) as GradeAppealRow[];
+      const endpoints = [
+        `/api/grade-appeals?${params.toString()}`,
+        `/api/teacher/grade-appeals?${params.toString()}`,
+        `/api/teacher/teacher/grade-appeals?${params.toString()}`,
+      ];
+      let rows: GradeAppealRow[] = [];
+      let lastError = "Gagal memuat banding nilai.";
+      let loaded = false;
+      for (const endpoint of endpoints) {
+        const res = await fetch(endpoint, { credentials: "include" });
+        if (res.ok) {
+          const body = (await res.json()) as GradeAppealRow[];
+          rows = Array.isArray(body) ? body : [];
+          loaded = true;
+          break;
+        }
+        const body = await res.json().catch(() => ({}));
+        lastError = body?.message || `Gagal memuat banding nilai (${res.status}).`;
+        if (res.status !== 404) break;
+      }
+      if (!loaded) throw new Error(lastError);
       setAppeals(Array.isArray(rows) ? rows : []);
     } catch (err: unknown) {
       setAppealsError(err instanceof Error ? err.message : "Gagal memuat banding nilai.");
@@ -1349,19 +1375,35 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
           teacherFeedback = rawFeedback && rawFeedback.trim() ? rawFeedback.trim() : null;
         }
 
-        const res = await fetch(`/api/teacher/grade-appeals/${appeal.id}/review`, {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status,
-            teacher_response: responseText && responseText.trim() ? responseText.trim() : null,
-            revised_score: revisedScore,
-            teacher_feedback: teacherFeedback,
-          }),
+        const payload = JSON.stringify({
+          status,
+          teacher_response: responseText && responseText.trim() ? responseText.trim() : null,
+          revised_score: revisedScore,
+          teacher_feedback: teacherFeedback,
         });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body?.message || "Gagal memproses banding.");
+        const endpoints = [
+          `/api/grade-appeals/${appeal.id}/review`,
+          `/api/teacher/grade-appeals/${appeal.id}/review`,
+          `/api/teacher/teacher/grade-appeals/${appeal.id}/review`,
+        ];
+        let reviewed = false;
+        let lastError = "Gagal memproses banding.";
+        for (const endpoint of endpoints) {
+          const res = await fetch(endpoint, {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          });
+          const body = await res.json().catch(() => ({}));
+          if (res.ok) {
+            reviewed = true;
+            break;
+          }
+          lastError = body?.message || `Gagal memproses banding (${res.status}).`;
+          if (res.status !== 404) break;
+        }
+        if (!reviewed) throw new Error(lastError);
         await loadAppeals();
       } catch (err: unknown) {
         window.alert(err instanceof Error ? err.message : "Gagal memproses banding.");
@@ -1374,11 +1416,11 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-800/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Penilaian Kelas</h1>
-            <p className="text-xs text-slate-600">
+            <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Penilaian Kelas</h1>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
               {mainTab === "penilaian"
                 ? "Pilih konten, pilih siswa, lalu review jawaban per soal."
                 : "Kelola banding nilai siswa dan tindak lanjut review guru."}
@@ -1407,18 +1449,18 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
             {visibleSummaryCards ? "Hide Ringkasan" : "Show Ringkasan"}
           </button>
         </div>
-        <div className="mt-3 inline-flex rounded-lg border border-slate-300 bg-white p-1">
+        <div className="mt-3 inline-flex rounded-lg border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
           <button
             type="button"
             onClick={() => setMainTab("penilaian")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium ${mainTab === "penilaian" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${mainTab === "penilaian" ? "bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900" : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"}`}
           >
             Penilaian
           </button>
           <button
             type="button"
             onClick={() => setMainTab("banding")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium ${mainTab === "banding" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${mainTab === "banding" ? "bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900" : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"}`}
           >
             Banding Nilai
           </button>
@@ -1476,6 +1518,15 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
             <div className="grid gap-3">
               {appeals.map((appeal) => (
                 <div key={appeal.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  {(() => {
+                    const statusMeta = getAppealStatusMeta(appeal.status);
+                    const isBusy = reviewingAppealId === appeal.id;
+                    const isResolved = appeal.status === "resolved_accepted" || appeal.status === "resolved_rejected";
+                    const isInReview = appeal.status === "in_review";
+                    const canMoveToReview = !isBusy && !isResolved && !isInReview;
+                    const canResolve = !isBusy && !isResolved;
+                    return (
+                      <>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{appeal.class_name || "-"}</p>
@@ -1484,17 +1535,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                         Siswa: {appeal.student_name || "-"} ({appeal.student_email || "-"})
                       </p>
                     </div>
-                    <span
-                      className={`rounded-md px-2 py-1 text-xs ${
-                        appeal.status === "resolved_accepted"
-                          ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : appeal.status === "resolved_rejected"
-                            ? "border border-rose-200 bg-rose-50 text-rose-700"
-                            : "border border-amber-200 bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      {appeal.status}
-                    </span>
+                    <span className={`rounded-md px-2 py-1 text-xs ${statusMeta.cls}`}>{statusMeta.label}</span>
                   </div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-3 text-xs">
                     <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">Skor AI: {appeal.ai_score ?? "-"}</span>
@@ -1511,39 +1552,47 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                       <span className="font-semibold">Respons Guru:</span> {appeal.teacher_response}
                     </div>
                   )}
+                  {isResolved && (
+                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700">
+                      Banding ini sudah final. Jika perlu perubahan, gunakan alur banding baru dari siswa.
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      disabled={reviewingAppealId === appeal.id}
+                      disabled={!canMoveToReview}
                       onClick={() => void handleAppealReview(appeal, "in_review")}
                       className="sage-button-outline !px-3 !py-1.5 text-xs"
                     >
-                      Proses
+                      {isBusy ? "Memproses..." : isInReview ? "Sedang Diproses" : "Proses"}
                     </button>
                     <button
                       type="button"
-                      disabled={reviewingAppealId === appeal.id}
+                      disabled={!canResolve}
                       onClick={() => void handleAppealReview(appeal, "resolved_accepted")}
                       className="sage-button !px-3 !py-1.5 text-xs"
                     >
-                      Terima Banding
+                      {isBusy ? "Menyimpan..." : "Terima Banding"}
                     </button>
                     <button
                       type="button"
-                      disabled={reviewingAppealId === appeal.id}
+                      disabled={!canResolve}
                       onClick={() => void handleAppealReview(appeal, "resolved_rejected")}
                       className="sage-button-outline !px-3 !py-1.5 text-xs text-rose-700"
                     >
-                      Tolak Banding
+                      {isBusy ? "Menyimpan..." : "Tolak Banding"}
                     </button>
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
           )}
         </section>
       ) : loading ? (
-        <div className="sage-panel p-10 text-center text-slate-500">Memuat antrian penilaian...</div>
+        <div className="sage-panel p-10 text-center text-slate-500 dark:text-slate-300">Memuat antrian penilaian...</div>
       ) : error ? (
         <div className="sage-panel p-6 text-red-600">{error}</div>
       ) : (
@@ -1552,26 +1601,26 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
             sidebarCollapsed ? "lg:grid-cols-[64px_minmax(0,1fr)]" : "lg:grid-cols-[240px_minmax(0,1fr)]"
           }`}
         >
-          <aside className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" style={{ height: `${panelHeightVh}vh` }}>
-            <div className="border-b border-slate-200 bg-slate-50/70 p-2.5">
+          <aside className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" style={{ height: `${panelHeightVh}vh` }}>
+            <div className="border-b border-slate-200 bg-slate-50/70 p-2.5 dark:border-slate-700 dark:bg-slate-800/80">
               <div className="flex items-center justify-between gap-2">
-                {!sidebarCollapsed && <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Daftar Kelas</p>}
+                {!sidebarCollapsed && <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">Daftar Kelas</p>}
                 <button
                   type="button"
                   onClick={() => setSidebarCollapsed((prev) => !prev)}
-                  className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
                   {sidebarCollapsed ? ">>" : "<<"}
                 </button>
               </div>
               {!sidebarCollapsed && (
                 <label className="relative mt-2 block">
-                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                   <input
                     value={assignmentQuery}
                     onChange={(e) => setAssignmentQuery(e.target.value)}
                     placeholder="Cari konten..."
-                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-slate-300"
+                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400"
                   />
                 </label>
               )}
@@ -1661,12 +1710,12 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
             </div>
           </aside>
 
-          <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" style={{ height: `${panelHeightVh}vh` }}>
-            <div className="sticky top-0 z-10 space-y-2 border-b border-slate-200 bg-white p-3">
+          <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" style={{ height: `${panelHeightVh}vh` }}>
+            <div className="sticky top-0 z-10 space-y-2 border-b border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Daftar Siswa</p>
-                  <p className="text-xs font-semibold text-slate-900">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-300">Daftar Siswa</p>
+                  <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                     {selectedContent
                       ? `${selectedContent.category === "tugas" ? "Tugas" : "Soal"} • ${selectedContent.contentTitle}`
                       : "Pilih konten"}
@@ -1680,7 +1729,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                       type="button"
                       onClick={() => void saveSpreadsheetBatch()}
                       disabled={quickSavingBatch || dirtyCellCount === 0}
-                      className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
                       {quickSavingBatch ? "Menyimpan..." : `Simpan Semua (${dirtyCellCount})`}
                     </button>
@@ -1689,13 +1738,13 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as "newest" | "oldest")}
-                      className="appearance-none rounded-lg border border-slate-200 bg-white py-1 pl-2.5 pr-8 text-[11px] outline-none"
+                      className="appearance-none rounded-lg border border-slate-200 bg-white py-1 pl-2.5 pr-8 text-[11px] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                       style={{ appearance: "none", WebkitAppearance: "none", MozAppearance: "none" }}
                     >
                       <option value="newest">Terbaru</option>
                       <option value="oldest">Terlama</option>
                     </select>
-                    <FiChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <FiChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
                   </div>
                 </div>
               </div>
@@ -1707,12 +1756,12 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                   <TabButton active={statusTab === "all"} onClick={() => setStatusTab("all")}>Semua</TabButton>
                 </div>
                 <label className="relative block min-w-[220px] flex-1 md:max-w-xs">
-                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
                   <input
                     value={studentQuery}
                     onChange={(e) => setStudentQuery(e.target.value)}
                     placeholder="Cari siswa..."
-                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-slate-300"
+                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-400"
                   />
                 </label>
               </div>
@@ -2409,12 +2458,12 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
 
 function StatCard({ title, value, icon }: { title: string; value: string; icon: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">{icon}</span>
+        <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300">{title}</p>
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">{icon}</span>
       </div>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-100">{value}</p>
     </div>
   );
 }
@@ -2435,7 +2484,9 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
       type="button"
       onClick={onClick}
       className={`rounded-full px-2.5 py-1 text-[11px] transition ${
-        active ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+        active
+          ? "bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900"
+          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
       }`}
     >
       {children}

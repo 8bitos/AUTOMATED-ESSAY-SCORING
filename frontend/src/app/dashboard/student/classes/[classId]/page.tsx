@@ -4,15 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-} from "recharts";
-import {
   FiBookOpen,
   FiCheckCircle,
   FiChevronDown,
@@ -165,11 +156,11 @@ const getTypeLabel = (type: SectionContentType): string => {
 };
 
 const getTypeTone = (type: SectionContentType): string => {
-  if (type === "soal") return "bg-blue-100 text-blue-700";
-  if (type === "tugas") return "bg-purple-100 text-purple-700";
-  if (type === "penilaian") return "bg-amber-100 text-amber-700";
-  if (type === "gambar" || type === "video" || type === "upload") return "bg-slate-200 text-slate-700";
-  return "bg-emerald-100 text-emerald-700";
+  if (type === "soal") return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200";
+  if (type === "tugas") return "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200";
+  if (type === "penilaian") return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200";
+  if (type === "gambar" || type === "video" || type === "upload") return "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
+  return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200";
 };
 
 const getSectionSurfaceTone = (type: "materi" | "soal" | "tugas"): string => {
@@ -640,23 +631,6 @@ export default function StudentClassMaterialsPage() {
             .filter((v): v is number => v !== null);
           const feedbackTexts = relatedQuestions.map((q) => String(q.teacher_feedback || "").trim()).filter((v) => v.length > 0);
           const aiFeedbackTexts = relatedQuestions.map((q) => String(q.umpan_balik_ai || "").trim()).filter((v) => v.length > 0);
-          const rubricMap = new Map<string, { scoreSum: number; maxSum: number; count: number }>();
-          relatedQuestions.forEach((q) => {
-            getRubricScoreEntries(q).forEach((entry) => {
-              const key = entry.aspek || "-";
-              const cur = rubricMap.get(key) || { scoreSum: 0, maxSum: 0, count: 0 };
-              rubricMap.set(key, {
-                scoreSum: cur.scoreSum + entry.score,
-                maxSum: cur.maxSum + entry.maxScore,
-                count: cur.count + 1,
-              });
-            });
-          });
-          const rubricRows = Array.from(rubricMap.entries()).map(([aspek, value]) => ({
-            aspek,
-            score: value.count > 0 ? Number((value.scoreSum / value.count).toFixed(2)) : 0,
-            maxScore: value.count > 0 ? Number((value.maxSum / value.count).toFixed(2)) : 1,
-          }));
           const questionItems = relatedQuestions.map((q, idx) => {
             const finalScore = typeof (q.revised_score ?? q.skor_ai) === "number" ? Number(q.revised_score ?? q.skor_ai) : null;
             const status: "belum_submit" | "menunggu_review" | "sudah_dinilai" =
@@ -665,6 +639,7 @@ export default function StudentClassMaterialsPage() {
                 : typeof q.revised_score === "number" || String(q.teacher_feedback || "").trim().length > 0
                   ? "sudah_dinilai"
                   : "menunggu_review";
+            const rubricRows = getRubricScoreEntries(q);
             return {
               id: q.id,
               title: (q.teks_soal || "").trim() || `Soal ${idx + 1}`,
@@ -672,6 +647,9 @@ export default function StudentClassMaterialsPage() {
               finalScore,
               aiScore: typeof q.skor_ai === "number" ? Number(q.skor_ai) : null,
               teacherScore: typeof q.revised_score === "number" ? Number(q.revised_score) : null,
+              rubricRows,
+              aiFeedback: String(q.umpan_balik_ai || "").trim(),
+              teacherFeedback: String(q.teacher_feedback || "").trim(),
               status,
             };
           });
@@ -699,7 +677,6 @@ export default function StudentClassMaterialsPage() {
             teacherAverageScore: teacherAverage,
             feedback: feedbackTexts[0] || "",
             aiFeedback: aiFeedbackTexts[0] || "",
-            rubricRows,
             questionItems,
             status: cardStatus,
           };
@@ -802,7 +779,7 @@ export default function StudentClassMaterialsPage() {
   if (!cls) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="student-class-view space-y-6">
       <section className="sage-panel p-6">
         <Link href="/dashboard/student/my-classes" className="text-sm text-[color:var(--sage-700)] hover:underline">
           ← Kembali ke kelas saya
@@ -829,20 +806,20 @@ export default function StudentClassMaterialsPage() {
           <span className="sage-pill">{submittedMaterials} Materi Selesai</span>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-300 bg-gradient-to-br from-white to-slate-50 px-3 py-2 shadow-sm">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Perlu Dikerjakan</p>
-            <p className="text-lg font-semibold text-slate-900">{pendingMaterials}</p>
+          <div className="rounded-lg border border-slate-300 bg-gradient-to-br from-white to-slate-50 px-3 py-2 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-800">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Perlu Dikerjakan</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{pendingMaterials}</p>
           </div>
-          <div className="rounded-lg border border-slate-300 bg-gradient-to-br from-white to-slate-50 px-3 py-2 shadow-sm">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Sudah Selesai</p>
-            <p className="text-lg font-semibold text-slate-900">{submittedMaterials}</p>
+          <div className="rounded-lg border border-slate-300 bg-gradient-to-br from-white to-slate-50 px-3 py-2 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-800">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Sudah Selesai</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{submittedMaterials}</p>
           </div>
-          <div className="rounded-lg border border-slate-300 bg-gradient-to-br from-white to-slate-50 px-3 py-2 shadow-sm">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Sudah Direview</p>
-            <p className="text-lg font-semibold text-slate-900">{reviewedMaterials}</p>
+          <div className="rounded-lg border border-slate-300 bg-gradient-to-br from-white to-slate-50 px-3 py-2 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-800">
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Sudah Direview</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{reviewedMaterials}</p>
           </div>
         </div>
-        <div className="mt-4 inline-flex rounded-lg border border-slate-300 bg-white p-1">
+        <div className="mt-4 inline-flex rounded-lg border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-900">
           <button
             type="button"
             onClick={() => setActiveTab("materi")}
@@ -923,10 +900,10 @@ export default function StudentClassMaterialsPage() {
                 : "Tanpa Tugas";
           const statusTone =
             summary.status === "submitted"
-              ? "bg-emerald-100 text-emerald-700"
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
               : summary.status === "pending"
-                ? "bg-amber-100 text-amber-700"
-                : "bg-slate-100 text-slate-700";
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+                : "bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
           const type = (material.material_type || "materi") as "materi" | "soal" | "tugas";
           const typeIcon =
             type === "soal" ? <FiFileText size={16} className="text-blue-600" /> : type === "tugas" ? <FiClipboard size={16} className="text-purple-600" /> : <FiBookOpen size={16} className="text-emerald-600" />;
@@ -945,11 +922,11 @@ export default function StudentClassMaterialsPage() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-md border border-slate-300 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                    <span className="rounded-md border border-slate-300 bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200">
                       Section {index + 1}
                     </span>
                     <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${type === "soal" ? "bg-blue-100 text-blue-700" : type === "tugas" ? "bg-purple-100 text-purple-700" : "bg-emerald-100 text-emerald-700"}`}
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${type === "soal" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : type === "tugas" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"}`}
                     >
                       {type === "soal" ? "Soal" : type === "tugas" ? "Tugas" : "Materi"}
                     </span>
@@ -961,21 +938,21 @@ export default function StudentClassMaterialsPage() {
                   </h2>
                   <p className="line-clamp-2 max-w-3xl text-sm leading-relaxed text-[color:var(--ink-600)]">{briefDescription}</p>
                   <div className="flex flex-wrap gap-2 text-xs text-[color:var(--ink-600)]">
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white/85 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                       <FiBookOpen size={13} /> {summary.completedAssignments}/{summary.totalAssignments} Aktivitas
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white/85 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                       <FiCheckCircle size={13} /> {summary.reviewedAssignments}/{summary.totalAssignments} Direview Guru
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white/85 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                       {summary.isRead ? <FiCheckCircle size={13} /> : <FiClock size={13} />}
                       {summary.isRead ? "Materi Dibaca" : "Belum Dibaca"}
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white/85 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                       {summary.status === "submitted" ? <FiCheckCircle size={13} /> : <FiClock size={13} />}
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone}`}>{statusLabel}</span>
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white/85 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/80">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                       <FiLayers size={13} /> {cards.length} Konten
                     </span>
                   </div>
@@ -1610,22 +1587,22 @@ export default function StudentClassMaterialsPage() {
 
                         {soalContents.length > 0 && (
                           <div className="space-y-2">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Konten Soal</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Konten Soal</p>
                             {soalContents.map((content) => {
                               const key = `${row.id}:${content.id}`;
                               const contentCollapsed = !!collapsedGradeContents[key];
                               return (
-                                <div key={content.id} className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                                <div key={content.id} className="rounded-lg border border-blue-200 bg-blue-50/40 p-3 dark:border-blue-800/50 dark:bg-blue-950/30">
                                   <button
                                     type="button"
                                     onClick={() => setCollapsedGradeContents((prev) => ({ ...prev, [key]: !prev[key] }))}
                                     className="flex w-full items-start justify-between gap-2 text-left"
                                   >
                                     <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-slate-900">{content.title}</p>
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{content.title}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <span className="rounded-md border border-blue-200 bg-white px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                      <span className="rounded-md border border-blue-200 bg-white px-2 py-0.5 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-slate-900 dark:text-blue-200">
                                         Skor: {content.averageScore ?? "-"}
                                       </span>
                                       {contentCollapsed ? <FiChevronDown className="mt-0.5 shrink-0" /> : <FiChevronUp className="mt-0.5 shrink-0" />}
@@ -1635,40 +1612,40 @@ export default function StudentClassMaterialsPage() {
                                   {!contentCollapsed && (
                                     <>
                                       <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-5">
-                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                                          <p className="text-slate-500">Total Nilai</p>
-                                          <p className="font-semibold text-slate-900">{content.averageScore ?? "-"}</p>
+                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                          <p className="text-slate-500 dark:text-slate-400">Total Nilai</p>
+                                          <p className="font-semibold text-slate-900 dark:text-slate-100">{content.averageScore ?? "-"}</p>
                                         </div>
-                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                                          <p className="text-slate-500">Skor AI</p>
-                                          <p className="font-semibold text-slate-900">{content.aiAverageScore ?? "-"}</p>
+                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                          <p className="text-slate-500 dark:text-slate-400">Skor AI</p>
+                                          <p className="font-semibold text-slate-900 dark:text-slate-100">{content.aiAverageScore ?? "-"}</p>
                                         </div>
-                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                                          <p className="text-slate-500">Skor Guru</p>
-                                          <p className="font-semibold text-slate-900">{content.teacherAverageScore ?? "-"}</p>
+                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                          <p className="text-slate-500 dark:text-slate-400">Skor Guru</p>
+                                          <p className="font-semibold text-slate-900 dark:text-slate-100">{content.teacherAverageScore ?? "-"}</p>
                                         </div>
-                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                                          <p className="text-slate-500">Submit</p>
-                                          <p className="font-semibold text-slate-900">
+                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                          <p className="text-slate-500 dark:text-slate-400">Submit</p>
+                                          <p className="font-semibold text-slate-900 dark:text-slate-100">
                                             {content.submittedCount}/{content.totalQuestions}
                                           </p>
                                         </div>
-                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                                          <p className="text-slate-500">Dinilai Guru</p>
-                                          <p className="font-semibold text-slate-900">
+                                        <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+                                          <p className="text-slate-500 dark:text-slate-400">Dinilai Guru</p>
+                                          <p className="font-semibold text-slate-900 dark:text-slate-100">
                                             {content.gradedCount}/{content.totalQuestions}
                                           </p>
                                         </div>
                                       </div>
 
-                                      <div className="mt-3 rounded-md border border-slate-200 bg-white p-2">
-                                        <p className="mb-1 text-xs font-semibold text-slate-600">Daftar Soal & Nilai</p>
+                                      <div className="mt-3 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                                        <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">Daftar Soal & Nilai</p>
                                         {content.questionItems.length === 0 ? (
                                           <p className="text-xs text-slate-500">Belum ada soal yang terhubung di konten ini.</p>
                                         ) : (
                                           <div className="space-y-1.5">
                                             {content.questionItems.map((item, idx) => (
-                                              <div key={item.id} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs">
+                                              <div key={item.id} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800/80">
                                                 {(() => {
                                                   const appeal = item.submissionId ? gradeAppealsBySubmission[item.submissionId] : null;
                                                   const questionKey = `${row.id}:${content.id}:${item.id}`;
@@ -1695,11 +1672,11 @@ export default function StudentClassMaterialsPage() {
                                                         }
                                                         className="flex w-full items-start justify-between gap-2 text-left"
                                                       >
-                                                        <p className="min-w-0 flex-1 font-medium text-slate-800">
+                                                        <p className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-100">
                                                           {idx + 1}. {item.title}
                                                         </p>
                                                         <div className="flex items-center gap-1.5">
-                                                          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700">
+                                                          <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                                                             Nilai: {item.finalScore ?? "-"}
                                                           </span>
                                                           {questionCollapsed ? <FiChevronDown className="shrink-0" /> : <FiChevronUp className="shrink-0" />}
@@ -1707,20 +1684,20 @@ export default function StudentClassMaterialsPage() {
                                                       </button>
                                                       {!questionCollapsed && (
                                                         <>
-                                                          <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-700">
-                                                            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">
+                                                          <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-700 dark:text-slate-200">
+                                                            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 dark:border-slate-700 dark:bg-slate-900">
                                                               AI: {item.aiScore ?? "-"}
                                                             </span>
-                                                            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5">
+                                                            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 dark:border-slate-700 dark:bg-slate-900">
                                                               Guru: {item.teacherScore ?? "-"}
                                                             </span>
                                                             <span
                                                               className={`rounded px-1.5 py-0.5 ${
                                                                 item.status === "sudah_dinilai"
-                                                                  ? "bg-emerald-100 text-emerald-700"
+                                                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
                                                                   : item.status === "menunggu_review"
-                                                                    ? "bg-amber-100 text-amber-700"
-                                                                    : "bg-slate-200 text-slate-700"
+                                                                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+                                                                    : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
                                                               }`}
                                                             >
                                                               {item.status === "sudah_dinilai"
@@ -1729,6 +1706,37 @@ export default function StudentClassMaterialsPage() {
                                                                   ? "Menunggu Review"
                                                                   : "Belum Submit"}
                                                             </span>
+                                                          </div>
+                                                          <div className="mt-2 rounded border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                                                            <p className="mb-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                                                              Rubrik Soal #{idx + 1}
+                                                            </p>
+                                                            {item.rubricRows.length === 0 ? (
+                                                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                                Belum ada skor rubrik per aspek untuk soal ini.
+                                                              </p>
+                                                            ) : (
+                                                              <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                                                {item.rubricRows.map((rubric) => (
+                                                                  <span
+                                                                    key={`${item.id}-${rubric.aspek}`}
+                                                                    className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                                                  >
+                                                                    {rubric.aspek}: {rubric.score} / {rubric.maxScore}
+                                                                  </span>
+                                                                ))}
+                                                              </div>
+                                                            )}
+                                                          </div>
+                                                          <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                                                            <div className="rounded border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                                              <p className="mb-0.5 font-semibold text-slate-600 dark:text-slate-300">Feedback AI (Soal Ini)</p>
+                                                              <p className="whitespace-pre-line">{item.aiFeedback || "-"}</p>
+                                                            </div>
+                                                            <div className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                                                              <p className="mb-0.5 font-semibold">Feedback Guru (Soal Ini)</p>
+                                                              <p className="whitespace-pre-line">{item.teacherFeedback || "-"}</p>
+                                                            </div>
                                                           </div>
                                                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                                             {appealLabel && (
@@ -1791,44 +1799,6 @@ export default function StudentClassMaterialsPage() {
                                         )}
                                       </div>
 
-                                      <div className="mt-3 rounded-md border border-slate-200 bg-white p-2">
-                                        <p className="mb-1 text-xs font-semibold text-slate-600">Nilai Rubrik per Aspek</p>
-                                        {content.rubricRows.length === 0 ? (
-                                          <p className="text-xs text-slate-500">Rubrik belum tersedia.</p>
-                                        ) : (
-                                          <>
-                                            <div className="h-40">
-                                              <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={content.rubricRows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                                                  <CartesianGrid strokeDasharray="3 3" />
-                                                  <XAxis dataKey="aspek" tick={{ fontSize: 10 }} interval={0} angle={-10} textAnchor="end" height={42} />
-                                                  <YAxis tick={{ fontSize: 11 }} />
-                                                  <Tooltip />
-                                                  <Bar dataKey="score" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                                                </BarChart>
-                                              </ResponsiveContainer>
-                                            </div>
-                                            <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                                              {content.rubricRows.map((rubric) => (
-                                                <span key={`${content.id}-${rubric.aspek}`} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-700">
-                                                  {rubric.aspek}: {rubric.score} / {rubric.maxScore}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-
-                                      <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                                        <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700">
-                                          <p className="mb-1 font-semibold text-slate-600">Feedback AI</p>
-                                          <p className="whitespace-pre-line">{content.aiFeedback || "-"}</p>
-                                        </div>
-                                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-800">
-                                          <p className="mb-1 font-semibold">Feedback Guru</p>
-                                          <p className="whitespace-pre-line">{content.feedback || "-"}</p>
-                                        </div>
-                                      </div>
                                     </>
                                   )}
                                 </div>
@@ -1839,20 +1809,20 @@ export default function StudentClassMaterialsPage() {
 
                         {tugasContents.length > 0 && (
                           <div className="space-y-2">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Konten Tugas</p>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Konten Tugas</p>
                             {tugasContents.map((content) => {
                               const key = `${row.id}:${content.id}`;
                               const contentCollapsed = !!collapsedGradeContents[key];
                               return (
-                                <div key={content.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                                <div key={content.id} className="rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-800/50 dark:bg-violet-950/30">
                                   <button
                                     type="button"
                                     onClick={() => setCollapsedGradeContents((prev) => ({ ...prev, [key]: !prev[key] }))}
                                     className="flex w-full items-start justify-between gap-2 text-left"
                                   >
-                                    <p className="text-sm font-semibold text-slate-900">{content.title}</p>
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{content.title}</p>
                                     <div className="flex items-center gap-2">
-                                      <span className="rounded-md border border-violet-200 bg-white px-2 py-0.5 text-xs font-semibold text-violet-700">
+                                      <span className="rounded-md border border-violet-200 bg-white px-2 py-0.5 text-xs font-semibold text-violet-700 dark:border-violet-800 dark:bg-slate-900 dark:text-violet-200">
                                         Skor: {content.averageScore ?? "-"}
                                       </span>
                                       {contentCollapsed ? <FiChevronDown className="mt-0.5 shrink-0" /> : <FiChevronUp className="mt-0.5 shrink-0" />}
@@ -1861,22 +1831,22 @@ export default function StudentClassMaterialsPage() {
                                   {!contentCollapsed && (
                                     <>
                                       <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700">
+                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                                           Submit: {content.submittedCount}/{content.totalQuestions}
                                         </span>
-                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700">
+                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                                           Skor AI: {content.aiAverageScore ?? "-"}
                                         </span>
-                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700">
+                                        <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                                           Skor Guru: {content.teacherAverageScore ?? "-"}
                                         </span>
                                       </div>
                                       <div className="mt-2 grid gap-2 lg:grid-cols-2">
-                                        <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700">
-                                          <p className="mb-1 font-semibold text-slate-600">Feedback AI</p>
+                                        <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                          <p className="mb-1 font-semibold text-slate-600 dark:text-slate-300">Feedback AI</p>
                                           <p className="whitespace-pre-line">{content.aiFeedback || "-"}</p>
                                         </div>
-                                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-800">
+                                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
                                           <p className="mb-1 font-semibold">Feedback Guru</p>
                                           <p className="whitespace-pre-line">{content.feedback || "-"}</p>
                                         </div>

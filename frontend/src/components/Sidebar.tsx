@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link'; // Import Link for navigation
 import { usePathname } from 'next/navigation'; // To highlight active link
 import { User } from '@/context/AuthContext'; // Import User type
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 import {
   fetchStudentNotifications,
   loadStudentNotificationPrefs,
@@ -23,6 +25,7 @@ type NavItem = {
   label: string;
   includeChildren?: boolean;
   badgeKey?: string;
+  variant?: "default" | "updates";
 };
 
 type TeacherNotificationPrefs = {
@@ -47,6 +50,15 @@ type StudentClassItem = {
   class_name: string;
 };
 
+type AdminProfileRequestItem = {
+  id: string;
+};
+
+type PublicFeatureFlagItem = {
+  key: string;
+  value: boolean;
+};
+
 const TEACHER_NOTIFICATION_PREFS_KEY = "teacher_notification_preferences";
 const SUPERADMIN_NOTIFICATION_PREFS_KEY = "superadmin_notification_preferences";
 const NOTIF_READ_STORAGE_PREFIX = "read_notifications_";
@@ -66,7 +78,13 @@ const getGradeFromClassName = (className: string): "10" | "11" | "12" | "other" 
 
 const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) => {
   const pathname = usePathname();
+  const { logout } = useAuth();
+  const router = useRouter();
   const userRole = user.peran;
+  const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
+  // UI toggle from backend feature flag.
+  // Default true so menu is visible unless explicitly disabled by superadmin.
+  const [showUpdatesMenu, setShowUpdatesMenu] = useState(true);
   const [badgeMap, setBadgeMap] = useState<Record<string, boolean>>({});
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(DEFAULT_NOTIFICATION_POLL_INTERVAL_MS);
   const [teacherClasses, setTeacherClasses] = useState<TeacherClassItem[]>([]);
@@ -264,7 +282,9 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
         try {
           const res = await fetch("/api/admin/profile-requests?status=pending", { credentials: "include" });
           const items = res.ok ? await res.json() : [];
-          next.superadmin_approval = (Array.isArray(items) ? items : []).some((item: any) => !readIDs.has(`profile-${item.id}`));
+          next.superadmin_approval = (Array.isArray(items) ? (items as AdminProfileRequestItem[]) : []).some(
+            (item) => !readIDs.has(`profile-${item.id}`)
+          );
         } catch {
           next.superadmin_approval = false;
         }
@@ -353,6 +373,35 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     setOpenClassGroups((prev) => ({ ...prev, [label]: true }));
   }, [currentStudentClassId, studentClasses]);
 
+  useEffect(() => {
+    if (!sidebarOpen) setMobileProfileOpen(false);
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    let active = true;
+    const loadPublicFlags = async () => {
+      try {
+        const res = await fetch("/api/feature-flags/public", { credentials: "include" });
+        if (!res.ok) return;
+        const body = await res.json().catch(() => ({}));
+        const items = Array.isArray(body?.items) ? (body.items as PublicFeatureFlagItem[]) : [];
+        const updatesMenuFlag = items.find((item) => item.key === "feature_show_updates_sidebar");
+        if (active && updatesMenuFlag) {
+          setShowUpdatesMenu(Boolean(updatesMenuFlag.value));
+        }
+      } catch {
+        // Keep default true to avoid accidental menu loss.
+      }
+    };
+    void loadPublicFlags();
+    const onFocus = () => void loadPublicFlags();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
   // Define navigation items for Teacher
   const teacherNavItems: NavItem[] = [
     { href: '/dashboard/teacher', icon: (
@@ -433,19 +482,33 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     ), label: 'Manajemen User' },
   ];
 
+  const updatesLink =
+    userRole === 'student'
+      ? '/dashboard/student/updates'
+      : userRole === 'superadmin'
+      ? '/dashboard/superadmin/updates'
+      : '/dashboard/teacher/updates';
+
+  const updatesNavItem: NavItem = {
+    href: updatesLink,
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h8m-8 4h8m-8 4h5M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+      </svg>
+    ),
+    label: 'Update Sistem/Revisi',
+    variant: 'updates',
+  };
+
   const navItems =
     userRole === 'student'
       ? studentNavItems
       : userRole === 'superadmin'
       ? superadminNavItems
       : teacherNavItems;
-
-  const logoLink =
-    userRole === 'student'
-      ? '/dashboard/student'
-      : userRole === 'superadmin'
-      ? '/dashboard/superadmin'
-      : '/dashboard/teacher/classes';
+  // Single source of truth for sidebar list:
+  // this keeps future formatting changes localized in one place.
+  const navItemsWithUpdates = showUpdatesMenu ? [...navItems, updatesNavItem] : navItems;
 
   const settingsLink =
     userRole === 'student'
@@ -455,66 +518,114 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
       : '/dashboard/teacher/settings';
 
   const isSettingsActive = pathname === settingsLink || pathname.startsWith(`${settingsLink}/`);
+  const userInitial = (user?.nama_lengkap || "?").trim().charAt(0).toUpperCase() || "?";
+  const handleLogout = async () => {
+    await logout();
+    setMobileProfileOpen(false);
+    setSidebarOpen(false);
+    router.push("/login");
+  };
 
   return (
     <>
       {/* Sidebar backdrop (mobile) */}
       <div
-        className={`fixed inset-0 bg-gray-900 bg-opacity-30 z-40 md:hidden md:z-auto transition-opacity duration-200 ${
+        className={`fixed inset-0 z-40 bg-gray-900/45 backdrop-blur-[1px] md:hidden md:z-auto transition-opacity duration-300 ${
           sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         aria-hidden="true"
         onClick={() => setSidebarOpen(false)}
       ></div>
 
+      {/* Floating open button (mobile) */}
+      <button
+        type="button"
+        className={`fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-r-xl border border-slate-200 bg-white px-2 py-2 text-slate-700 shadow-lg transition md:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 ${
+          sidebarOpen ? "pointer-events-none opacity-0" : "opacity-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+        }`}
+        aria-label="Buka sidebar"
+        aria-controls="sidebar"
+        aria-expanded={sidebarOpen}
+        onClick={() => setSidebarOpen(true)}
+      >
+        <span className="text-sm font-semibold">{">"}</span>
+      </button>
+
       {/* Sidebar */}
       <div
         id="sidebar"
-        className={`flex flex-col absolute z-40 left-0 top-0 md:static md:left-auto md:top-auto transform h-screen overflow-hidden no-scrollbar w-64 shrink-0 bg-white border-r border-slate-200 px-5 pt-6 pb-4 transition-transform duration-200 ease-in-out ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-64'
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-72 shrink-0 transform flex-col overflow-hidden border-r border-slate-200 bg-white px-5 pb-4 pt-6 shadow-xl transition-transform duration-300 ease-out dark:border-slate-700 dark:bg-slate-900 md:static md:left-auto md:top-auto md:z-40 md:w-64 md:translate-x-0 md:shadow-none ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } md:translate-x-0`}
       >
         {/* Sidebar Header */}
-        <div className="flex justify-between mb-8 pr-3 sm:px-2">
+        <div className="mb-8 flex items-center justify-between gap-3 pr-3 sm:px-2">
           {/* Close button */}
           <button
-            className="md:hidden text-slate-500 hover:text-slate-700"
+            className="md:hidden text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             aria-controls="sidebar"
             aria-expanded={sidebarOpen}
           >
             <span className="sr-only">Close sidebar</span>
-            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10.7 18.7l1.4-1.4L7.8 13H20v-2H7.8l4.3-4.3-1.4-1.4L4 12z" />
+            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 6l-6 6 6 6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          {/* Logo */}
-          <Link href={logoLink} className="block">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center text-sm font-semibold">
-                S
-              </div>
-              <div className="leading-tight">
-                <p className="text-xs uppercase tracking-[0.28em] text-slate-700">SAGE</p>
-                <p className="text-[11px] text-slate-500">Smart Automated Grading Engine</p>
-              </div>
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left md:hidden"
+            onClick={() => setMobileProfileOpen((prev) => !prev)}
+            aria-expanded={mobileProfileOpen}
+            aria-label="Buka menu profil"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+              {userInitial}
             </div>
-          </Link>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{user.nama_lengkap || "Pengguna"}</p>
+              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{userRole}</p>
+            </div>
+            <svg className={`ml-auto h-4 w-4 shrink-0 text-slate-500 transition-transform dark:text-slate-400 ${mobileProfileOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+              {userInitial}
+            </div>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{user.nama_lengkap || "Pengguna"}</p>
+              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{userRole}</p>
+            </div>
+          </div>
         </div>
+        {mobileProfileOpen && (
+          <div className="mb-5 -mt-5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70 md:hidden">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full rounded-md px-2 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              Logout
+            </button>
+          </div>
+        )}
 
         {/* Sidebar Links */}
         <div className="space-y-6 flex-1 min-h-0">
           {/* Pages group */}
           <div className="h-full overflow-y-auto pr-1">
-            <h3 className="text-xs uppercase text-slate-400 font-semibold pl-3 tracking-[0.24em]">
+            <h3 className="text-xs uppercase text-slate-400 font-semibold pl-3 tracking-[0.24em] dark:text-slate-500">
               Navigasi
             </h3>
             <ul className="mt-3">
-              {navItems.map((item) => {
+              {navItemsWithUpdates.map((item) => {
                 const active = isPathActive(item.href, item.includeChildren);
                 const isTeacherClassesMenu = userRole === "teacher" && item.href === "/dashboard/teacher/classes";
                 const isStudentClassesMenu = userRole === "student" && item.href === "/dashboard/student/my-classes";
                 const hasClassSubmenu = isTeacherClassesMenu || isStudentClassesMenu;
+                const isUpdatesItem = item.variant === "updates";
                 const classSubmenuOpen = isTeacherClassesMenu ? isClassSubmenuOpen : isStudentClassSubmenuOpen;
                 const classSections = isTeacherClassesMenu ? teacherClassSections : studentClassSections;
                 const classesLoading = isTeacherClassesMenu ? isTeacherClassesLoading : isStudentClassesLoading;
@@ -523,15 +634,23 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                 const classHrefBase = isTeacherClassesMenu ? "/dashboard/teacher/class" : "/dashboard/student/classes";
                 const itemContainerClass = hasClassSubmenu
                   ? ""
+                  : isUpdatesItem
+                  ? active
+                    ? "border border-sky-500 bg-slate-200 dark:border-sky-500 dark:bg-slate-800/80"
+                    : "border border-slate-300 bg-transparent hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/70"
                   : active
-                  ? "bg-slate-100"
-                  : "hover:bg-slate-50";
+                  ? "bg-slate-100 dark:bg-slate-800/80"
+                  : "hover:bg-slate-50 dark:hover:bg-slate-800/70";
                 const itemSpacingClass = hasClassSubmenu ? "px-0 py-0" : "pl-4 pr-3 py-2.5";
                 const rowContainerClass = hasClassSubmenu
                   ? active
-                    ? "relative w-full pl-4 pr-1 py-2.5 bg-slate-100 rounded-xl transition"
-                    : "relative w-full pl-4 pr-1 py-2.5 hover:bg-slate-50 rounded-xl transition"
+                    ? "relative w-full pl-4 pr-1 py-2.5 bg-slate-100 rounded-xl transition dark:bg-slate-800/80"
+                    : "relative w-full pl-4 pr-1 py-2.5 hover:bg-slate-50 rounded-xl transition dark:hover:bg-slate-800/70"
                   : "";
+                const iconClass = isUpdatesItem && active ? "text-sky-700 dark:text-sky-300" : "text-slate-500 dark:text-slate-400";
+                const infoBadgeClass = active
+                  ? "bg-sky-600 text-white dark:bg-sky-400 dark:text-slate-900"
+                  : "bg-slate-300 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
                 return (
                 <li
                   key={item.href}
@@ -540,13 +659,18 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                   <div className={`sidebar-nav-row flex items-center ${rowContainerClass}`}>
                     <Link
                       href={item.href}
-                      className={`sidebar-nav-link flex items-center text-slate-600 ${hasClassSubmenu ? 'flex-1 min-w-0 pr-12' : ''} ${active && 'text-slate-900 font-semibold'}`}
+                      className={`sidebar-nav-link flex w-full items-center text-slate-600 dark:text-slate-300 ${hasClassSubmenu ? 'flex-1 min-w-0 pr-12' : ''} ${active && 'text-slate-900 font-semibold dark:text-slate-100'} ${isUpdatesItem && active ? 'text-sky-800 dark:text-sky-200' : ''}`}
                       onClick={() => setSidebarOpen(false)} // Close sidebar on mobile
                     >
-                      <span className="sidebar-nav-icon text-slate-500">{item.icon}</span>
+                      <span className={`sidebar-nav-icon ${iconClass}`}>{item.icon}</span>
                       <span className="text-sm font-medium ml-3 lg:opacity-100 duration-200 truncate">
                         {item.label}
                       </span>
+                      {isUpdatesItem && (
+                        <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${infoBadgeClass}`}>
+                          Info
+                        </span>
+                      )}
                     </Link>
                     {(item.badgeKey && badgeMap[item.badgeKey]) || hasClassSubmenu ? (
                       <div className={hasClassSubmenu ? "absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2" : "ml-auto flex items-center gap-2"}>
@@ -563,7 +687,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                                 setStudentClassSubmenuOpen((prev) => !prev);
                               }
                             }}
-                            className="rounded-md p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                            className="rounded-md p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
                             aria-label="Toggle submenu manajemen kelas"
                             aria-expanded={classSubmenuOpen}
                           >
@@ -577,12 +701,12 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                   </div>
 
                   {hasClassSubmenu && classSubmenuOpen && (
-                    <div className="mt-2 ml-9 border-l border-slate-200 pl-3 space-y-2">
+                    <div className="mt-2 ml-9 border-l border-slate-200 pl-3 space-y-2 dark:border-slate-700">
                       {classesLoading && (
-                        <p className="text-xs text-slate-500">Memuat kelas...</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Memuat kelas...</p>
                       )}
                       {!classesLoading && totalClasses === 0 && (
-                        <p className="text-xs text-slate-500">Belum ada kelas</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Belum ada kelas</p>
                       )}
                       {!classesLoading &&
                         classSections.map((section) => (
@@ -593,7 +717,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                                 onClick={() =>
                                   setOpenClassGroups((prev) => ({ ...prev, [section.label]: !prev[section.label] }))
                                 }
-                                className="flex w-full items-center justify-between rounded-md pl-2.5 pr-1 py-1 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:bg-slate-100"
+                                className="flex w-full items-center justify-between rounded-md pl-2.5 pr-1 py-1 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                                 aria-expanded={!!openClassGroups[section.label]}
                                 aria-label={`Toggle ${section.label}`}
                               >
@@ -616,8 +740,8 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                                           }}
                                           className={`sidebar-class-subitem block rounded-md px-3 py-1 text-xs transition ${
                                             classActive
-                                              ? "bg-slate-200 text-slate-900 font-medium"
-                                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                              ? "bg-slate-200 text-slate-900 font-medium dark:bg-slate-700 dark:text-slate-100"
+                                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                                           }`}
                                         >
                                           {cls.class_name}
@@ -639,15 +763,15 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
           </div>
         </div>
 
-        <div className="sticky bottom-0 pt-3 border-t border-slate-200">
+        <div className="sticky bottom-0 pt-3 border-t border-slate-200 dark:border-slate-700">
           <Link
             href={settingsLink}
             className={`sidebar-settings-link flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-              isSettingsActive ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+              isSettingsActive ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
             }`}
             onClick={() => setSidebarOpen(false)}
           >
-            <span className="text-slate-500">
+            <span className="text-slate-500 dark:text-slate-400">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.3 4.3a1 1 0 011.4 0l.7.7a1 1 0 001 .2l1-.3a1 1 0 011.2.7l.3 1a1 1 0 00.8.7l1 .2a1 1 0 01.8 1.2l-.3 1a1 1 0 00.2 1l.7.7a1 1 0 010 1.4l-.7.7a1 1 0 00-.2 1l.3 1a1 1 0 01-.8 1.2l-1 .2a1 1 0 00-.8.7l-.3 1a1 1 0 01-1.2.7l-1-.3a1 1 0 00-1 .2l-.7.7a1 1 0 01-1.4 0l-.7-.7a1 1 0 00-1-.2l-1 .3a1 1 0 01-1.2-.7l-.3-1a1 1 0 00-.8-.7l-1-.2a1 1 0 01-.8-1.2l.3-1a1 1 0 00-.2-1l-.7-.7a1 1 0 010-1.4l.7-.7a1 1 0 00.2-1l-.3-1a1 1 0 01.8-1.2l1-.2a1 1 0 00.8-.7l.3-1a1 1 0 011.2-.7l1 .3a1 1 0 001-.2l.7-.7z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15a3 3 0 100-6 3 3 0 000 6z"></path></svg>
             </span>
             <span className="ml-3">Setting</span>

@@ -37,47 +37,47 @@ export default function Home() {
         <div className="pointer-events-none absolute -top-16 -right-32 h-72 w-72 rounded-full bg-slate-700/40 blur-3xl animate-blob" />
         <div className="pointer-events-none absolute top-24 left-10 h-36 w-36 rounded-full bg-sky-500/30 blur-3xl animate-blob animation-delay-2000" />
         <div className="pointer-events-none absolute bottom-16 right-16 h-40 w-40 rounded-full bg-emerald-500/40 blur-3xl animate-blob animation-delay-4000" />
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-10 md:py-16">
-          <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 md:gap-10 md:py-16">
+          <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-xl font-semibold text-white backdrop-blur">
                 S
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">SAGE LMS</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-xs sm:tracking-[0.4em]">SAGE LMS</p>
                 <p className="text-sm text-slate-300">Smart Academic Grading Engine</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Link href="/login" className="sage-button-outline text-xs">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
+              <Link href="/login" className="sage-button-outline w-full justify-center text-xs">
                 Masuk
               </Link>
-              <Link href="/register" className="sage-button text-xs">
+              <Link href="/register" className="sage-button w-full justify-center text-xs">
                 Daftar
               </Link>
             </div>
           </header>
 
-          <section className="grid gap-8 rounded-3xl bg-white/5 p-6 md:grid-cols-[1.15fr_0.85fr] md:p-10">
-            <div className="space-y-6">
-              <span className="text-xs font-semibold uppercase tracking-[0.4em] text-emerald-300">
+          <section className="grid gap-6 rounded-3xl bg-white/5 p-4 sm:p-6 md:grid-cols-[1.15fr_0.85fr] md:gap-8 md:p-10">
+            <div className="space-y-5 md:space-y-6">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-300 sm:text-xs sm:tracking-[0.4em]">
                 Sistem penilaian kelas 10
               </span>
-              <h1 className="text-4xl font-semibold leading-tight text-white md:text-5xl">
+              <h1 className="text-3xl font-semibold leading-tight text-white sm:text-4xl md:text-5xl">
                 Penilaian esai otomatis tanpa kompromi akurasi, siap untuk kelas menengah atas.
               </h1>
-              <p className="text-lg text-slate-300">
+              <p className="text-base leading-relaxed text-slate-300 md:text-lg">
                 SAGE menggabungkan rubrik guru, AI Gemini yang deterministik, dan dashboard transparan supaya nilai yang keluar selalu berbasis bukti dan bisa diaudit kapan saja.
               </p>
-              <div className="flex flex-wrap gap-4">
-                <Link href="/login" className="sage-button">
+              <div className="grid gap-3 sm:flex sm:flex-wrap sm:gap-4">
+                <Link href="/login" className="sage-button w-full justify-center sm:w-auto">
                   Masuk ke Dashboard
                 </Link>
-                <Link href="/register" className="sage-button-outline">
+                <Link href="/register" className="sage-button-outline w-full justify-center sm:w-auto">
                   Daftar Akun Baru
                 </Link>
               </div>
-              <div className="flex flex-wrap gap-6 text-sm text-slate-300">
+              <div className="grid grid-cols-1 gap-4 text-sm text-slate-300 sm:grid-cols-3 sm:gap-6">
                 {highlights.map((item) => (
                   <div key={item.label}>
                     <p className="text-2xl font-semibold text-emerald-300">{item.label}</p>
@@ -86,10 +86,10 @@ export default function Home() {
                 ))}
               </div>
             </div>
-            <div className="relative rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/60 to-slate-900/10 p-6 shadow-xl">
+            <div className="relative rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/60 to-slate-900/10 p-5 shadow-xl sm:p-6">
               <div className="space-y-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Overview AI</p>
-                <h2 className="text-2xl font-semibold text-white">Rangkaian penilaian</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:text-xs sm:tracking-[0.3em]">Overview AI</p>
+                <h2 className="text-xl font-semibold text-white sm:text-2xl">Rangkaian penilaian</h2>
                 <p className="text-sm text-slate-300">
                   Siswa mengunggah esai → AI menilai per aspek dalam JSON → skor dihitung & disimpan → guru bisa periksa lalu beri revisi.
                 </p>
@@ -111,13 +111,13 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="grid gap-6 rounded-3xl bg-white/5 p-6 md:p-10">
+          <section className="grid gap-6 rounded-3xl bg-white/5 p-4 sm:p-6 md:p-10">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-emerald-300">Bagaimana AI menilai</p>
-                <h2 className="text-2xl font-semibold text-white">Akurasi tanpa hallucination</h2>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300 sm:text-xs sm:tracking-[0.3em]">Bagaimana AI menilai</p>
+                <h2 className="text-xl font-semibold text-white sm:text-2xl">Akurasi tanpa hallucination</h2>
               </div>
-              <Link href="/dashboard/superadmin/settings/grading-mode" className="sage-button-outline text-xs">
+              <Link href="/dashboard/superadmin/settings/grading-mode" className="sage-button-outline w-full justify-center text-xs sm:w-auto">
                 Lihat mode grading
               </Link>
             </div>
@@ -131,9 +131,9 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="grid gap-6 rounded-3xl bg-gradient-to-br from-indigo-500/30 to-slate-900/60 p-6 text-slate-900 shadow-xl md:grid-cols-2">
+          <section className="grid gap-6 rounded-3xl bg-gradient-to-br from-indigo-500/30 to-slate-900/60 p-4 text-slate-900 shadow-xl sm:p-6 md:grid-cols-2">
             <div className="space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200">Timeline penilaian</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-200 sm:text-xs sm:tracking-[0.3em]">Timeline penilaian</p>
               <ol className="space-y-3 text-sm text-slate-900">
                 <li className="rounded-xl bg-white/80 p-4 shadow">
                   <p className="font-semibold">1. Submission</p>
@@ -150,8 +150,8 @@ export default function Home() {
               </ol>
             </div>
             <div className="space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200">Overview sistem</p>
-              <p className="text-sm text-white/80">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-200 sm:text-xs sm:tracking-[0.3em]">Overview sistem</p>
+              <p className="text-sm leading-relaxed text-white/80">
                 SAGE terdiri dari backend Go (JWT auth, queue grading, migrations), database PostgreSQL, frontend Next.js, serta antarmuka superadmin/teacher/student. AIService bertugas berkomunikasi dengan Gemini, AI grading cache menjaga determinisme, dan setting grading mode membuat kamu bisa pilih instant atau queued sesuai kebutuhan kelas.
               </p>
               <div className="grid gap-3 text-sm">

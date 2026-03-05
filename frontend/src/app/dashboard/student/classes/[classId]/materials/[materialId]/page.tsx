@@ -44,6 +44,8 @@ interface EssayQuestion {
   rubrics?: QuestionRubric[];
   submission_id?: string;
   student_essay_text?: string;
+  ai_grading_status?: "queued" | "processing" | "completed" | "failed";
+  ai_grading_error?: string;
   skor_ai?: number;
   umpan_balik_ai?: string;
   revised_score?: number;
@@ -337,6 +339,21 @@ const getRubricScoreEntries = (question: EssayQuestion) => {
   });
 };
 
+const getQuestionGradingState = (
+  question: EssayQuestion
+): "not_submitted" | "queued" | "processing" | "completed" | "failed" | "waiting_result" => {
+  if (!question.submission_id) return "not_submitted";
+  const status = (question.ai_grading_status || "").toLowerCase();
+  if (status === "queued") return "queued";
+  if (status === "processing") return "processing";
+  if (status === "failed") return "failed";
+  const hasScore = typeof question.revised_score === "number" || typeof question.skor_ai === "number";
+  const hasFeedback = (question.teacher_feedback ?? "").trim().length > 0 || (question.umpan_balik_ai ?? "").trim().length > 0;
+  if (hasScore || hasFeedback) return "completed";
+  if (status === "completed") return "waiting_result";
+  return "waiting_result";
+};
+
 export default function StudentMaterialDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -366,11 +383,13 @@ export default function StudentMaterialDetailPage() {
   const [taskAnswerFileName, setTaskAnswerFileName] = useState("");
   const [taskPendingFile, setTaskPendingFile] = useState<File | null>(null);
   const [taskUploading, setTaskUploading] = useState(false);
+  const [backgroundSyncing, setBackgroundSyncing] = useState(false);
 
-  const fetchData = useCallback(async (showLoader = true) => {
-    if (!classId || !materialId) return;
+  const fetchData = useCallback(async (showLoader = true): Promise<Material | null> => {
+    if (!classId || !materialId) return null;
 
     if (showLoader) setLoading(true);
+    if (!showLoader) setBackgroundSyncing(true);
     try {
       const res = await fetch(`/api/student/classes/${classId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Gagal memuat data materi.");
@@ -389,10 +408,13 @@ export default function StudentMaterialDetailPage() {
         });
         return next;
       });
+      return selected;
     } catch (err: any) {
       setError(err.message || "Terjadi kesalahan.");
+      return null;
     } finally {
       if (showLoader) setLoading(false);
+      if (!showLoader) setBackgroundSyncing(false);
     }
   }, [classId, materialId]);
 
@@ -450,7 +472,19 @@ export default function StudentMaterialDetailPage() {
   const reviewedCount = questions.filter(
     (q) => !!q.submission_id && (q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0)
   ).length;
+  const pendingEvaluationCount = questions.filter((q) => {
+    const state = getQuestionGradingState(q);
+    return state === "queued" || state === "processing" || state === "waiting_result";
+  }).length;
   const canShowResults = isSoalContext || isTugasContext;
+
+  useEffect(() => {
+    if (!canShowResults || pendingEvaluationCount === 0) return;
+    const timer = setInterval(() => {
+      void fetchData(false);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [canShowResults, pendingEvaluationCount, fetchData]);
 
   useEffect(() => {
     if (!material) return;
@@ -657,7 +691,14 @@ export default function StudentMaterialDetailPage() {
       }
 
       const data = await res.json().catch(() => ({}));
-      setSubmitMessage((prev) => ({ ...prev, [questionId]: data?.grading_message || "Jawaban berhasil dikirim." }));
+      const status = String(data?.grading_status || "").toLowerCase();
+      const defaultMessage =
+        status === "completed"
+          ? "Jawaban berhasil dinilai."
+          : status === "failed"
+            ? "Jawaban diterima, tetapi gagal masuk antrian AI."
+            : "Jawaban diterima dan sedang diproses AI.";
+      setSubmitMessage((prev) => ({ ...prev, [questionId]: data?.grading_message || defaultMessage }));
       await fetchData(false);
     } catch (err: any) {
       setSubmitMessage((prev) => ({ ...prev, [questionId]: err.message || "Terjadi kesalahan saat submit." }));
@@ -769,7 +810,14 @@ export default function StudentMaterialDetailPage() {
         throw new Error(data?.message || "Gagal mengirim tugas.");
       }
       const data = await res.json().catch(() => ({}));
-      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: data?.grading_message || "Tugas berhasil dikirim." }));
+      const status = String(data?.grading_status || "").toLowerCase();
+      const defaultMessage =
+        status === "completed"
+          ? "Tugas berhasil dikirim dan siap direview guru."
+          : status === "failed"
+            ? "Tugas terkirim, tetapi ada masalah pada proses penilaian."
+            : "Tugas berhasil dikirim.";
+      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: data?.grading_message || defaultMessage }));
       await fetchData(false);
     } catch (err: any) {
       setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: err?.message || "Terjadi kesalahan saat submit tugas." }));
@@ -818,6 +866,7 @@ export default function StudentMaterialDetailPage() {
           <span className="sage-pill">{isTugasContext ? "1 Form Submisi" : `${questions.length} Soal`}</span>
           <span className="sage-pill">{submittedCount} Sudah Submit</span>
           <span className="sage-pill">{reviewedCount} Sudah Direview</span>
+          {pendingEvaluationCount > 0 && <span className="sage-pill bg-amber-100 text-amber-800">{pendingEvaluationCount} Sedang Dinilai AI</span>}
         </div>
       </section>
 
@@ -1042,6 +1091,16 @@ export default function StudentMaterialDetailPage() {
                 <p className="text-sm text-[color:var(--ink-500)]">Form submisi tugas belum tersedia.</p>
               ) : (
                 <div className="space-y-3">
+                  {(() => {
+                    const gradingState = getQuestionGradingState(taskSubmissionQuestion);
+                    if (gradingState !== "queued" && gradingState !== "processing" && gradingState !== "waiting_result") return null;
+                    return (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex items-center gap-2">
+                        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+                        Nilai tugas sedang diproses. Hasil akan muncul otomatis.
+                      </div>
+                    );
+                  })()}
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -1051,7 +1110,15 @@ export default function StudentMaterialDetailPage() {
                       {taskSubmissionQuestion.submission_id ? "Sudah Submit" : "Belum Submit"}
                     </span>
                     {taskSubmissionQuestion.submission_id && (
-                      <span className="sage-pill">Nilai: {taskSubmissionQuestion.revised_score ?? taskSubmissionQuestion.skor_ai ?? "-"}</span>
+                      <span className="sage-pill">
+                        Nilai: {(() => {
+                          const gradingState = getQuestionGradingState(taskSubmissionQuestion);
+                          if (gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result") {
+                            return "Sedang diproses...";
+                          }
+                          return taskSubmissionQuestion.revised_score ?? taskSubmissionQuestion.skor_ai ?? "-";
+                        })()}
+                      </span>
                     )}
                     {taskSubmissionQuestion.submission_id && ((taskSubmissionQuestion.teacher_feedback ?? "").trim().length > 0 || taskSubmissionQuestion.revised_score !== undefined) && (
                       <span className="sage-pill bg-emerald-100 text-emerald-700">Sudah direview guru</span>
@@ -1194,9 +1261,25 @@ export default function StudentMaterialDetailPage() {
                 </span>
                 {q.submission_id && (
                   <span className="sage-pill">
-                    Nilai: {q.revised_score ?? q.skor_ai ?? "-"}
+                    Nilai: {(() => {
+                      const gradingState = getQuestionGradingState(q);
+                      if (gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result") {
+                        return "Sedang diproses...";
+                      }
+                      return q.revised_score ?? q.skor_ai ?? "-";
+                    })()}
                   </span>
                 )}
+                {q.submission_id && (() => {
+                  const gradingState = getQuestionGradingState(q);
+                  if (gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result") {
+                    return <span className="sage-pill bg-amber-100 text-amber-800">AI {gradingState === "queued" ? "Queued" : "Processing"}</span>;
+                  }
+                  if (gradingState === "failed") {
+                    return <span className="sage-pill bg-red-100 text-red-700">AI Failed</span>;
+                  }
+                  return null;
+                })()}
                 {q.submission_id ? (
                   <button
                     onClick={() => {
@@ -1268,6 +1351,18 @@ export default function StudentMaterialDetailPage() {
 
       {activeSection === "results" && canShowResults && (
         <section className="space-y-5">
+          {(pendingEvaluationCount > 0 || backgroundSyncing) && (
+            <div className="sage-panel p-4 border border-amber-300 bg-amber-50">
+              <div className="flex items-center gap-3 text-sm text-amber-900">
+                <span className="inline-flex h-3 w-3 rounded-full bg-amber-500 animate-pulse" />
+                <span>
+                  {pendingEvaluationCount > 0
+                    ? `Sedang menunggu hasil AI untuk ${pendingEvaluationCount} jawaban.`
+                    : "Memperbarui hasil terbaru..."}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="sage-panel p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1276,6 +1371,9 @@ export default function StudentMaterialDetailPage() {
                   {finalMaterialScore.score == null ? "-" : finalMaterialScore.score.toFixed(2)}
                   {finalMaterialScore.score != null && <span className="text-base font-medium text-[color:var(--ink-500)]"> / 100</span>}
                 </p>
+                {(pendingEvaluationCount > 0 || backgroundSyncing) && (
+                  <p className="mt-1 text-xs text-amber-700 animate-pulse">Nilai sedang disinkronkan otomatis...</p>
+                )}
                 <p className="mt-1 text-sm text-[color:var(--ink-500)]">
                   Rumus: (Σ(nilai soal × bobot) / Σ(bobot)) × (jumlah soal dijawab / total soal) = (rata-rata berbobot × {finalMaterialScore.counted}) / {finalMaterialScore.totalQuestions || 1}.
                 </p>
@@ -1303,6 +1401,8 @@ export default function StudentMaterialDetailPage() {
 
           {resultItems.map(({ question, rubricEntries, hasTeacherPane, hasAIPane, radarData, originalOrder }) => {
             const isOpen = !!openResults[question.id];
+            const gradingState = getQuestionGradingState(question);
+            const isPendingResult = gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result";
             const aiFeedbackKey = `${question.id}-ai`;
             const teacherFeedbackKey = `${question.id}-teacher`;
             const isAIFeedbackExpanded = !!expandedFeedback[aiFeedbackKey];
@@ -1334,6 +1434,28 @@ export default function StudentMaterialDetailPage() {
                     <p className="text-sm text-[color:var(--ink-500)]">
                       Bobot: {typeof question.weight === "number" && question.weight > 0 ? question.weight : 1}
                     </p>
+
+                    {isPendingResult && !hasAIPane && !hasTeacherPane && (
+                      <div className="bg-amber-50 rounded-2xl border border-amber-200 p-4">
+                        <p className="text-sm font-medium text-amber-900 flex items-center gap-2">
+                          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+                          {gradingState === "queued"
+                            ? "Jawaban ada di antrian AI."
+                            : gradingState === "processing"
+                              ? "AI sedang menilai jawaban."
+                              : "Menunggu hasil penilaian muncul."}
+                        </p>
+                        <p className="mt-1 text-xs text-amber-700">Tab ini refresh otomatis, tidak perlu reload halaman.</p>
+                      </div>
+                    )}
+                    {gradingState === "failed" && (
+                      <div className="bg-red-50 rounded-2xl border border-red-200 p-4">
+                        <p className="text-sm font-medium text-red-800">Penilaian AI gagal untuk jawaban ini.</p>
+                        {(question.ai_grading_error ?? "").trim().length > 0 && (
+                          <p className="mt-1 text-xs text-red-700">{question.ai_grading_error}</p>
+                        )}
+                      </div>
+                    )}
 
                     <div className={`grid gap-4 ${hasTeacherPane ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
                       {hasAIPane && (
