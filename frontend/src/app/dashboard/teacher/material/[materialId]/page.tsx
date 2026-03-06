@@ -118,6 +118,18 @@ interface SoalQuizSettings {
   require_fullscreen: boolean;
 }
 
+type CardRubricMode = "per_question" | "global";
+interface SectionCardRubricSettings {
+  mode: CardRubricMode;
+  rubricType: RubricType;
+  rubrics: Rubric[];
+}
+interface RubricModeSaveConfirmation {
+  settings: SectionCardRubricSettings;
+  title: string;
+  message: string;
+}
+
 interface EditableDescriptor {
     score: string;
     description: string;
@@ -337,6 +349,35 @@ const formatDescriptor = (value: unknown) => {
   return String(value);
 };
 
+const convertRubricsToEditable = (rubrics?: Rubric[]): EditableRubric[] => {
+  const base = Array.isArray(rubrics) ? rubrics : [];
+  const normalized = base.map((r) => ({
+    ...r,
+    descriptors: Object.entries(r?.descriptors || {}).map(([score, description]) => ({
+      score: String(score),
+      description: formatDescriptor(description),
+    })),
+  }));
+  return normalized.filter((r) => (r.nama_aspek || "").trim() || r.descriptors.length > 0);
+};
+
+const convertEditableToRubricPayload = (rubrics: EditableRubric[], rubricType: RubricType): Rubric[] =>
+  rubrics.map((r) => {
+    const descriptors: Record<number, string> = {};
+    for (const d of r.descriptors) {
+      const scoreNum = Number(d.score);
+      if (Number.isNaN(scoreNum)) continue;
+      descriptors[scoreNum] = d.description || "";
+    }
+    return {
+      id: r.id,
+      nama_aspek: (r.nama_aspek || "").trim() || (rubricType === "holistik" ? "Penilaian Holistik" : "Kriteria"),
+      deskripsi: r.deskripsi,
+      rubric_type: rubricType,
+      descriptors,
+    };
+  });
+
 const renderDoubleAsteriskBold = (text?: string): JSX.Element[] => {
   const safeText = String(text || "");
   const lines = safeText.split("\n");
@@ -465,6 +506,30 @@ const parseSoalQuizSettings = (meta?: Record<string, unknown>): SoalQuizSettings
     require_fullscreen: readBoolean(root.require_fullscreen, false),
   };
 };
+
+const parseSectionCardRubricSettings = (meta?: Record<string, unknown>): SectionCardRubricSettings => {
+  const modeRaw = typeof meta?.rubric_mode === "string" ? meta.rubric_mode : "";
+  const mode: CardRubricMode = modeRaw === "global" ? "global" : "per_question";
+  const rubricTypeRaw = typeof meta?.global_rubric_type === "string" ? meta.global_rubric_type : "";
+  const rubricType: RubricType = rubricTypeRaw === "holistik" ? "holistik" : "analitik";
+  const rubricsRaw = Array.isArray(meta?.global_rubrics) ? (meta?.global_rubrics as Rubric[]) : [];
+  const rubrics = rubricsRaw
+    .filter((r) => r && typeof r === "object")
+    .map((r) => ({
+      id: r.id,
+      nama_aspek: (r.nama_aspek || "").trim(),
+      deskripsi: r.deskripsi,
+      rubric_type: (r.rubric_type === "holistik" ? "holistik" : "analitik") as RubricType,
+      descriptors: typeof r.descriptors === "object" && r.descriptors !== null ? r.descriptors : {},
+    }));
+  return { mode, rubricType, rubrics };
+};
+
+const toSectionCardRubricMeta = (settings: SectionCardRubricSettings): Record<string, unknown> => ({
+  rubric_mode: settings.mode,
+  global_rubric_type: settings.rubricType,
+  global_rubrics: settings.rubrics,
+});
 
 const toQuizSettingsMeta = (settings: SoalQuizSettings): Record<string, unknown> => ({
   answer_mode: settings.answer_mode,
@@ -1092,6 +1157,376 @@ const QuestionBankPickerModal = ({
   );
 };
 
+const RubricModeModal = ({
+  isOpen,
+  onClose,
+  initialSettings,
+  onSave,
+  saving,
+  disabled,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  initialSettings: SectionCardRubricSettings;
+  onSave: (settings: SectionCardRubricSettings) => Promise<void> | void;
+  saving: boolean;
+  disabled?: boolean;
+}) => {
+  const [mode, setMode] = useState<CardRubricMode>("per_question");
+  const [rubricType, setRubricType] = useState<RubricType>("analitik");
+  const [analyticRubrics, setAnalyticRubrics] = useState<EditableRubric[]>([
+    { nama_aspek: "", rubric_type: "analitik", descriptors: [{ score: "", description: "" }] },
+  ]);
+  const [holisticAspectName, setHolisticAspectName] = useState("Penilaian Holistik");
+  const [holisticDescriptors, setHolisticDescriptors] = useState<EditableDescriptor[]>([{ score: "", description: "" }]);
+  const [error, setError] = useState("");
+  const [pendingConfirmation, setPendingConfirmation] = useState<RubricModeSaveConfirmation | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setMode(initialSettings.mode);
+    setRubricType(initialSettings.rubricType);
+    const normalized = convertRubricsToEditable(initialSettings.rubrics);
+    if (initialSettings.rubricType === "holistik") {
+      const first = normalized[0];
+      setHolisticAspectName((first?.nama_aspek || "").trim() || "Penilaian Holistik");
+      setHolisticDescriptors(first?.descriptors?.length ? first.descriptors : [{ score: "", description: "" }]);
+      setAnalyticRubrics([{ nama_aspek: "", rubric_type: "analitik", descriptors: [{ score: "", description: "" }] }]);
+    } else {
+      setAnalyticRubrics(
+        normalized.length
+          ? normalized.map((r) => ({
+              ...r,
+              rubric_type: "analitik",
+              nama_aspek: (r.nama_aspek || "").trim(),
+              descriptors: r.descriptors.length ? r.descriptors : [{ score: "", description: "" }],
+            }))
+          : [{ nama_aspek: "", rubric_type: "analitik", descriptors: [{ score: "", description: "" }] }]
+      );
+      setHolisticAspectName("Penilaian Holistik");
+      setHolisticDescriptors([{ score: "", description: "" }]);
+    }
+    setError("");
+    setPendingConfirmation(null);
+  }, [isOpen, initialSettings]);
+
+  const validateGlobalRubric = (): boolean => {
+    if (rubricType === "analitik") {
+      if (!analyticRubrics.length) {
+        setError("Tambahkan minimal 1 aspek rubrik.");
+        return false;
+      }
+      for (const aspect of analyticRubrics) {
+        if (!aspect.nama_aspek.trim()) {
+          setError("Nama aspek rubrik wajib diisi.");
+          return false;
+        }
+        if (!aspect.descriptors.length) {
+          setError(`Aspek "${aspect.nama_aspek}" harus punya minimal 1 skor.`);
+          return false;
+        }
+        for (const d of aspect.descriptors) {
+          if (d.score === "" || Number.isNaN(Number(d.score)) || !d.description.trim()) {
+            setError(`Skor pada aspek "${aspect.nama_aspek}" harus lengkap.`);
+            return false;
+          }
+        }
+      }
+    } else {
+      if (!holisticDescriptors.length) {
+        setError("Tambahkan minimal 1 skor rubrik holistik.");
+        return false;
+      }
+      for (const d of holisticDescriptors) {
+        if (d.score === "" || Number.isNaN(Number(d.score)) || !d.description.trim()) {
+          setError("Setiap skor holistik harus punya angka dan deskripsi.");
+          return false;
+        }
+      }
+    }
+    setError("");
+    return true;
+  };
+
+  const handleSave = async () => {
+    if (disabled) return;
+    let payload: SectionCardRubricSettings;
+    if (mode === "global") {
+      if (!validateGlobalRubric()) return;
+      const editableRubrics =
+        rubricType === "analitik"
+          ? analyticRubrics
+          : [{ nama_aspek: holisticAspectName || "Penilaian Holistik", rubric_type: "holistik" as RubricType, descriptors: holisticDescriptors }];
+      payload = {
+        mode,
+        rubricType,
+        rubrics: convertEditableToRubricPayload(editableRubrics, rubricType),
+      };
+    } else {
+      payload = {
+        mode,
+        rubricType,
+        rubrics: [],
+      };
+    }
+    const title = mode === "global" ? "Konfirmasi Simpan Mode Global" : "Konfirmasi Simpan Mode Per Soal";
+    const message =
+      mode === "global"
+        ? "Rubrik global akan dipakai untuk semua soal pada card ini. Soal baru tidak perlu input rubrik per-soal."
+        : "Rubrik kembali diatur per-soal. Jika sebelumnya mode global aktif, rubrik global terakhir akan disalin ke setiap soal.";
+    setPendingConfirmation({ settings: payload, title, message });
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Mode Rubrik" panelClassName="max-w-4xl">
+      <div className="space-y-4">
+        <p className="text-xs text-slate-500">Pengaturan ini hanya berlaku untuk card soal yang sedang dibuka.</p>
+        <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-900 dark:border-sky-500/70 dark:bg-slate-900/90 dark:text-sky-100">
+          <p><b className="text-sky-900 dark:text-sky-200">Per Soal</b>: Rubrik diatur per pertanyaan, paling akurat untuk AI karena kriteria menempel ke konteks soal.</p>
+          <p className="mt-1"><b className="text-sky-900 dark:text-sky-200">Global</b>: Satu rubrik dipakai semua soal di card ini, lebih cepat setup tapi bisa kurang presisi jika soal beragam.</p>
+          <p className="mt-1"><b className="text-sky-900 dark:text-sky-200">Rekomendasi</b>: gunakan <b className="text-sky-900 dark:text-sky-200">Per Soal</b> saat topik/tingkat kesulitan soal berbeda-beda.</p>
+        </div>
+        <div className="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1 text-sm dark:border-slate-700 dark:bg-slate-900">
+          <button
+            type="button"
+            onClick={() => setMode("per_question")}
+            disabled={disabled}
+            title="Setiap soal punya rubrik sendiri. Paling direkomendasikan untuk akurasi AI."
+            className={`rounded-md px-3 py-1.5 ${mode === "per_question" ? "bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-100 dark:text-slate-900" : "text-slate-700 dark:text-slate-200"}`}
+          >
+            Per Soal
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("global")}
+            disabled={disabled}
+            title="Semua soal dalam card memakai satu rubrik global. Setup lebih cepat."
+            className={`rounded-md px-3 py-1.5 ${mode === "global" ? "bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-100 dark:text-slate-900" : "text-slate-700 dark:text-slate-200"}`}
+          >
+            Global
+          </button>
+        </div>
+        {initialSettings.mode === "global" && mode === "per_question" && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Saat disimpan, rubrik global terakhir akan disalin ke semua soal di card ini, lalu mode kembali ke rubrik per-soal.
+          </p>
+        )}
+
+        {mode === "global" && (
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setRubricType("analitik")}
+                className={`rounded-md border px-3 py-1.5 text-sm ${rubricType === "analitik" ? "border-[color:var(--sage-700)] bg-white text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}
+              >
+                Analitik
+              </button>
+              <button
+                type="button"
+                onClick={() => setRubricType("holistik")}
+                className={`rounded-md border px-3 py-1.5 text-sm ${rubricType === "holistik" ? "border-[color:var(--sage-700)] bg-white text-slate-900" : "border-slate-200 bg-white text-slate-600"}`}
+              >
+                Holistik
+              </button>
+            </div>
+
+            {rubricType === "analitik" && (
+              <div className="space-y-2">
+                {analyticRubrics.map((rubric, i) => (
+                  <div key={i} className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={rubric.nama_aspek}
+                        onChange={(e) =>
+                          setAnalyticRubrics((prev) =>
+                            prev.map((r, idx) => (idx === i ? { ...r, nama_aspek: e.target.value } : r))
+                          )
+                        }
+                        className="sage-input !py-1.5"
+                        placeholder={`Nama aspek ${i + 1}`}
+                      />
+                      <button type="button" className="text-red-500" onClick={() => setAnalyticRubrics((prev) => prev.filter((_, idx) => idx !== i))}>
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                    {rubric.descriptors.map((d, j) => (
+                      <div key={j} className="grid grid-cols-1 gap-2 md:grid-cols-[90px_1fr_auto]">
+                        <input
+                          value={d.score}
+                          onChange={(e) =>
+                            setAnalyticRubrics((prev) =>
+                              prev.map((r, idx) =>
+                                idx === i
+                                  ? {
+                                      ...r,
+                                      descriptors: r.descriptors.map((row, rowIdx) =>
+                                        rowIdx === j ? { ...row, score: e.target.value } : row
+                                      ),
+                                    }
+                                  : r
+                              )
+                            )
+                          }
+                          className="sage-input !py-1.5"
+                          placeholder="Skor"
+                        />
+                        <input
+                          value={d.description}
+                          onChange={(e) =>
+                            setAnalyticRubrics((prev) =>
+                              prev.map((r, idx) =>
+                                idx === i
+                                  ? {
+                                      ...r,
+                                      descriptors: r.descriptors.map((row, rowIdx) =>
+                                        rowIdx === j ? { ...row, description: e.target.value } : row
+                                      ),
+                                    }
+                                  : r
+                              )
+                            )
+                          }
+                          className="sage-input !py-1.5"
+                          placeholder="Deskripsi"
+                        />
+                        <button
+                          type="button"
+                          className="rounded border border-slate-200 px-2 text-red-500"
+                          onClick={() =>
+                            setAnalyticRubrics((prev) =>
+                              prev.map((r, idx) =>
+                                idx === i ? { ...r, descriptors: r.descriptors.filter((_, rowIdx) => rowIdx !== j) } : r
+                              )
+                            )
+                          }
+                        >
+                          <FiTrash2 />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-slate-700"
+                      onClick={() =>
+                        setAnalyticRubrics((prev) =>
+                          prev.map((r, idx) =>
+                            idx === i ? { ...r, descriptors: [...r.descriptors, { score: "", description: "" }] } : r
+                          )
+                        )
+                      }
+                    >
+                      + Tambah Skor
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="sage-button-outline !py-1.5 !px-2.5 text-xs"
+                  onClick={() =>
+                    setAnalyticRubrics((prev) => [
+                      ...prev,
+                      { nama_aspek: "", rubric_type: "analitik", descriptors: [{ score: "", description: "" }] },
+                    ])
+                  }
+                >
+                  + Tambah Aspek
+                </button>
+              </div>
+            )}
+
+            {rubricType === "holistik" && (
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+                <input
+                  value={holisticAspectName}
+                  onChange={(e) => setHolisticAspectName(e.target.value)}
+                  className="sage-input !py-1.5"
+                  placeholder="Penilaian Holistik"
+                />
+                {holisticDescriptors.map((d, i) => (
+                  <div key={i} className="grid grid-cols-1 gap-2 md:grid-cols-[90px_1fr_auto]">
+                    <input
+                      value={d.score}
+                      onChange={(e) =>
+                        setHolisticDescriptors((prev) => prev.map((row, idx) => (idx === i ? { ...row, score: e.target.value } : row)))
+                      }
+                      className="sage-input !py-1.5"
+                      placeholder="Skor"
+                    />
+                    <input
+                      value={d.description}
+                      onChange={(e) =>
+                        setHolisticDescriptors((prev) =>
+                          prev.map((row, idx) => (idx === i ? { ...row, description: e.target.value } : row))
+                        )
+                      }
+                      className="sage-input !py-1.5"
+                      placeholder="Deskripsi"
+                    />
+                    <button
+                      type="button"
+                      className="rounded border border-slate-200 px-2 text-red-500"
+                      onClick={() => setHolisticDescriptors((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      <FiTrash2 />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="text-xs font-medium text-slate-700"
+                  onClick={() => setHolisticDescriptors((prev) => [...prev, { score: "", description: "" }])}
+                >
+                  + Tambah Skor
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="sage-button-outline" disabled={saving}>
+            Batal
+          </button>
+          <button type="button" onClick={handleSave} className="sage-button" disabled={saving || disabled}>
+            Lanjut Simpan
+          </button>
+        </div>
+      </div>
+      {pendingConfirmation && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-emerald-300 bg-emerald-50 p-4 shadow-2xl dark:border-emerald-700 dark:bg-slate-900">
+            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">{pendingConfirmation.title}</p>
+            <p className="mt-2 text-xs leading-relaxed text-emerald-800 dark:text-emerald-100">{pendingConfirmation.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingConfirmation(null)}
+                className="sage-button-outline !py-1.5 !px-3 text-xs"
+                disabled={saving}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await onSave(pendingConfirmation.settings);
+                  setPendingConfirmation(null);
+                }}
+                className="sage-button !py-1.5 !px-3 text-xs"
+                disabled={saving || disabled}
+              >
+                {saving ? "Menyimpan..." : "Ya, Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+};
+
 // --- ESSAY QUESTION FORM MODAL ---
 const EssayQuestionFormModal = ({
   isOpen,
@@ -1103,6 +1538,9 @@ const EssayQuestionFormModal = ({
   existingQuestion,
   sectionCardId,
   onQuestionSaved,
+  rubricMode,
+  globalRubrics,
+  globalRubricType,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1113,6 +1551,9 @@ const EssayQuestionFormModal = ({
   existingQuestion?: EssayQuestion | null;
   sectionCardId?: string;
   onQuestionSaved?: (questionId: string) => Promise<void> | void;
+  rubricMode?: CardRubricMode;
+  globalRubrics?: Rubric[];
+  globalRubricType?: RubricType;
 }) => {
   const [teksSoal, setTeksSoal] = useState('');
   const [levelKognitif, setLevelKognitif] = useState('');
@@ -1147,6 +1588,7 @@ const EssayQuestionFormModal = ({
   const [generatedSourceMeta, setGeneratedSourceMeta] = useState<{ label: string; chars: number; preview: string; forcedHolisticC1: boolean } | null>(null);
   const [rubricTooltip, setRubricTooltip] = useState<RubricType | null>(null);
   const wasEditingExistingRef = useRef(false);
+  const usesGlobalRubric = rubricMode === "global";
   const resetQuestionForm = useCallback(() => {
     setTeksSoal('');
     setLevelKognitif('');
@@ -1263,6 +1705,9 @@ const EssayQuestionFormModal = ({
     rubricType === 'analitik'
       ? analyticRubrics
       : [{ nama_aspek: holisticAspectName || 'Penilaian Holistik', rubric_type: 'holistik', descriptors: holisticDescriptors }];
+  const globalRubricsForEditor = useMemo(() => convertRubricsToEditable(globalRubrics), [globalRubrics]);
+  const effectiveRubricType: RubricType = usesGlobalRubric ? (globalRubricType === "holistik" ? "holistik" : "analitik") : rubricType;
+  const effectiveRubrics: EditableRubric[] = usesGlobalRubric ? globalRubricsForEditor : activeRubrics;
 
   const analyticTableColumnCount = useMemo(() => {
     const maxCount = analyticRubrics.reduce((max, aspect) => Math.max(max, aspect.descriptors.length), 0);
@@ -1293,6 +1738,14 @@ const EssayQuestionFormModal = ({
       }
     }
     if (targetStep === 2) {
+      if (usesGlobalRubric) {
+        if (!effectiveRubrics.length) {
+          setError("Rubrik global belum tersedia. Atur dulu di tombol Mode Rubrik.");
+          return false;
+        }
+        setError("");
+        return true;
+      }
       if (rubricType === 'analitik') {
         if (!analyticRubrics.length) {
           setError('Tambahkan minimal 1 aspek rubrik analitik.');
@@ -1353,23 +1806,10 @@ const EssayQuestionFormModal = ({
     const parsedWeight = Number(weight);
 
     try {
-      const transformedRubrics = activeRubrics.map((r) => {
-        const descriptors: { [key: number]: string } = {};
-        for (const d of r.descriptors) {
-          const scoreNum = Number(d.score);
-          if (isNaN(scoreNum)) {
-            throw new Error(`Skor "${d.score}" tidak valid.`);
-          }
-          descriptors[scoreNum] = d.description;
-        }
-        return {
-          id: r.id,
-          nama_aspek: r.nama_aspek || (rubricType === 'holistik' ? 'Penilaian Holistik' : 'Kriteria'),
-          deskripsi: r.deskripsi,
-          rubric_type: rubricType,
-          descriptors,
-        };
-      });
+      const transformedRubrics = convertEditableToRubricPayload(effectiveRubrics, effectiveRubricType);
+      if (!transformedRubrics.length) {
+        throw new Error("Rubrik belum tersedia.");
+      }
 
       const res = await fetch(url, {
         method,
@@ -1406,22 +1846,7 @@ const EssayQuestionFormModal = ({
     }
   };
 
-  const transformRubricsForSave = () =>
-    activeRubrics.map((r) => {
-      const descriptors: { [key: number]: string } = {};
-      for (const d of r.descriptors) {
-        const scoreNum = Number(d.score);
-        if (isNaN(scoreNum)) continue;
-        descriptors[scoreNum] = d.description;
-      }
-      return {
-        id: r.id,
-        nama_aspek: r.nama_aspek || (rubricType === 'holistik' ? 'Penilaian Holistik' : 'Kriteria'),
-        deskripsi: r.deskripsi,
-        rubric_type: rubricType,
-        descriptors,
-      };
-    });
+  const transformRubricsForSave = () => convertEditableToRubricPayload(effectiveRubrics, effectiveRubricType);
 
   const applyQuestionBankEntry = (entry: QuestionBankEntry) => {
     setTeksSoal(entry.teks_soal || '');
@@ -1697,40 +2122,42 @@ const EssayQuestionFormModal = ({
         forcedHolisticC1: Boolean(generated.forced_holistic_c1),
       });
 
-      const normalizedType: RubricType =
-        generated.rubric_type === 'holistik' || generated.rubric_type === 'analitik'
-          ? generated.rubric_type
-          : rubricType;
-      setRubricType(normalizedType);
+      if (!usesGlobalRubric) {
+        const normalizedType: RubricType =
+          generated.rubric_type === 'holistik' || generated.rubric_type === 'analitik'
+            ? generated.rubric_type
+            : rubricType;
+        setRubricType(normalizedType);
 
-      if (normalizedType === 'analitik') {
-        const analytic = Array.isArray(generated.rubrics)
-          ? generated.rubrics.map((aspect, idx) => ({
-              nama_aspek: (aspect?.nama_aspek || '').trim() || `Aspek ${idx + 1}`,
-              rubric_type: 'analitik' as RubricType,
-              descriptors: Array.isArray(aspect?.descriptors)
-                ? aspect.descriptors.map((d) => ({
-                    score: String(d.score ?? ''),
-                    description: String(d.description ?? ''),
-                  }))
-                : [],
-            }))
-          : [];
-        setAnalyticRubrics(
-          analytic.length
-            ? analytic
-            : [{ nama_aspek: '', rubric_type: 'analitik', descriptors: [{ score: '', description: '' }] }]
-        );
-      } else {
-        const first = Array.isArray(generated.rubrics) ? generated.rubrics[0] : null;
-        setHolisticAspectName((first?.nama_aspek || '').trim() || 'Penilaian Holistik');
-        const holistic = Array.isArray(first?.descriptors)
-          ? first!.descriptors.map((d) => ({
-              score: String(d.score ?? ''),
-              description: String(d.description ?? ''),
-            }))
-          : [];
-        setHolisticDescriptors(holistic.length ? holistic : [{ score: '', description: '' }]);
+        if (normalizedType === 'analitik') {
+          const analytic = Array.isArray(generated.rubrics)
+            ? generated.rubrics.map((aspect, idx) => ({
+                nama_aspek: (aspect?.nama_aspek || '').trim() || `Aspek ${idx + 1}`,
+                rubric_type: 'analitik' as RubricType,
+                descriptors: Array.isArray(aspect?.descriptors)
+                  ? aspect.descriptors.map((d) => ({
+                      score: String(d.score ?? ''),
+                      description: String(d.description ?? ''),
+                    }))
+                  : [],
+              }))
+            : [];
+          setAnalyticRubrics(
+            analytic.length
+              ? analytic
+              : [{ nama_aspek: '', rubric_type: 'analitik', descriptors: [{ score: '', description: '' }] }]
+          );
+        } else {
+          const first = Array.isArray(generated.rubrics) ? generated.rubrics[0] : null;
+          setHolisticAspectName((first?.nama_aspek || '').trim() || 'Penilaian Holistik');
+          const holistic = Array.isArray(first?.descriptors)
+            ? first!.descriptors.map((d) => ({
+                score: String(d.score ?? ''),
+                description: String(d.description ?? ''),
+              }))
+            : [];
+          setHolisticDescriptors(holistic.length ? holistic : [{ score: '', description: '' }]);
+        }
       }
       setStep(1);
     } catch (err: unknown) {
@@ -1771,13 +2198,13 @@ const EssayQuestionFormModal = ({
     };
     return JSON.stringify(payload) === lastSavedBankSignature && lastSavedBankSignature !== '';
   })();
-  const totalRubricMax = activeRubrics.reduce((sum, r) => {
+  const totalRubricMax = effectiveRubrics.reduce((sum, r) => {
     const scores = r.descriptors.map((d) => Number(d.score)).filter((n) => !Number.isNaN(n));
     return sum + (scores.length ? Math.max(...scores) : 0);
   }, 0);
   const stepLabel = step === 1 ? 'Soal Inti' : step === 2 ? 'Rubrik' : 'Preview';
   const hasValidWeight = !(weight === '' || Number.isNaN(Number(weight)) || Number(weight) <= 0);
-  const canSubmitQuestion = teksSoal.trim().length > 0 && hasValidWeight && activeRubrics.length > 0;
+  const canSubmitQuestion = teksSoal.trim().length > 0 && hasValidWeight && effectiveRubrics.length > 0;
   const parameterPanel = (
     <div className="space-y-4">
       <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -2043,7 +2470,7 @@ const EssayQuestionFormModal = ({
                     step === i ? 'bg-[color:var(--sage-700)] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
                   }`}
                 >
-                  {i}. {i === 1 ? 'Soal' : i === 2 ? 'Rubrik' : 'Preview'}
+                  {i}. {i === 1 ? 'Soal' : i === 2 ? (usesGlobalRubric ? 'Mode Global' : 'Rubrik') : 'Preview'}
                 </button>
               ))}
             </div>
@@ -2051,7 +2478,9 @@ const EssayQuestionFormModal = ({
               {step === 1
                 ? "Isi pertanyaan utama dan pastikan instruksi jelas untuk siswa."
                 : step === 2
-                  ? "Tentukan tipe rubrik lalu isi deskriptor penilaian secara rinci."
+                  ? usesGlobalRubric
+                    ? "Rubrik memakai mode global dari card ini. Tambah/edit rubrik lewat tombol Mode Rubrik di header."
+                    : "Tentukan tipe rubrik lalu isi deskriptor penilaian secara rinci."
                   : "Tinjau ulang detail soal, rubrik, dan parameter sebelum disimpan."}
             </p>
           </div>
@@ -2097,6 +2526,17 @@ const EssayQuestionFormModal = ({
 
               {step === 2 && (
                 <section className="space-y-3">
+                  {usesGlobalRubric ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                      <p className="font-semibold">Mode Rubrik Global Aktif</p>
+                      <p className="mt-1">
+                        Soal ini otomatis menggunakan rubrik global pada card section. Form rubrik per-soal dinonaktifkan.
+                      </p>
+                      <p className="mt-2 text-xs">
+                        Total aspek global: <b>{effectiveRubrics.length}</b>
+                      </p>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 items-start gap-2.5 xl:grid-cols-[minmax(130px,14%)_minmax(0,1fr)]">
                     <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                       <h3 className="mb-1 text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Tipe Rubrik</h3>
@@ -2477,6 +2917,7 @@ const EssayQuestionFormModal = ({
                       )}
                     </div>
                   </div>
+                  )}
                 </section>
               )}
 
@@ -2495,8 +2936,8 @@ const EssayQuestionFormModal = ({
                       <span className="sage-pill">
                         Bulatkan Nilai: {roundScoreTo5 ? `Aktif (kelipatan ${formatNumeric(activeRoundingStep)})` : 'Nonaktif'}
                       </span>
-                      <span className="sage-pill">Tipe Rubrik: {rubricType === 'holistik' ? 'Holistik' : 'Analitik'}</span>
-                      <span className="sage-pill">Aspek Rubrik: {activeRubrics.length}</span>
+                      <span className="sage-pill">Tipe Rubrik: {effectiveRubricType === 'holistik' ? 'Holistik' : 'Analitik'}{usesGlobalRubric ? ' (Global)' : ''}</span>
+                      <span className="sage-pill">Aspek Rubrik: {effectiveRubrics.length}</span>
                       <span className="sage-pill">Skor Maks Total: {totalRubricMax}</span>
                     </div>
                     {parsedKeywords.length > 0 && (
@@ -2522,7 +2963,7 @@ const EssayQuestionFormModal = ({
                   </div>
 
                   <div className="space-y-2">
-                    {activeRubrics.map((r, idx) => (
+                    {effectiveRubrics.map((r, idx) => (
                       <div key={idx} className="border border-slate-200 rounded-lg p-3 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
                         <p className="font-semibold text-slate-800 dark:text-slate-100">{r.nama_aspek || `Aspek ${idx + 1}`}</p>
                         <ul className="mt-2 text-sm text-slate-600 dark:text-slate-300 space-y-1">
@@ -2673,6 +3114,8 @@ export default function MaterialDetailsPage() {
     tone: "info",
   });
   const [isQuizSettingsModalOpen, setQuizSettingsModalOpen] = useState(false);
+  const [isRubricModeModalOpen, setRubricModeModalOpen] = useState(false);
+  const [rubricModeSaving, setRubricModeSaving] = useState(false);
 
   useEffect(() => {
     if (!material) return;
@@ -2787,6 +3230,11 @@ export default function MaterialDetailsPage() {
   }, [hasSectionCardScope, parsedSectionCards, sectionCardId]);
   const [quizSettings, setQuizSettings] = useState<SoalQuizSettings>(() => parseSoalQuizSettings(undefined));
   const [quizSettingsSaving, setQuizSettingsSaving] = useState(false);
+  const activeRubricSettings = useMemo(
+    () => parseSectionCardRubricSettings(activeSoalCard?.meta),
+    [activeSoalCard?.meta]
+  );
+  const usesGlobalRubricMode = hasSectionCardScope && activeRubricSettings.mode === "global";
 
   useEffect(() => {
     setQuizSettings(parseSoalQuizSettings(activeSoalCard?.meta));
@@ -3207,6 +3655,86 @@ export default function MaterialDetailsPage() {
     }
   }, [hasSectionCardScope, material, sectionCardId, quizSettings]);
 
+  const handleSaveRubricMode = useCallback(
+    async (settings: SectionCardRubricSettings) => {
+      if (!hasSectionCardScope || !material) return;
+      setRubricModeSaving(true);
+      try {
+        const currentMode = activeRubricSettings.mode;
+        const switchingGlobalToPerQuestion = currentMode === "global" && settings.mode === "per_question";
+        const shouldSyncRubricsToQuestions = settings.mode === "global" || switchingGlobalToPerQuestion;
+        const rubricsForSync = settings.mode === "global" ? settings.rubrics : activeRubricSettings.rubrics;
+
+        if (shouldSyncRubricsToQuestions && rubricsForSync.length === 0) {
+          throw new Error("Rubrik global belum diisi.");
+        }
+
+        if (shouldSyncRubricsToQuestions && scopedQuestions.length > 0) {
+          await Promise.all(
+            scopedQuestions.map(async (question) => {
+              const res = await fetch(`/api/essay-questions/${question.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ rubrics: rubricsForSync }),
+              });
+              if (!res.ok) {
+                const errBody = await res.json().catch(() => ({}));
+                throw new Error(errBody?.message || `Gagal sinkron rubrik global ke soal (${question.id}).`);
+              }
+            })
+          );
+        }
+
+        const sectionCards = parseSectionCards(material.isi_materi);
+        if (!sectionCards) throw new Error("Konten section tidak valid.");
+        let found = false;
+        const next = sectionCards.map((card) => {
+          if (card.id !== sectionCardId || card.type !== "soal") return card;
+          found = true;
+          return {
+            ...card,
+            meta: {
+              ...(card.meta || {}),
+              ...toSectionCardRubricMeta(settings),
+            },
+          };
+        });
+        if (!found) throw new Error("Card soal tidak ditemukan.");
+
+        const updateRes = await fetch(`/api/materials/${material.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ isi_materi: serializeSectionCards(next) }),
+        });
+        if (!updateRes.ok) {
+          const errBody = await updateRes.json().catch(() => ({}));
+          throw new Error(errBody?.message || "Gagal menyimpan mode rubrik.");
+        }
+
+        setMaterial((prev) => (prev ? { ...prev, isi_materi: serializeSectionCards(next) } : prev));
+        setNotice({
+          open: true,
+          title: "Berhasil",
+          message:
+            settings.mode === "global"
+              ? "Mode Rubrik Global aktif. Semua soal pada card ini sudah disinkronkan ke rubrik global."
+              : switchingGlobalToPerQuestion
+                ? "Mode Rubrik Per Soal aktif. Rubrik global terakhir sudah disalin ke tiap soal di card ini."
+                : "Mode Rubrik Per Soal aktif.",
+          tone: "success",
+        });
+        setRubricModeModalOpen(false);
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, "Gagal menyimpan mode rubrik."));
+      } finally {
+        setRubricModeSaving(false);
+      }
+    },
+    [activeRubricSettings.mode, activeRubricSettings.rubrics, hasSectionCardScope, material, scopedQuestions, sectionCardId]
+  );
+
   const handleExportMateriPdf = useCallback(() => {
     if (!material) return;
     const html = buildMaterialExportHtml(material, sectionCardId);
@@ -3289,14 +3817,24 @@ export default function MaterialDetailsPage() {
                   <button onClick={handleExportMateriPdf} className="sage-button-outline"><FiDownload/> Export PDF</button>
                 ) : null}
                 {isSoalRoute ? (
-                  <button
-                    onClick={() => setQuizSettingsModalOpen(true)}
-                    className="sage-button-outline"
-                    disabled={!hasSectionCardScope}
-                    title={hasSectionCardScope ? "Pengaturan Mode Siswa" : "Buka dari card section soal untuk atur mode siswa"}
-                  >
-                    <FiSettings/> Pengaturan
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setRubricModeModalOpen(true)}
+                      className="sage-button-outline"
+                      disabled={!hasSectionCardScope}
+                      title={hasSectionCardScope ? "Atur mode rubrik untuk card soal ini" : "Buka dari card section soal untuk atur mode rubrik"}
+                    >
+                      <FiGrid /> Mode Rubrik: {usesGlobalRubricMode ? "Global" : "Per Soal"}
+                    </button>
+                    <button
+                      onClick={() => setQuizSettingsModalOpen(true)}
+                      className="sage-button-outline"
+                      disabled={!hasSectionCardScope}
+                      title={hasSectionCardScope ? "Pengaturan Mode Siswa" : "Buka dari card section soal untuk atur mode siswa"}
+                    >
+                      <FiSettings/> Pengaturan
+                    </button>
+                  </>
                 ) : (
                   <button onClick={() => setEditMaterialModalOpen(true)} className="sage-button-outline"><FiEdit/> Edit Materi</button>
                 )}
@@ -3369,6 +3907,7 @@ export default function MaterialDetailsPage() {
                 handleDropReorderQuestion={handleDropReorderQuestion}
                 canReorderQuestions={hasSectionCardScope}
                 movingQuestionId={movingQuestionId}
+                rubricMode={activeRubricSettings.mode}
                 renderDoubleAsteriskBold={renderDoubleAsteriskBold}
                 formatDescriptor={formatDescriptor}
               />
@@ -3396,6 +3935,9 @@ export default function MaterialDetailsPage() {
           existingQuestion={editingQuestion}
           sectionCardId={sectionCardId}
           onQuestionSaved={linkQuestionToSectionCard}
+          rubricMode={activeRubricSettings.mode}
+          globalRubricType={activeRubricSettings.rubricType}
+          globalRubrics={activeRubricSettings.rubrics}
         />
       )}
       <ReviewModal
@@ -3452,6 +3994,14 @@ export default function MaterialDetailsPage() {
         setQuizSettings={setQuizSettings}
         onSave={handleSaveQuizSettings}
         saving={quizSettingsSaving}
+        disabled={!hasSectionCardScope}
+      />
+      <RubricModeModal
+        isOpen={isRubricModeModalOpen}
+        onClose={() => setRubricModeModalOpen(false)}
+        initialSettings={activeRubricSettings}
+        onSave={handleSaveRubricMode}
+        saving={rubricModeSaving}
         disabled={!hasSectionCardScope}
       />
     </div>

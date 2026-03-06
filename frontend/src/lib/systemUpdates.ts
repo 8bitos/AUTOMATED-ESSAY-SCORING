@@ -14,6 +14,10 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
     date: "2026-03-06",
     title: "Perbaikan UI Kelas/Soal + Stabilitas Dark Mode",
     majorUpdates: [
+      "Menambahkan Mode Rubrik per card section pada halaman Teacher Soal (Per Soal vs Global), termasuk editor rubrik global, sinkronisasi rubrik ke soal, dan integrasi ke alur tambah/edit soal.",
+      "Menambahkan guard transisi mode rubrik: konfirmasi eksplisit saat ganti mode, tooltip opsi mode, serta alert edukasi perbedaan Global vs Per Soal dengan rekomendasi akurasi AI.",
+      "Menyempurnakan halaman Student Pengerjaan Soal: rubrik pada soal kini bisa collapse/buka, tata letak aksi coba ulang dipindah ke area aksi jawaban, dan mode daftar dibuat lebih compact dengan detail-on-demand per soal.",
+      "Meng-upgrade Global Command Search (Ctrl/Cmd+K) agar pencarian Konten mencakup isi materi, teks soal, keyword, jawaban ideal, serta deskriptor rubrik untuk hasil yang lebih powerful.",
       "Merapikan struktur toolbar Section Workspace di halaman detail kelas teacher agar alur utama lebih fokus: heading workspace, primary action Tambah Section, search section, sort, filter, dan mode view.",
       "Menyederhanakan aksi per-section dengan tombol aksi langsung berbasis ikon (Tambah Konten, Edit, Hapus, Expand/Collapse), lengkap tooltip hover, warna aksi yang dibedakan, dan dukungan dark mode agar interaksi lebih cepat tanpa membuka menu overflow.",
       "Menyamakan pola aksi Table Mode dengan Card Mode melalui kontrol aksi langsung per-section agar interaksi lintas mode tetap konsisten.",
@@ -32,6 +36,9 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
       "Menyempurnakan flow urut soal dengan affordance drag handle (`::`), kontrol naik/turun, border kontrol yang lebih rapi, serta animasi pergeseran saat reorder.",
     ],
     minorUpdates: [
+      "Menambahkan badge indikator Rubrik Global pada daftar soal teacher saat mode global aktif agar scope penilaian langsung terlihat.",
+      "Menambahkan hint interaksi buka/tutup pada panel rubrik siswa agar area soal panjang tetap mudah dipindai.",
+      "Merapikan affordance dropdown detail per soal di mode daftar siswa (tap card untuk expand/collapse) agar tampilan awal tetap ringkas.",
       "Menambahkan ringkasan konteks workspace pada panel sticky untuk memperjelas fokus kerja (kelola urutan section, konten, dan aksi cepat).",
       "Merapikan posisi dan prioritas bulk action terpilih agar lebih terpisah dari kontrol filter utama.",
       "Menjaga kompatibilitas flow lama (table/card, tambah konten, edit/hapus section) sambil meningkatkan keterbacaan UI.",

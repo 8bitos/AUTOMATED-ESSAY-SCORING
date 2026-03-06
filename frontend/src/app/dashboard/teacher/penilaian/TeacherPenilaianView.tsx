@@ -14,6 +14,8 @@ import {
   FiChevronsRight,
   FiRefreshCw,
   FiSearch,
+  FiMaximize2,
+  FiMinimize2,
   FiX,
 } from "react-icons/fi";
 
@@ -377,6 +379,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   const [quickSaveError, setQuickSaveError] = useState<string | null>(null);
   const [quickSaveSuccess, setQuickSaveSuccess] = useState<string | null>(null);
   const [activeSpreadsheetCell, setActiveSpreadsheetCell] = useState<SpreadsheetCellCursor | null>(null);
+  const [isSpreadsheetFullscreen, setSpreadsheetFullscreen] = useState(false);
   const [mainTab, setMainTab] = useState<PenilaianMainTab>("penilaian");
   const [appeals, setAppeals] = useState<GradeAppealRow[]>([]);
   const [appealsLoading, setAppealsLoading] = useState(false);
@@ -387,8 +390,11 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   const scoreInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const spreadsheetCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
   const saveSpreadsheetBatchRef = useRef<() => Promise<void>>(async () => {});
+  const isSpreadsheetFocusMode = reviewViewMode === "spreadsheet" && isSpreadsheetFullscreen;
   const visibleSummaryCards = showSummaryCards && !detailOpen;
-  const panelHeightVh = visibleSummaryCards ? 74 : 84;
+  const basePanelHeightVh = visibleSummaryCards ? 74 : 84;
+  const panelHeightVh = isSpreadsheetFocusMode ? 92 : basePanelHeightVh;
+  const panelHeightStyle = isSpreadsheetFocusMode ? "calc(100vh - 2rem)" : `${panelHeightVh}vh`;
 
   const loadQueue = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
@@ -1237,6 +1243,21 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   }, [reviewViewMode, detailPanelTab]);
 
   useEffect(() => {
+    if (reviewViewMode !== "spreadsheet" && isSpreadsheetFullscreen) {
+      setSpreadsheetFullscreen(false);
+    }
+  }, [reviewViewMode, isSpreadsheetFullscreen]);
+
+  useEffect(() => {
+    if (!isSpreadsheetFocusMode) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isSpreadsheetFocusMode]);
+
+  useEffect(() => {
     if (reviewViewMode !== "spreadsheet" || !activeSpreadsheetCell) return;
     const cellKey = spreadsheetCellKeys[activeSpreadsheetCell.rowIdx]?.[activeSpreadsheetCell.colIdx];
     if (!cellKey) return;
@@ -1336,12 +1357,16 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (isSpreadsheetFocusMode) {
+          setSpreadsheetFullscreen(false);
+          return;
+        }
         setDetailOpen(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [isSpreadsheetFocusMode]);
 
   const handleAppealReview = useCallback(
     async (appeal: GradeAppealRow, status: "in_review" | "resolved_accepted" | "resolved_rejected") => {
@@ -1599,11 +1624,18 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
       ) : error ? (
         <div className="sage-panel p-6 text-red-600">{error}</div>
       ) : (
+        <>
+        {isSpreadsheetFocusMode && <div className="fixed inset-0 z-[79] bg-slate-950/70 backdrop-blur-[1px]" />}
         <section
           className={`relative grid gap-3 overflow-hidden ${
-            sidebarCollapsed ? "lg:grid-cols-[64px_minmax(0,1fr)]" : "lg:grid-cols-[240px_minmax(0,1fr)]"
+            isSpreadsheetFocusMode
+              ? "fixed inset-0 z-[80] grid-cols-1 bg-transparent p-4"
+              : sidebarCollapsed
+                ? "lg:grid-cols-[64px_minmax(0,1fr)]"
+                : "lg:grid-cols-[240px_minmax(0,1fr)]"
           }`}
         >
+          {!isSpreadsheetFocusMode && (
           <aside className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" style={{ height: `${panelHeightVh}vh` }}>
             <div className="border-b border-slate-200 bg-slate-50/70 p-2.5 dark:border-slate-700 dark:bg-slate-800/80">
               <div className="flex items-center justify-between gap-2">
@@ -1712,8 +1744,14 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
               )}
             </div>
           </aside>
+          )}
 
-          <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" style={{ height: `${panelHeightVh}vh` }}>
+          <div
+            className={`flex flex-col overflow-hidden border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 ${
+              isSpreadsheetFocusMode ? "rounded-2xl shadow-2xl" : "rounded-xl"
+            }`}
+            style={{ height: panelHeightStyle }}
+          >
             <div className="sticky top-0 z-10 space-y-2 border-b border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1727,6 +1765,26 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                 <div className="flex items-center gap-1.5">
                   <TabButton active={reviewViewMode === "list"} onClick={() => setReviewViewMode("list")}>List</TabButton>
                   <TabButton active={reviewViewMode === "spreadsheet"} onClick={() => setReviewViewMode("spreadsheet")}>Spreadsheet</TabButton>
+                  {reviewViewMode === "spreadsheet" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSpreadsheetFullscreen((prev) => {
+                          const next = !prev;
+                          if (next) {
+                            setDetailOpen(false);
+                            setSidebarCollapsed(true);
+                          }
+                          return next;
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                      title={isSpreadsheetFocusMode ? "Keluar mode fullscreen spreadsheet" : "Masuk mode fullscreen spreadsheet"}
+                    >
+                      {isSpreadsheetFocusMode ? <FiMinimize2 size={12} /> : <FiMaximize2 size={12} />}
+                      {isSpreadsheetFocusMode ? "Keluar Fullscreen" : "Fullscreen"}
+                    </button>
+                  )}
                   {reviewViewMode === "spreadsheet" && (
                     <button
                       type="button"
@@ -2020,7 +2078,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
             </div>
           </div>
 
-          {detailOpen && (
+          {detailOpen && !isSpreadsheetFocusMode && (
             <button
               type="button"
               aria-label="Close detail overlay"
@@ -2029,6 +2087,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
             />
           )}
 
+          {!isSpreadsheetFocusMode && (
           <aside
             className={`absolute right-0 top-0 z-30 w-full max-w-[440px] border-l border-slate-200 bg-white shadow-xl transition-transform duration-200 ${
               detailOpen ? "pointer-events-auto translate-x-0" : "pointer-events-none translate-x-full"
@@ -2473,7 +2532,9 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
               )}
             </div>
           </aside>
+          )}
         </section>
+        </>
       )}
     </div>
   );

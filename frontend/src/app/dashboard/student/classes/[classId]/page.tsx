@@ -124,13 +124,22 @@ const parseSectionContentCards = (raw?: string): SectionContentCardData[] => {
   }
 };
 
+const decodeHtmlEntities = (value?: string): string => {
+  const input = value || "";
+  if (!input) return "";
+  if (typeof window === "undefined") return input;
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = input;
+  return textarea.value;
+};
+
 const toPlainText = (value?: string): string =>
-  (value || "")
+  decodeHtmlEntities(value)
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-const containsHtmlTag = (value?: string): boolean => /<([a-z][\w-]*)\b[^>]*>/i.test(value || "");
+const containsHtmlTag = (value?: string): boolean => /<([a-z][\w-]*)\b[^>]*>/i.test(decodeHtmlEntities(value));
 
 const normalizeEmbedUrl = (url: string): string => {
   if (!url) return url;
@@ -1105,7 +1114,9 @@ export default function StudentClassMaterialsPage() {
 
                               {hasInlineView && isMateriSingkat && (
                                 (() => {
-                                  const fullContent = (card.body || card.meta?.materi_description || card.meta?.description || "").trim();
+                                  const fullContent = decodeHtmlEntities(
+                                    (card.body || card.meta?.materi_description || card.meta?.description || "").trim()
+                                  );
                                   if (!fullContent) {
                                     return (
                                       <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-[color:var(--ink-500)]">

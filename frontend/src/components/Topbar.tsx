@@ -64,8 +64,10 @@ type SearchContentItem = {
   classId?: string;
   className?: string;
   materialId?: string;
+  href?: string;
   kind: SearchKind;
   status?: string;
+  searchableText?: string;
 };
 
 type CommandItem = {
@@ -124,6 +126,103 @@ const parseCommandSearch = (raw: string): ParsedSearch => {
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+
+const normalizeText = (value: unknown): string => {
+  if (value == null) return '';
+  return String(value).replace(/\s+/g, ' ').trim();
+};
+
+const stripHtmlTags = (value: string): string =>
+  value
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const safeParseJson = (value: unknown): unknown | null => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const extractMaterialBodyText = (material: Record<string, unknown>): string => {
+  const raw = normalizeText(material.isi_materi);
+  if (!raw) return '';
+  const parsed = safeParseJson(raw);
+  if (!parsed || typeof parsed !== 'object') return stripHtmlTags(raw);
+  const obj = asRecord(parsed);
+
+  if (obj.format === 'sage_blocks' && Array.isArray(obj.blocks)) {
+    return normalizeText(
+      obj.blocks
+        .map((block) => normalizeText(asRecord(block).value))
+        .filter(Boolean)
+        .join(' ')
+    );
+  }
+
+  if (obj.format === 'sage_section_cards_v1' && Array.isArray(obj.items)) {
+    const merged = obj.items
+      .map((item) => {
+        const it = asRecord(item);
+        const meta = asRecord(it.meta);
+        return [
+          normalizeText(it.title),
+          stripHtmlTags(normalizeText(it.body)),
+          stripHtmlTags(normalizeText(meta.materi_description)),
+          normalizeText(meta.description),
+        ]
+          .filter(Boolean)
+          .join(' ');
+      })
+      .filter(Boolean)
+      .join(' ');
+    return normalizeText(merged);
+  }
+
+  return stripHtmlTags(raw);
+};
+
+const extractQuestionsText = (questionsRaw: unknown): string => {
+  const questions = Array.isArray(questionsRaw) ? questionsRaw : [];
+  const chunks: string[] = [];
+  for (const rawQuestion of questions) {
+    const q = asRecord(rawQuestion);
+    chunks.push(normalizeText(q.teks_soal));
+    chunks.push(normalizeText(q.ideal_answer));
+    const keywordValue = q.keywords;
+    if (Array.isArray(keywordValue)) {
+      chunks.push(keywordValue.map((k) => normalizeText(k)).filter(Boolean).join(' '));
+    } else {
+      chunks.push(normalizeText(keywordValue));
+    }
+    const rubrics = Array.isArray(q.rubrics) ? q.rubrics : [];
+    for (const rawRubric of rubrics) {
+      const rubric = asRecord(rawRubric);
+      chunks.push(normalizeText(rubric.nama_aspek));
+      const descriptors = rubric.descriptors;
+      if (Array.isArray(descriptors)) {
+        for (const row of descriptors) {
+          const d = asRecord(row);
+          chunks.push(normalizeText(d.score));
+          chunks.push(normalizeText(d.description || d.deskripsi));
+        }
+      } else if (descriptors && typeof descriptors === 'object') {
+        const descObj = asRecord(descriptors);
+        for (const [score, desc] of Object.entries(descObj)) {
+          chunks.push(normalizeText(score));
+          chunks.push(normalizeText(desc));
+        }
+      }
+    }
+  }
+  return normalizeText(chunks.filter(Boolean).join(' '));
+};
 
 const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   const { user, logout } = useAuth();
@@ -567,17 +666,54 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
           classes.map(async (cls: SearchClassItem) => {
             const matRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: 'include' });
             const mats = matRes.ok ? await matRes.json() : [];
-            return (Array.isArray(mats) ? mats : []).map((rawMaterial) => {
-              const m = asRecord(rawMaterial);
-              return {
-              id: String(m.id || ''),
-              title: String(m.judul || 'Untitled'),
-              classId: cls.id,
-              className: cls.name,
-              materialId: String(m.id || ''),
-              kind: (String(m.material_type || 'materi').toLowerCase() as SearchKind),
-              status: 'aktif',
-            };}).filter((m: SearchContentItem) => m.id);
+            const materials = Array.isArray(mats) ? mats : [];
+            const enriched = await Promise.all(
+              materials.map(async (rawMaterial) => {
+                const m = asRecord(rawMaterial);
+                const materialId = String(m.id || '');
+                if (!materialId) return null;
+
+                const title = String(m.judul || 'Untitled');
+                const kind = (String(m.material_type || 'materi').toLowerCase() as SearchKind);
+                const href = `/dashboard/teacher/material/${materialId}`;
+                const searchChunks: string[] = [
+                  title,
+                  cls.name,
+                  kind,
+                  extractMaterialBodyText(m),
+                ];
+
+                try {
+                  const [detailRes, qRes] = await Promise.all([
+                    fetch(`/api/materials/${materialId}`, { credentials: 'include' }),
+                    fetch(`/api/materials/${materialId}/essay-questions`, { credentials: 'include' }),
+                  ]);
+                  if (detailRes.ok) {
+                    const detail = asRecord(await detailRes.json());
+                    searchChunks.push(extractMaterialBodyText(detail));
+                  }
+                  if (qRes.ok) {
+                    const questionsRaw = await qRes.json();
+                    searchChunks.push(extractQuestionsText(questionsRaw));
+                  }
+                } catch {
+                  // best-effort indexing; keep base search fields if detail fetch fails
+                }
+
+                return {
+                  id: materialId,
+                  title,
+                  classId: cls.id,
+                  className: cls.name,
+                  materialId,
+                  href,
+                  kind,
+                  status: 'aktif',
+                  searchableText: normalizeText(searchChunks.filter(Boolean).join(' ')).slice(0, 8000),
+                } as SearchContentItem;
+              })
+            );
+            return enriched.filter((item): item is SearchContentItem => item !== null);
           })
         );
         setCommandContents(materialBuckets.flat());
@@ -630,8 +766,45 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
         ].filter((c: SearchClassItem) => c.id);
         const dedup = new Map<string, SearchClassItem>();
         for (const item of merged) dedup.set(item.id, item);
-        setCommandClasses(Array.from(dedup.values()));
+        const studentClasses = Array.from(dedup.values());
+        setCommandClasses(studentClasses);
+
+        const studentContentBuckets = await Promise.all(
+          studentClasses.map(async (cls: SearchClassItem) => {
+            const clsRes = await fetch(`/api/student/classes/${cls.id}`, { credentials: 'include' });
+            const clsDetail = clsRes.ok ? asRecord(await clsRes.json()) : {};
+            const materials = Array.isArray(clsDetail.materials) ? clsDetail.materials : [];
+            return materials.map((rawMaterial) => {
+              const m = asRecord(rawMaterial);
+              const materialId = String(m.id || '');
+              if (!materialId) return null;
+              const title = String(m.judul || 'Untitled');
+              const kind = (String(m.material_type || 'materi').toLowerCase() as SearchKind);
+              const href = `/dashboard/student/classes/${cls.id}/materials/${materialId}`;
+              const searchChunks = [
+                title,
+                cls.name,
+                kind,
+                extractMaterialBodyText(m),
+                extractQuestionsText(m.essay_questions),
+              ];
+              return {
+                id: `${cls.id}:${materialId}`,
+                title,
+                classId: cls.id,
+                className: cls.name,
+                materialId,
+                href,
+                kind,
+                status: cls.status || 'aktif',
+                searchableText: normalizeText(searchChunks.filter(Boolean).join(' ')).slice(0, 8000),
+              } as SearchContentItem;
+            }).filter((item): item is SearchContentItem => item !== null);
+          })
+        );
+        setCommandContents(studentContentBuckets.flat());
       } else if (user.peran === 'superadmin') {
+        setCommandContents([]);
         const usersRes = await fetch('/api/admin/users?sort=last_login', { credentials: 'include' });
         const usersRaw = usersRes.ok ? await usersRes.json() : [];
         const users = Array.isArray(usersRaw) ? usersRaw : [];
@@ -727,9 +900,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
       id: `content-${c.id}`,
       label: c.title,
       description: `${c.className || '-'} • ${c.kind.toUpperCase()}`,
-      href: c.materialId ? `/dashboard/teacher/material/${c.materialId}` : undefined,
+      href: c.href || (c.materialId ? `/dashboard/teacher/material/${c.materialId}` : undefined),
       category: 'Konten',
-      keywords: [c.title, c.className || '', c.kind, c.status || '', 'materi', 'soal', 'tugas'],
+      keywords: [c.title, c.className || '', c.kind, c.status || '', c.searchableText || '', 'materi', 'soal', 'tugas', 'konten', 'isi'],
       meta: { classId: c.classId, className: c.className, status: c.status || 'aktif', kind: c.kind },
     }));
     return [...classCommands, ...studentCommands, ...contentCommands];
@@ -933,7 +1106,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     clipRule="evenodd"
                   />
                 </svg>
-                Cari kelas, materi, siswa...
+                Cari kelas, materi, isi konten, siswa...
               </span>
               <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {shortcutHint}
@@ -1078,7 +1251,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                 type="text"
                 value={commandQuery}
                 onChange={(e) => setCommandQuery(e.target.value)}
-                placeholder="Cari... (contoh: kelas:12A status:pending jenis:soal)"
+                placeholder="Cari... (contoh: kelas:12A status:pending jenis:soal fotosintesis rubrik)"
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
               />
               <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">

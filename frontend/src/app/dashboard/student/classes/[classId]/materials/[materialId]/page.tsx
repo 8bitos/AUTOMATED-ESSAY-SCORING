@@ -513,6 +513,7 @@ export default function StudentMaterialDetailPage() {
   const [questionSort, setQuestionSort] = useState<QuestionSort>("default");
   const [resultSort, setResultSort] = useState<ResultSort>("default");
   const [hideAnsweredQuestions, setHideAnsweredQuestions] = useState(false);
+  const [openQuestionDetails, setOpenQuestionDetails] = useState<Record<string, boolean>>({});
   const [openStudentAnswers, setOpenStudentAnswers] = useState<Record<string, boolean>>({});
   const [taskAnswerText, setTaskAnswerText] = useState("");
   const [taskAnswerLink, setTaskAnswerLink] = useState("");
@@ -1453,7 +1454,10 @@ export default function StudentMaterialDetailPage() {
       )}
       {!shouldForceFullscreen && (
       <section className="sage-panel p-6">
-        <Link href={`/dashboard/student/classes/${classId}`} className="text-sm text-[color:var(--sage-700)] hover:underline">
+        <Link
+          href={`/dashboard/student/classes/${classId}`}
+          className="text-sm font-medium text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
+        >
           ← Kembali ke daftar materi
         </Link>
         <p className="mt-2 text-xs uppercase tracking-wide text-[color:var(--ink-500)]">{cls.class_name}</p>
@@ -1608,7 +1612,7 @@ export default function StudentMaterialDetailPage() {
                           href={block.value}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-[color:var(--sage-700)] hover:underline"
+                          className="inline-flex items-center gap-2 text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
                         >
                           {block.value}
                         </a>
@@ -1625,7 +1629,7 @@ export default function StudentMaterialDetailPage() {
                           href={block.value}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-[color:var(--sage-700)] hover:underline"
+                          className="inline-flex items-center gap-2 text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
                         >
                           {block.type.toUpperCase()} Materi
                         </a>
@@ -1645,7 +1649,11 @@ export default function StudentMaterialDetailPage() {
             return <p className="text-[color:var(--ink-500)]">Materi teks belum tersedia.</p>;
           })()}
           {material.file_url && (
-            <a href={`/api/uploads/${material.file_url}`} target="_blank" className="inline-block text-[color:var(--sage-700)] hover:underline">
+            <a
+              href={`/api/uploads/${material.file_url}`}
+              target="_blank"
+              className="inline-block text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
+            >
               Download File Materi
             </a>
           )}
@@ -1696,7 +1704,7 @@ export default function StudentMaterialDetailPage() {
                 </button>
               </div>
               {bulkSubmitMessage && (
-                <p className={`mt-2 text-sm ${bulkSubmitMessage.toLowerCase().includes("berhasil") ? "text-[color:var(--sage-700)]" : "text-red-600"}`}>
+                <p className={`mt-2 text-sm ${bulkSubmitMessage.toLowerCase().includes("berhasil") ? "text-emerald-700 dark:text-emerald-300" : "text-red-600"}`}>
                   {bulkSubmitMessage}
                 </p>
               )}
@@ -1832,7 +1840,7 @@ export default function StudentMaterialDetailPage() {
                         href={taskCardConfig.meta.tugas_attachment_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex text-sm text-[color:var(--sage-700)] hover:underline"
+                        className="inline-flex text-sm text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
                       >
                         Lampiran: {taskCardConfig.meta.tugas_attachment_name || "Buka Lampiran"}
                       </a>
@@ -1885,7 +1893,12 @@ export default function StudentMaterialDetailPage() {
                             {taskUploading ? "Uploading..." : "Upload File"}
                           </button>
                           {taskAnswerFileUrl && (
-                            <a href={taskAnswerFileUrl} target="_blank" rel="noopener noreferrer" className="block text-sm text-[color:var(--sage-700)] hover:underline">
+                            <a
+                              href={taskAnswerFileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-sm text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
+                            >
                               File terupload: {taskAnswerFileName || taskAnswerFileUrl}
                             </a>
                           )}
@@ -1905,7 +1918,7 @@ export default function StudentMaterialDetailPage() {
                           <span
                             className={`text-sm ${
                               submitMessage[taskSubmissionQuestion.id].toLowerCase().includes("berhasil")
-                                ? "text-[color:var(--sage-700)]"
+                                ? "text-emerald-700 dark:text-emerald-300"
                                 : "text-red-500"
                             }`}
                           >
@@ -1932,6 +1945,7 @@ export default function StudentMaterialDetailPage() {
           )}
           {!isTugasContext && !isCardAnswerMode && visibleQuestions.map((q, index) => {
             const isReattempting = !!reattemptQuestionIds[q.id];
+            const detailOpen = Boolean(openQuestionDetails[q.id]) || isReattempting;
             const attemptCount = getAttemptCount(q);
             const attemptLimitLabel = sectionQuizSettings.attempt_limit > 0 ? String(sectionQuizSettings.attempt_limit) : "tak terbatas";
             const cooldownSeconds = getRemainingCooldownSeconds(q);
@@ -1940,12 +1954,52 @@ export default function StudentMaterialDetailPage() {
             const canReattemptNow = canStartReattempt(q);
             return (
             <div key={q.id} className="sage-card p-5">
-              <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
-              <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
-              {sectionQuizSettings.show_rubric_in_question && Array.isArray(q.rubrics) && q.rubrics.length > 0 && (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
-                  <div className="mt-2 space-y-2">
+              <div
+                role="button"
+                tabIndex={0}
+                className="flex cursor-pointer items-start justify-between gap-3 rounded-lg"
+                onClick={() =>
+                  setOpenQuestionDetails((prev) => ({
+                    ...prev,
+                    [q.id]: !detailOpen,
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setOpenQuestionDetails((prev) => ({
+                      ...prev,
+                      [q.id]: !detailOpen,
+                    }));
+                  }
+                }}
+              >
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
+                  <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
+                </div>
+                <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-sm text-slate-600">
+                  {detailOpen ? "▴" : "▾"}
+                </span>
+              </div>
+
+              {detailOpen && sectionQuizSettings.show_rubric_in_question && Array.isArray(q.rubrics) && q.rubrics.length > 0 && (
+                <details className="group mt-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
+                      <p className="text-[11px] text-slate-500">
+                        {q.rubrics.length} aspek • klik untuk buka/tutup
+                      </p>
+                    </div>
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 group-open:hidden">
+                      Buka
+                    </span>
+                    <span className="hidden rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 group-open:inline-flex">
+                      Tutup
+                    </span>
+                  </summary>
+                  <div className="border-t border-slate-200 px-3 pb-3 pt-2 space-y-2">
                     {q.rubrics.map((rubric, rubricIndex) => {
                       const descriptors = normalizeRubricDescriptors(rubric);
                       return (
@@ -1966,9 +2020,10 @@ export default function StudentMaterialDetailPage() {
                       );
                     })}
                   </div>
-                </div>
+                </details>
               )}
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              {detailOpen && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="sage-pill">Bobot: {typeof q.weight === "number" && q.weight > 0 ? q.weight : 1}</span>
                 <span
                   className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -2020,31 +2075,9 @@ export default function StudentMaterialDetailPage() {
                 ) : (
                   <span className="sage-pill bg-slate-100 text-slate-700">Hasil disembunyikan</span>
                 )}
-                {q.submission_id && !isReattempting && (
-                  <button
-                    type="button"
-                    className="sage-button-outline"
-                    disabled={!canSubmitInCurrentState || !canReattemptNow}
-                    onClick={() => requestReattempt(q)}
-                  >
-                    {cooldownSeconds > 0
-                      ? `Cooldown ${formatCooldown(cooldownSeconds)}`
-                      : isAttemptLimitReached
-                        ? "Limit Attempt Habis"
-                        : "Coba Ulang"}
-                  </button>
-                )}
-                {q.submission_id && isReattempting && (
-                  <button
-                    type="button"
-                    className="sage-button-outline"
-                    onClick={() => setReattemptQuestionIds((prev) => ({ ...prev, [q.id]: false }))}
-                  >
-                    Batal Coba Ulang
-                  </button>
-                )}
               </div>
-              {(!q.submission_id || isReattempting) && (
+              )}
+              {detailOpen && (!q.submission_id || isReattempting) && (
                 <div className="mt-4 space-y-3">
                   <textarea
                     className="sage-input min-h-32"
@@ -2064,11 +2097,20 @@ export default function StudentMaterialDetailPage() {
                       {submitLoading[q.id] ? "Mengirim..." : isReattempting ? "Kirim Ulang Jawaban" : "Submit Jawaban"}
                     </button>
                     )}
+                    {q.submission_id && isReattempting && (
+                      <button
+                        type="button"
+                        className="sage-button-outline"
+                        onClick={() => setReattemptQuestionIds((prev) => ({ ...prev, [q.id]: false }))}
+                      >
+                        Batal Coba Ulang
+                      </button>
+                    )}
                     {submitMessage[q.id] && (
                       <span
                         className={`text-sm ${
                           submitMessage[q.id].toLowerCase().includes("berhasil")
-                            ? "text-[color:var(--sage-700)]"
+                            ? "text-emerald-700 dark:text-emerald-300"
                             : "text-red-500"
                         }`}
                       >
@@ -2078,7 +2120,23 @@ export default function StudentMaterialDetailPage() {
                   </div>
                 </div>
               )}
-              {q.submission_id && q.student_essay_text && !isReattempting && (
+              {detailOpen && q.submission_id && !isReattempting && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-black/5 pt-3">
+                  <button
+                    type="button"
+                    className="sage-button-outline"
+                    disabled={!canSubmitInCurrentState || !canReattemptNow}
+                    onClick={() => requestReattempt(q)}
+                  >
+                    {cooldownSeconds > 0
+                      ? `Cooldown ${formatCooldown(cooldownSeconds)}`
+                      : isAttemptLimitReached
+                        ? "Limit Attempt Habis"
+                        : "Coba Ulang"}
+                  </button>
+                </div>
+              )}
+              {detailOpen && q.submission_id && q.student_essay_text && !isReattempting && (
                 <div className="mt-4 bg-white border border-black/5 rounded-xl p-4">
                   <button
                     type="button"
@@ -2086,7 +2144,7 @@ export default function StudentMaterialDetailPage() {
                     className="w-full flex items-center justify-between text-left"
                   >
                     <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Jawaban Anda</p>
-                    <span className="text-xs text-[color:var(--sage-700)]">
+                    <span className="text-xs text-[color:var(--sage-700)] dark:text-sky-300">
                       {openStudentAnswers[q.id] ? "Tutup" : "Buka"}
                     </span>
                   </button>
@@ -2124,9 +2182,22 @@ export default function StudentMaterialDetailPage() {
               </div>
               <p className="text-lg text-[color:var(--ink-900)]">{currentCardQuestion.teks_soal}</p>
               {sectionQuizSettings.show_rubric_in_question && Array.isArray(currentCardQuestion.rubrics) && currentCardQuestion.rubrics.length > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
-                  <div className="mt-2 space-y-2">
+                <details className="group overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
+                      <p className="text-[11px] text-slate-500">
+                        {currentCardQuestion.rubrics.length} aspek • klik untuk buka/tutup
+                      </p>
+                    </div>
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 group-open:hidden">
+                      Buka
+                    </span>
+                    <span className="hidden rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 group-open:inline-flex">
+                      Tutup
+                    </span>
+                  </summary>
+                  <div className="border-t border-slate-200 px-3 pb-3 pt-2 space-y-2">
                     {currentCardQuestion.rubrics.map((rubric, rubricIndex) => {
                       const descriptors = normalizeRubricDescriptors(rubric);
                       return (
@@ -2147,7 +2218,7 @@ export default function StudentMaterialDetailPage() {
                       );
                     })}
                   </div>
-                </div>
+                </details>
               )}
 
               {!currentCardQuestion.submission_id || !!reattemptQuestionIds[currentCardQuestion.id] ? (
@@ -2197,7 +2268,7 @@ export default function StudentMaterialDetailPage() {
                       <span
                         className={`text-sm ${
                           submitMessage[currentCardQuestion.id].toLowerCase().includes("berhasil")
-                            ? "text-[color:var(--sage-700)]"
+                            ? "text-emerald-700 dark:text-emerald-300"
                             : "text-red-500"
                         }`}
                       >
@@ -2404,7 +2475,7 @@ export default function StudentMaterialDetailPage() {
                                 <button
                                   type="button"
                                   onClick={() => toggleFeedback(aiFeedbackKey)}
-                                  className="mt-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline"
+                                  className="mt-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
                                 >
                                   {isAIFeedbackExpanded ? "Tutup" : "Baca selengkapnya"}
                                 </button>
@@ -2441,7 +2512,7 @@ export default function StudentMaterialDetailPage() {
                                 <button
                                   type="button"
                                   onClick={() => toggleFeedback(teacherFeedbackKey)}
-                                  className="mt-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline"
+                                  className="mt-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
                                 >
                                   {isTeacherFeedbackExpanded ? "Tutup" : "Baca selengkapnya"}
                                 </button>

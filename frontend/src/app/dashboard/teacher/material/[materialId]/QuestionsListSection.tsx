@@ -27,6 +27,7 @@ interface QuestionsListSectionProps {
   handleDropReorderQuestion: (sourceQuestionId: string, targetQuestionId: string) => void;
   canReorderQuestions: boolean;
   movingQuestionId: string | null;
+  rubricMode?: "per_question" | "global";
   renderDoubleAsteriskBold: (text?: string) => JSX.Element[];
   formatDescriptor: (value: unknown) => string;
 }
@@ -55,6 +56,7 @@ function QuestionListCard({
   canReorder,
   reorderBusy,
   moving,
+  rubricMode,
   renderDoubleAsteriskBold,
   formatDescriptor,
 }: {
@@ -75,6 +77,7 @@ function QuestionListCard({
   canReorder: boolean;
   reorderBusy: boolean;
   moving: boolean;
+  rubricMode: "per_question" | "global";
   renderDoubleAsteriskBold: (text?: string) => JSX.Element[];
   formatDescriptor: (value: unknown) => string;
 }) {
@@ -160,6 +163,11 @@ function QuestionListCard({
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">
                 <FiAward className="h-3 w-3" />
                 {item.rubrics.length} rubrik
+              </span>
+            )}
+            {rubricMode === "global" && (
+              <span className="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 font-semibold text-sky-700">
+                Rubrik Global
               </span>
             )}
           </div>
@@ -261,6 +269,7 @@ export default function QuestionsListSection({
   handleDropReorderQuestion,
   canReorderQuestions,
   movingQuestionId,
+  rubricMode = "per_question",
   renderDoubleAsteriskBold,
   formatDescriptor,
 }: QuestionsListSectionProps) {
@@ -319,6 +328,7 @@ export default function QuestionsListSection({
           <p className="text-sm text-slate-500">
             Kelola pertanyaan dan rubrik penilaian.
             {canReorderQuestions ? " Gunakan tombol atas/bawah untuk ubah urutan soal." : ""}
+            {rubricMode === "global" ? " Mode rubrik saat ini: Global." : ""}
           </p>
         </div>
         <button onClick={handleOpenAddQuestionModal} className="sage-button">
@@ -359,6 +369,7 @@ export default function QuestionsListSection({
                 canReorder={canReorderQuestions}
                 reorderBusy={reorderBusy}
                 moving={movingQuestionId === q.id}
+                rubricMode={rubricMode}
                 renderDoubleAsteriskBold={renderDoubleAsteriskBold}
                 formatDescriptor={formatDescriptor}
               />
