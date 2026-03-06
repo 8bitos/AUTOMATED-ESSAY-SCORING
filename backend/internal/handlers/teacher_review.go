@@ -85,11 +85,13 @@ func (h *TeacherReviewHandlers) GetTeacherReviewBySubmissionIDHandler(w http.Res
 
 	review, err := h.Service.GetTeacherReviewBySubmissionID(submissionID)
 	if err != nil {
-		log.Printf("ERROR: Failed to get teacher review for submission %s: %v", submissionID, err)
-		if err.Error() == fmt.Sprintf("teacher review not found for submission %s", submissionID) {
+		notFoundMsg := fmt.Sprintf("teacher review not found for submission %s", submissionID)
+		if err.Error() == notFoundMsg {
+			log.Printf("INFO: Teacher review not found for submission %s", submissionID)
 			respondWithError(w, http.StatusNotFound, "Teacher review not found for this submission")
 			return
 		}
+		log.Printf("ERROR: Failed to get teacher review for submission %s: %v", submissionID, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve teacher review")
 		return
 	}

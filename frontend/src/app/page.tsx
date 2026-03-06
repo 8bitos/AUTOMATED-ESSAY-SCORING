@@ -45,7 +45,7 @@ export default function Home() {
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400 sm:text-xs sm:tracking-[0.4em]">SAGE LMS</p>
-                <p className="text-sm text-slate-300">Smart Academic Grading Engine</p>
+                <p className="text-sm text-slate-300">Smart Automated Grading Engine</p>
               </div>
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">

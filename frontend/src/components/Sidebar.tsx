@@ -592,11 +592,11 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
           </button>
           <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white dark:bg-slate-700 dark:text-slate-100">
-              {userInitial}
+              S
             </div>
             <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{user.nama_lengkap || "Pengguna"}</p>
-              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{userRole}</p>
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">SAGE</p>
+              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Smart Automated Grading Engine</p>
             </div>
           </div>
         </div>

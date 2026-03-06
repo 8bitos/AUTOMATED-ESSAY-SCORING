@@ -10,7 +10,7 @@ const siteUrl = getSiteUrl();
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "SAGE | Smart Academic Grading Engine",
+    default: "SAGE | Smart Automated Grading Engine",
     template: "%s | SAGE",
   },
   description: "Platform LMS untuk penilaian esai otomatis, rubrik transparan, dan feedback akademik terstruktur.",
@@ -21,12 +21,12 @@ export const metadata: Metadata = {
     type: "website",
     url: siteUrl,
     siteName: "SAGE",
-    title: "SAGE | Smart Academic Grading Engine",
+    title: "SAGE | Smart Automated Grading Engine",
     description: "Platform LMS untuk penilaian esai otomatis, rubrik transparan, dan feedback akademik terstruktur.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "SAGE | Smart Academic Grading Engine",
+    title: "SAGE | Smart Automated Grading Engine",
     description: "Platform LMS untuk penilaian esai otomatis, rubrik transparan, dan feedback akademik terstruktur.",
   },
 };
