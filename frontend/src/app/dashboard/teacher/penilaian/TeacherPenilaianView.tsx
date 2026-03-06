@@ -394,7 +394,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   const visibleSummaryCards = showSummaryCards && !detailOpen;
   const basePanelHeightVh = visibleSummaryCards ? 74 : 84;
   const panelHeightVh = isSpreadsheetFocusMode ? 92 : basePanelHeightVh;
-  const panelHeightStyle = isSpreadsheetFocusMode ? "calc(100vh - 2rem)" : `${panelHeightVh}vh`;
+  const panelHeightStyle = isSpreadsheetFocusMode ? "100vh" : `${panelHeightVh}vh`;
 
   const loadQueue = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
@@ -1250,9 +1250,11 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
 
   useEffect(() => {
     if (!isSpreadsheetFocusMode) return;
+    document.body.classList.add("sage-penilaian-fullscreen");
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
+      document.body.classList.remove("sage-penilaian-fullscreen");
       document.body.style.overflow = prevOverflow;
     };
   }, [isSpreadsheetFocusMode]);
@@ -1355,6 +1357,37 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   ]);
 
   useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      return target.isContentEditable;
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (reviewViewMode !== "spreadsheet") return;
+      if (isEditableTarget(event.target)) return;
+
+      const key = event.key.toLowerCase();
+      const wantsFullscreenToggle = (event.ctrlKey || event.metaKey) && event.shiftKey && key === "f";
+      if (!wantsFullscreenToggle) return;
+
+      event.preventDefault();
+      setSpreadsheetFullscreen((prev) => {
+        const next = !prev;
+        if (next) {
+          setDetailOpen(false);
+          setSidebarCollapsed(true);
+        }
+        return next;
+      });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [reviewViewMode]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (isSpreadsheetFocusMode) {
@@ -1444,6 +1477,14 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
 
   return (
     <div className="teacher-penilaian-view space-y-3">
+      {isSpreadsheetFocusMode && (
+        <style jsx global>{`
+          body.sage-penilaian-fullscreen #sidebar { display: none !important; }
+          body.sage-penilaian-fullscreen .topbar-shell { display: none !important; }
+          body.sage-penilaian-fullscreen main > div { max-width: 100% !important; padding: 0 !important; }
+        `}</style>
+      )}
+      {!isSpreadsheetFocusMode && (
       <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-800/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -1494,8 +1535,9 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
           </button>
         </div>
       </div>
+      )}
 
-      {visibleSummaryCards && (
+      {!isSpreadsheetFocusMode && visibleSummaryCards && (
         <section className="grid gap-2 sm:grid-cols-3">
           <StatCard title="Perlu Dinilai" value={String(summary.pending)} icon={<FiClock className="text-amber-600" />} />
           <StatCard title="Sudah Dinilai" value={String(summary.reviewed)} icon={<FiCheckCircle className="text-emerald-600" />} />
@@ -1625,11 +1667,10 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
         <div className="sage-panel p-6 text-red-600">{error}</div>
       ) : (
         <>
-        {isSpreadsheetFocusMode && <div className="fixed inset-0 z-[79] bg-slate-950/70 backdrop-blur-[1px]" />}
         <section
           className={`relative grid gap-3 overflow-hidden ${
             isSpreadsheetFocusMode
-              ? "fixed inset-0 z-[80] grid-cols-1 bg-transparent p-4"
+              ? "fixed inset-0 z-[9999] grid-cols-1 bg-slate-950/90 p-0"
               : sidebarCollapsed
                 ? "lg:grid-cols-[64px_minmax(0,1fr)]"
                 : "lg:grid-cols-[240px_minmax(0,1fr)]"
@@ -1748,7 +1789,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
 
           <div
             className={`flex flex-col overflow-hidden border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 ${
-              isSpreadsheetFocusMode ? "rounded-2xl shadow-2xl" : "rounded-xl"
+              isSpreadsheetFocusMode ? "rounded-none border-0 shadow-none" : "rounded-xl"
             }`}
             style={{ height: panelHeightStyle }}
           >
@@ -1779,7 +1820,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                         });
                       }}
                       className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-                      title={isSpreadsheetFocusMode ? "Keluar mode fullscreen spreadsheet" : "Masuk mode fullscreen spreadsheet"}
+                      title={isSpreadsheetFocusMode ? "Keluar mode fullscreen spreadsheet (Ctrl+Shift+F)" : "Masuk mode fullscreen spreadsheet (Ctrl+Shift+F)"}
                     >
                       {isSpreadsheetFocusMode ? <FiMinimize2 size={12} /> : <FiMaximize2 size={12} />}
                       {isSpreadsheetFocusMode ? "Keluar Fullscreen" : "Fullscreen"}
