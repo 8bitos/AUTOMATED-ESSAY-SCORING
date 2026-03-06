@@ -26,11 +26,11 @@ jobs:
         include:
           - name: backend
             context: ./backend
-            dockerfile: ./backend/Dockerfile
+            dockerfile: Dockerfile
             image: sssevendayz/sage-backend
           - name: frontend
             context: ./frontend
-            dockerfile: ./frontend/Dockerfile
+            dockerfile: Dockerfile
             image: sssevendayz/sage-frontend
 
     steps:
