@@ -19,6 +19,7 @@ import {
   FiSearch,
 } from "react-icons/fi";
 import TeacherProfileModal from "@/components/TeacherProfileModal";
+import SafeHtml from "@/components/ui/SafeHtml";
 
 interface EssayQuestion {
   id: string;
@@ -33,6 +34,11 @@ interface EssayQuestion {
   rubrics?: Array<{ nama_aspek: string; descriptors?: Array<{ score: string | number }> | Record<string, unknown> }>;
 }
 
+interface EssayRubric {
+  nama_aspek: string;
+  descriptors?: Array<{ score: string | number }> | Record<string, unknown>;
+}
+
 type SectionContentType = "materi" | "soal" | "tugas" | "penilaian" | "gambar" | "video" | "upload";
 
 interface SectionContentCardData {
@@ -43,6 +49,7 @@ interface SectionContentCardData {
   created_at: string;
   meta?: {
     question_ids?: string[];
+    materi_mode?: "singkat" | "lengkap";
     materi_description?: string;
     description?: string;
     tugas_instruction?: string;
@@ -184,12 +191,12 @@ const normalizeQuestionIds = (raw: unknown): string[] =>
     ? raw.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
     : [];
 
-const getRubricMaxScore = (rubric?: EssayQuestion["rubrics"] extends Array<infer T> ? T : never): number => {
+const getRubricMaxScore = (rubric?: EssayRubric): number => {
   if (!rubric?.descriptors) return 0;
   const entries = Array.isArray(rubric.descriptors)
     ? rubric.descriptors
     : Object.entries(rubric.descriptors).map(([score]) => ({ score }));
-  return entries.reduce((max, row) => {
+  return entries.reduce<number>((max, row) => {
     const value = Number(row.score);
     if (!Number.isFinite(value)) return max;
     return value > max ? value : max;
@@ -1109,9 +1116,9 @@ export default function StudentClassMaterialsPage() {
                                   return (
                                     <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
                                       {containsHtmlTag(fullContent) ? (
-                                        <div
+                                        <SafeHtml
                                           className="prose prose-slate max-w-none text-[color:var(--ink-700)]"
-                                          dangerouslySetInnerHTML={{ __html: fullContent }}
+                                          html={fullContent}
                                         />
                                       ) : (
                                         <p className="text-sm text-[color:var(--ink-700)] whitespace-pre-line">{fullContent}</p>

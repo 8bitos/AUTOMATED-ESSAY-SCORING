@@ -22,6 +22,8 @@ type EssayQuestion struct {
 
 	// Fields for student's submission data (denormalized for student view)
 	SubmissionID     *string                 `json:"submission_id,omitempty"`
+	SubmissionAttemptCount *int              `json:"submission_attempt_count,omitempty"`
+	SubmissionSubmittedAt  *time.Time        `json:"submission_submitted_at,omitempty"`
 	StudentEssayText *string                 `json:"student_essay_text,omitempty"`
 	AIGradingStatus  *string                 `json:"ai_grading_status,omitempty"`
 	AIGradingError   *string                 `json:"ai_grading_error,omitempty"`

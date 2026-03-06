@@ -1,13 +1,7 @@
-import { Work_Sans } from "next/font/google";
+import { Suspense } from "react";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext"; // Import AuthProvider
 import { ThemeProvider } from "@/context/ThemeContext";
-
-const workSans = Work_Sans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
 
 export const metadata = {
   title: "SAGE | Smart Academic Grading Engine",
@@ -21,9 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${workSans.className} ${workSans.variable}`}>
+      <body>
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <Suspense fallback={null}>
+            <AuthProvider>{children}</AuthProvider>
+          </Suspense>
         </ThemeProvider>
       </body>
     </html>

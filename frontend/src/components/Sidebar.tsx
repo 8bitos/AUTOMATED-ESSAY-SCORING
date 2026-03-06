@@ -579,7 +579,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
             aria-expanded={mobileProfileOpen}
             aria-label="Buka menu profil"
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white dark:bg-slate-700 dark:text-slate-100">
               {userInitial}
             </div>
             <div className="min-w-0 leading-tight">
@@ -591,7 +591,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
             </svg>
           </button>
           <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white dark:bg-slate-700 dark:text-slate-100">
               {userInitial}
             </div>
             <div className="min-w-0 leading-tight">
@@ -650,7 +650,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                 const iconClass = isUpdatesItem && active ? "text-sky-700 dark:text-sky-300" : "text-slate-500 dark:text-slate-400";
                 const infoBadgeClass = active
                   ? "bg-sky-600 text-white dark:bg-sky-400 dark:text-slate-900"
-                  : "bg-slate-300 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
+                  : "border border-slate-300 bg-slate-200 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200";
                 return (
                 <li
                   key={item.href}

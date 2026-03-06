@@ -36,6 +36,41 @@ type essayGradingJob struct {
 	QuestionID   string
 	StudentID    string
 	TeksJawaban  string
+	ScoringMethod string
+}
+
+var ErrAttemptLimitReached = errors.New("attempt limit reached")
+
+type AttemptCooldownError struct {
+	Remaining time.Duration
+}
+
+func (e *AttemptCooldownError) Error() string {
+	if e == nil {
+		return "attempt cooldown is active"
+	}
+	if e.Remaining <= 0 {
+		return "attempt cooldown is active"
+	}
+	seconds := int(math.Ceil(e.Remaining.Seconds()))
+	if seconds < 1 {
+		seconds = 1
+	}
+	return fmt.Sprintf("kamu harus menunggu %d detik sebelum mencoba lagi", seconds)
+}
+
+type quizAttemptConfig struct {
+	AttemptLimit     int
+	CooldownMinutes  int
+	AttemptScoring   string
+}
+
+func defaultQuizAttemptConfig() quizAttemptConfig {
+	return quizAttemptConfig{
+		AttemptLimit:    1,
+		CooldownMinutes: 0,
+		AttemptScoring:  "last",
+	}
 }
 
 func (s *EssaySubmissionService) isTaskQuestion(questionID string) (bool, error) {
@@ -70,6 +105,101 @@ func (s *EssaySubmissionService) isTaskSubmissionByID(submissionID string) (bool
 		return false, fmt.Errorf("failed to load submission type: %w", err)
 	}
 	return submissionType == "task", nil
+}
+
+func readConfigInt(raw map[string]interface{}, key string, fallback int) int {
+	value, ok := raw[key]
+	if !ok || value == nil {
+		return fallback
+	}
+	switch v := value.(type) {
+	case float64:
+		return int(math.Max(0, math.Round(v)))
+	case float32:
+		return int(math.Max(0, math.Round(float64(v))))
+	case int:
+		if v < 0 {
+			return 0
+		}
+		return v
+	case int64:
+		if v < 0 {
+			return 0
+		}
+		return int(v)
+	default:
+		return fallback
+	}
+}
+
+func (s *EssaySubmissionService) loadQuizAttemptConfig(questionID string) (quizAttemptConfig, error) {
+	cfg := defaultQuizAttemptConfig()
+
+	var isiMateri sql.NullString
+	err := s.db.QueryRowContext(
+		context.Background(),
+		`SELECT m.isi_materi
+		 FROM essay_questions eq
+		 JOIN materials m ON m.id = eq.material_id
+		 WHERE eq.id = $1`,
+		questionID,
+	).Scan(&isiMateri)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return cfg, nil
+		}
+		return cfg, err
+	}
+	if !isiMateri.Valid || strings.TrimSpace(isiMateri.String) == "" {
+		return cfg, nil
+	}
+
+	var parsed struct {
+		Format string                   `json:"format"`
+		Items  []map[string]interface{} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(isiMateri.String)), &parsed); err != nil {
+		return cfg, nil
+	}
+	if parsed.Format != "sage_section_cards_v1" {
+		return cfg, nil
+	}
+
+	for _, item := range parsed.Items {
+		itemType, _ := item["type"].(string)
+		if strings.TrimSpace(itemType) != "soal" {
+			continue
+		}
+		meta, ok := item["meta"].(map[string]interface{})
+		if !ok || meta == nil {
+			continue
+		}
+		questionIDs, _ := meta["question_ids"].([]interface{})
+		foundQuestion := false
+		for _, rawID := range questionIDs {
+			id, _ := rawID.(string)
+			if strings.TrimSpace(id) == strings.TrimSpace(questionID) {
+				foundQuestion = true
+				break
+			}
+		}
+		if !foundQuestion {
+			continue
+		}
+
+		rawQuizSettings, _ := meta["quiz_settings"].(map[string]interface{})
+		if rawQuizSettings == nil {
+			return cfg, nil
+		}
+		cfg.AttemptLimit = readConfigInt(rawQuizSettings, "attempt_limit", cfg.AttemptLimit)
+		cfg.CooldownMinutes = readConfigInt(rawQuizSettings, "attempt_cooldown_minutes", cfg.CooldownMinutes)
+		if method, ok := rawQuizSettings["attempt_scoring_method"].(string); ok && strings.TrimSpace(method) == "best" {
+			cfg.AttemptScoring = "best"
+		}
+		return cfg, nil
+	}
+
+	return cfg, nil
 }
 
 func roundToNearestStep(score float64, step float64) float64 {
@@ -209,42 +339,101 @@ func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, te
 	if err != nil {
 		return nil, nil, err
 	}
+	config, err := s.loadQuizAttemptConfig(questionID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load quiz attempt config: %w", err)
+	}
 
-	// Membuat objek EssaySubmission baru.
+	now := time.Now()
 	newSubmission := &models.EssaySubmission{
 		QuestionID:      questionID,
 		StudentID:       studentID,
 		SubmissionType:  "essay",
+		AttemptCount:    1,
 		TeksJawaban:     teksJawaban,
-		SubmittedAt:     time.Now(),
+		SubmittedAt:     now,
 		AIGradingStatus: "queued",
 	}
 	if isTaskSubmission {
-		// Tugas dinilai/review manual oleh guru, tidak masuk pipeline AI.
 		newSubmission.SubmissionType = "task"
 		newSubmission.AIGradingStatus = "completed"
 	}
 
-	// Query INSERT untuk menambahkan submission esai baru.
-	query := `
-		INSERT INTO essay_submissions (soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id
-	`
+	var existing struct {
+		ID           string
+		AttemptCount int
+		SubmittedAt  time.Time
+	}
+	getExistingErr := s.db.QueryRowContext(
+		context.Background(),
+		`SELECT id, COALESCE(attempt_count, 1), submitted_at
+		 FROM essay_submissions
+		 WHERE soal_id = $1 AND siswa_id = $2`,
+		questionID,
+		studentID,
+	).Scan(&existing.ID, &existing.AttemptCount, &existing.SubmittedAt)
 
-	// Menjalankan query dan memindai ID yang dikembalikan ke newSubmission.ID.
-	err = s.db.QueryRow(
-		query,
-		newSubmission.QuestionID,
-		newSubmission.StudentID,
-		newSubmission.SubmissionType,
-		newSubmission.TeksJawaban,
-		newSubmission.SubmittedAt,
-		newSubmission.AIGradingStatus,
-	).Scan(&newSubmission.ID)
+	switch {
+	case getExistingErr == sql.ErrNoRows:
+		err = s.db.QueryRowContext(
+			context.Background(),
+			`INSERT INTO essay_submissions (soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, attempt_count)
+			 VALUES ($1, $2, $3, $4, $5, $6, 1)
+			 RETURNING id`,
+			newSubmission.QuestionID,
+			newSubmission.StudentID,
+			newSubmission.SubmissionType,
+			newSubmission.TeksJawaban,
+			newSubmission.SubmittedAt,
+			newSubmission.AIGradingStatus,
+		).Scan(&newSubmission.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error inserting new essay submission: %w", err)
+		}
+	case getExistingErr != nil:
+		return nil, nil, fmt.Errorf("error loading existing submission: %w", getExistingErr)
+	default:
+		if config.AttemptLimit > 0 && existing.AttemptCount >= config.AttemptLimit {
+			return nil, nil, ErrAttemptLimitReached
+		}
+		if config.CooldownMinutes > 0 {
+			nextAllowed := existing.SubmittedAt.Add(time.Duration(config.CooldownMinutes) * time.Minute)
+			if now.Before(nextAllowed) {
+				return nil, nil, &AttemptCooldownError{Remaining: nextAllowed.Sub(now)}
+			}
+		}
 
-	if err != nil {
-		return nil, nil, fmt.Errorf("error inserting new essay submission: %w", err)
+		newSubmission.ID = existing.ID
+		newSubmission.AttemptCount = existing.AttemptCount + 1
+		if _, err := s.db.ExecContext(
+			context.Background(),
+			`UPDATE essay_submissions
+			 SET submission_type = $1,
+			     teks_jawaban = $2,
+			     submitted_at = $3,
+			     ai_grading_status = $4,
+			     ai_grading_error = NULL,
+			     ai_graded_at = NULL,
+			     attempt_count = COALESCE(attempt_count, 1) + 1
+			 WHERE id = $5`,
+			newSubmission.SubmissionType,
+			newSubmission.TeksJawaban,
+			newSubmission.SubmittedAt,
+			newSubmission.AIGradingStatus,
+			newSubmission.ID,
+		); err != nil {
+			return nil, nil, fmt.Errorf("error updating essay submission attempt: %w", err)
+		}
+		// Review guru wajib direset untuk attempt baru agar tidak membawa penilaian lama.
+		if _, err := s.db.ExecContext(context.Background(), "DELETE FROM teacher_reviews WHERE submission_id = $1", newSubmission.ID); err != nil {
+			return nil, nil, fmt.Errorf("error resetting teacher review for resubmission: %w", err)
+		}
+		// Untuk mode nilai terakhir, hasil AI lama dibersihkan agar diganti hasil terbaru.
+		if !isTaskSubmission && config.AttemptScoring != "best" {
+			if _, err := s.db.ExecContext(context.Background(), "DELETE FROM ai_results WHERE submission_id = $1", newSubmission.ID); err != nil {
+				return nil, nil, fmt.Errorf("error resetting AI result for resubmission: %w", err)
+			}
+		}
 	}
 	if isTaskSubmission {
 		return newSubmission, nil, nil
@@ -255,10 +444,11 @@ func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, te
 	}
 
 	job := essayGradingJob{
-		SubmissionID: newSubmission.ID,
-		QuestionID:   questionID,
-		StudentID:    studentID,
-		TeksJawaban:  teksJawaban,
+		SubmissionID:  newSubmission.ID,
+		QuestionID:    questionID,
+		StudentID:     studentID,
+		TeksJawaban:   teksJawaban,
+		ScoringMethod: config.AttemptScoring,
 	}
 	if s.shouldUseInstantGrading() {
 		if gradeResp, gradeErr := s.gradeJob(job); gradeErr != nil {
@@ -360,6 +550,23 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 		}
 	}
 
+	if strings.TrimSpace(job.ScoringMethod) == "best" {
+		var prevScore sql.NullFloat64
+		if err := s.db.QueryRowContext(
+			context.Background(),
+			"SELECT skor_ai FROM ai_results WHERE submission_id = $1",
+			job.SubmissionID,
+		).Scan(&prevScore); err != nil && err != sql.ErrNoRows {
+			_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", err.Error(), nil)
+			return gradeResp, err
+		}
+		if prevScore.Valid && prevScore.Float64 >= skorAI {
+			gradedAt := time.Now()
+			_ = s.updateSubmissionGradingStatus(job.SubmissionID, "completed", "", &gradedAt)
+			return gradeResp, nil
+		}
+	}
+
 	if _, insertErr := s.db.ExecContext(
 		context.Background(),
 		`INSERT INTO ai_results (submission_id, skor_ai, umpan_balik_ai, logs_rag, generated_at)
@@ -421,14 +628,14 @@ func (s *EssaySubmissionService) updateSubmissionGradingStatus(submissionID, sta
 // GetEssaySubmissionByID mengambil satu submission esai berdasarkan ID-nya.
 func (s *EssaySubmissionService) GetEssaySubmissionByID(submissionID string) (*models.EssaySubmission, error) {
 	query := `
-		SELECT id, soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
+		SELECT id, soal_id, siswa_id, submission_type, COALESCE(attempt_count, 1), teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
 		FROM essay_submissions
 		WHERE id = $1
 	`
 
 	var es models.EssaySubmission
 	err := s.db.QueryRow(query, submissionID).Scan(
-		&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
+		&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.AttemptCount, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
 	)
 
 	if err != nil {
@@ -445,7 +652,7 @@ func (s *EssaySubmissionService) GetEssaySubmissionByID(submissionID string) (*m
 func (s *EssaySubmissionService) GetEssaySubmissionsByQuestionID(questionID string) ([]models.EssaySubmission, error) {
 	query := `
 		SELECT 
-            es.id, es.soal_id, es.siswa_id, es.submission_type, es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
+            es.id, es.soal_id, es.siswa_id, es.submission_type, COALESCE(es.attempt_count, 1), es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
             u.nama_lengkap AS student_name, u.email AS student_email,
             ar.skor_ai, ar.umpan_balik_ai,
             tr.id AS review_id, tr.revised_score, tr.teacher_feedback,
@@ -474,7 +681,7 @@ func (s *EssaySubmissionService) GetEssaySubmissionsByQuestionID(questionID stri
 		var teacherFeedbackDB sql.NullString // Use a distinct name for scanning
 		var logsRAG sql.NullString
 		if err := rows.Scan(
-			&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt,
+			&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.AttemptCount, &es.TeksJawaban, &es.SubmittedAt,
 			&es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
 			&es.StudentName, &es.StudentEmail,
 			&skorAI, &umpanBalikAI,
@@ -646,7 +853,7 @@ func (s *EssaySubmissionService) ListMaterialStudentSubmissionSummaries(material
 func (s *EssaySubmissionService) GetMaterialSubmissionsByStudent(materialID, teacherID, studentID string) ([]models.EssaySubmission, error) {
 	query := `
 		SELECT
-			es.id, es.soal_id, es.siswa_id, es.submission_type, es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
+			es.id, es.soal_id, es.siswa_id, es.submission_type, COALESCE(es.attempt_count, 1), es.teks_jawaban, es.submitted_at, es.ai_grading_status, es.ai_grading_error, es.ai_graded_at,
 			u.nama_lengkap AS student_name, u.email AS student_email,
 			ar.skor_ai, ar.umpan_balik_ai,
 			tr.id AS review_id, tr.revised_score, tr.teacher_feedback,
@@ -677,7 +884,7 @@ func (s *EssaySubmissionService) GetMaterialSubmissionsByStudent(materialID, tea
 		var teacherFeedbackDB sql.NullString
 		var logsRAG sql.NullString
 		if err := rows.Scan(
-			&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt,
+			&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.AttemptCount, &es.TeksJawaban, &es.SubmittedAt,
 			&es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt,
 			&es.StudentName, &es.StudentEmail,
 			&skorAI, &umpanBalikAI,
@@ -717,7 +924,7 @@ func (s *EssaySubmissionService) GetMaterialSubmissionsByStudent(materialID, tea
 // GetEssaySubmissionsByStudentID mengambil semua submission esai oleh siswa tertentu.
 func (s *EssaySubmissionService) GetEssaySubmissionsByStudentID(studentID string) ([]models.EssaySubmission, error) {
 	query := `
-		SELECT id, soal_id, siswa_id, submission_type, teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
+		SELECT id, soal_id, siswa_id, submission_type, COALESCE(attempt_count, 1), teks_jawaban, submitted_at, ai_grading_status, ai_grading_error, ai_graded_at
 		FROM essay_submissions
 		WHERE siswa_id = $1
 		ORDER BY submitted_at DESC
@@ -732,7 +939,7 @@ func (s *EssaySubmissionService) GetEssaySubmissionsByStudentID(studentID string
 	var submissions []models.EssaySubmission
 	for rows.Next() {
 		var es models.EssaySubmission
-		if err := rows.Scan(&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt); err != nil {
+		if err := rows.Scan(&es.ID, &es.QuestionID, &es.StudentID, &es.SubmissionType, &es.AttemptCount, &es.TeksJawaban, &es.SubmittedAt, &es.AIGradingStatus, &es.AIGradingError, &es.AIGradedAt); err != nil {
 			return nil, fmt.Errorf("error scanning essay submission row: %w", err)
 		}
 		submissions = append(submissions, es)

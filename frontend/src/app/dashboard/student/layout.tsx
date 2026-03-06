@@ -28,11 +28,15 @@ const StudentDashboardLayout = ({ children }: { children: React.ReactNode }) => 
 
   if (authLoading || !user || user.peran !== 'student') {
     // Show a loading indicator or redirect if not authorized as a student
-    return <div className="flex justify-center items-center min-h-screen text-xl">Loading student dashboard...</div>;
+    return (
+      <div className="flex justify-center items-center min-h-screen text-xl bg-[color:var(--sand-100)] dark:bg-slate-950 dark:text-slate-200">
+        Loading student dashboard...
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-screen bg-[color:var(--sand-100)] antialiased">
+    <div className="flex h-screen bg-[color:var(--sand-100)] antialiased dark:bg-slate-950">
       {/* Sidebar - Conditional rendering for student-specific or generic */}
       <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} user={user} />
 

@@ -1,0 +1,3 @@
+ALTER TABLE essay_submissions
+ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 1;
+

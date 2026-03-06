@@ -420,7 +420,7 @@ export default function ClassManagementPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="teacher-classes-view space-y-6">
       <div className="sage-panel p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="sage-pill">Academic Structure</p>

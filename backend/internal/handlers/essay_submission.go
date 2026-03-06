@@ -4,6 +4,7 @@ import (
 	"api-backend/internal/models"
 	"api-backend/internal/services"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -46,6 +47,15 @@ func (h *EssaySubmissionHandlers) CreateEssaySubmissionHandler(w http.ResponseWr
 
 	newSubmission, gradeResp, err := h.Service.CreateEssaySubmission(req.QuestionID, studentID, req.TeksJawaban)
 	if err != nil {
+		if errors.Is(err, services.ErrAttemptLimitReached) {
+			respondWithError(w, http.StatusBadRequest, "Batas attempt sudah tercapai.")
+			return
+		}
+		var cooldownErr *services.AttemptCooldownError
+		if errors.As(err, &cooldownErr) {
+			respondWithError(w, http.StatusTooManyRequests, cooldownErr.Error())
+			return
+		}
 		if newSubmission == nil {
 			log.Printf("ERROR: Failed to create essay submission: %v", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to create essay submission")

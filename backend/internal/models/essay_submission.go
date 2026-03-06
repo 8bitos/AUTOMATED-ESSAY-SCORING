@@ -11,6 +11,7 @@ type EssaySubmission struct {
 	QuestionID      string                  `json:"question_id"`                // ID pertanyaan esai yang dijawab (Foreign Key ke tabel essay_questions).
 	StudentID       string                  `json:"student_id"`                 // ID siswa yang membuat submission (Foreign Key ke tabel users).
 	SubmissionType  string                  `json:"submission_type"`            // essay|task
+	AttemptCount    int                     `json:"attempt_count"`              // Jumlah percobaan submit untuk soal yang sama.
 	TeksJawaban     string                  `json:"teks_jawaban"`               // Teks jawaban esai yang disubmit.
 	SubmittedAt     time.Time               `json:"submitted_at"`               // Timestamp ketika esai disubmit.
 	AIGradingStatus string                  `json:"ai_grading_status"`          // queued|processing|completed|failed

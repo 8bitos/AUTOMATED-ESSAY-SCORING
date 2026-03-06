@@ -140,7 +140,8 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialIDForStudent(materialI
 	query := `
 		SELECT 
 			eq.id, eq.material_id, eq.teks_soal, eq.keywords, eq.ideal_answer, eq.weight, eq.round_score_to_5, eq.round_score_step, eq.rubrics, eq.created_at, eq.updated_at,
-			es.id as submission_id, es.teks_jawaban as student_essay_text, es.ai_grading_status, es.ai_grading_error,
+			es.id as submission_id, es.attempt_count as submission_attempt_count, es.submitted_at as submission_submitted_at,
+			es.teks_jawaban as student_essay_text, es.ai_grading_status, es.ai_grading_error,
 			ar.skor_ai, ar.umpan_balik_ai,
 			tr.revised_score, tr.teacher_feedback,
 			ar.logs_rag
@@ -165,7 +166,7 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialIDForStudent(materialI
 
 		if err := rows.Scan(
 			&q.ID, &q.MaterialID, &q.TeksSoal, &keywords, &q.IdealAnswer, &q.Weight, &q.RoundScoreTo5, &q.RoundScoreStep, &q.Rubrics, &q.CreatedAt, &q.UpdatedAt,
-			&q.SubmissionID, &q.StudentEssayText, &q.AIGradingStatus, &q.AIGradingError, &q.SkorAI, &q.UmpanBalikAI, &q.RevisedScore, &q.TeacherFeedback, &logsRAG,
+			&q.SubmissionID, &q.SubmissionAttemptCount, &q.SubmissionSubmittedAt, &q.StudentEssayText, &q.AIGradingStatus, &q.AIGradingError, &q.SkorAI, &q.UmpanBalikAI, &q.RevisedScore, &q.TeacherFeedback, &logsRAG,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning essay question row for student: %w", err)
 		}

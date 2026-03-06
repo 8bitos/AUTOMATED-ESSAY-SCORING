@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   RadarChart,
   PolarGrid,
@@ -18,6 +19,7 @@ import {
   Tooltip,
   LabelList,
 } from "recharts";
+import SafeHtml from "@/components/ui/SafeHtml";
 
 interface RubricScore {
   aspek?: string;
@@ -52,6 +54,8 @@ interface EssayQuestion {
   revised_score?: number;
   teacher_feedback?: string;
   rubric_scores?: RubricScore[];
+  submission_attempt_count?: number;
+  submission_submitted_at?: string;
 }
 
 interface Material {
@@ -84,6 +88,11 @@ interface MaterialContentBlock {
   size?: MediaSize;
 }
 
+const getErrorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error && err.message.trim().length > 0) return err.message;
+  return fallback;
+};
+
 interface SectionTaskMeta {
   tugas_instruction?: string;
   tugas_due_at?: string;
@@ -104,6 +113,7 @@ interface SectionQuizSettings {
   total_seconds: number;
   extra_time_seconds: number;
   auto_next_on_submit: boolean;
+  bulk_submit_mode: boolean;
   allow_back_navigation: boolean;
   lock_question_after_leave: boolean;
   randomize_question_order: boolean;
@@ -121,9 +131,11 @@ interface SectionQuizSettings {
   show_ideal_answer: boolean;
   show_rubric_breakdown: boolean;
   show_rubric_in_question: boolean;
+  hide_results_tab: boolean;
   warn_on_tab_switch: boolean;
   max_tab_switch: number;
   auto_lock_on_tab_switch_limit: boolean;
+  require_fullscreen: boolean;
 }
 
 interface SectionTaskCard {
@@ -159,16 +171,21 @@ interface SectionContentCardData {
 const parseMaterialBlocks = (raw?: string): MaterialContentBlock[] | null => {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as { format?: unknown; blocks?: unknown[] };
     if (parsed?.format !== "sage_blocks" || !Array.isArray(parsed?.blocks)) return null;
     return parsed.blocks
-      .map((b: any) => ({
-        id: typeof b.id === "string" && b.id ? b.id : `blk_${Math.random().toString(36).slice(2, 9)}`,
-        type: b.type as MaterialBlockType,
-        value: typeof b.value === "string" ? b.value : "",
-        align: ["left", "center", "right", "justify"].includes(b.align) ? b.align : "left",
-        size: ["small", "medium", "large", "full"].includes(b.size) ? b.size : "medium",
-      }))
+      .map((block) => {
+        const b = typeof block === "object" && block !== null ? (block as Record<string, unknown>) : {};
+        const align = typeof b.align === "string" ? b.align : "";
+        const size = typeof b.size === "string" ? b.size : "";
+        return {
+          id: typeof b.id === "string" && b.id ? b.id : `blk_${Math.random().toString(36).slice(2, 9)}`,
+          type: b.type as MaterialBlockType,
+          value: typeof b.value === "string" ? b.value : "",
+          align: ["left", "center", "right", "justify"].includes(align) ? (align as BlockAlign) : "left",
+          size: ["small", "medium", "large", "full"].includes(size) ? (size as MediaSize) : "medium",
+        };
+      })
       .filter((b: MaterialContentBlock) => ["heading", "paragraph", "video", "image", "link", "pdf", "ppt", "bullet_list", "number_list"].includes(b.type));
   } catch {
     return null;
@@ -308,6 +325,7 @@ const parseSectionQuizSettings = (activeCard: SectionSoalCard | null): SectionQu
     total_seconds: clampDuration(raw.total_seconds, 900),
     extra_time_seconds: clampDuration(raw.extra_time_seconds, 0),
     auto_next_on_submit: readBoolean(raw.auto_next_on_submit, true),
+    bulk_submit_mode: readBoolean(raw.bulk_submit_mode, false),
     allow_back_navigation: readBoolean(raw.allow_back_navigation, true),
     lock_question_after_leave: readBoolean(raw.lock_question_after_leave, false),
     randomize_question_order: readBoolean(raw.randomize_question_order, false),
@@ -328,9 +346,11 @@ const parseSectionQuizSettings = (activeCard: SectionSoalCard | null): SectionQu
     show_ideal_answer: readBoolean(raw.show_ideal_answer, false),
     show_rubric_breakdown: readBoolean(raw.show_rubric_breakdown, true),
     show_rubric_in_question: readBoolean(raw.show_rubric_in_question, false),
+    hide_results_tab: readBoolean(raw.hide_results_tab, false),
     warn_on_tab_switch: readBoolean(raw.warn_on_tab_switch, false),
     max_tab_switch: clampDuration(raw.max_tab_switch, 3),
     auto_lock_on_tab_switch_limit: readBoolean(raw.auto_lock_on_tab_switch_limit, false),
+    require_fullscreen: readBoolean(raw.require_fullscreen, false),
   };
 };
 
@@ -501,9 +521,19 @@ export default function StudentMaterialDetailPage() {
   const [taskPendingFile, setTaskPendingFile] = useState<File | null>(null);
   const [taskUploading, setTaskUploading] = useState(false);
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
+  const [bulkSubmitLoading, setBulkSubmitLoading] = useState(false);
+  const [bulkSubmitMessage, setBulkSubmitMessage] = useState("");
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [tabLocked, setTabLocked] = useState(false);
   const [lockedQuestionIds, setLockedQuestionIds] = useState<Record<string, boolean>>({});
+  const [integrityPopupOpen, setIntegrityPopupOpen] = useState(false);
+  const [integrityPopupMessage, setIntegrityPopupMessage] = useState("");
+  const [hardlockPending, setHardlockPending] = useState(false);
+  const [reattemptQuestionIds, setReattemptQuestionIds] = useState<Record<string, boolean>>({});
+  const [retryConfirmQuestionId, setRetryConfirmQuestionId] = useState<string | null>(null);
+  const [retryPopupMessage, setRetryPopupMessage] = useState("");
+  const [liveTickMs, setLiveTickMs] = useState(Date.now());
+  const tabChangePendingRef = useRef(false);
 
   const fetchData = useCallback(async (showLoader = true): Promise<Material | null> => {
     if (!classId || !materialId) return null;
@@ -529,8 +559,8 @@ export default function StudentMaterialDetailPage() {
         return next;
       });
       return selected;
-    } catch (err: any) {
-      setError(err.message || "Terjadi kesalahan.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Terjadi kesalahan."));
       return null;
     } finally {
       if (showLoader) setLoading(false);
@@ -542,7 +572,7 @@ export default function StudentMaterialDetailPage() {
     fetchData(true);
   }, [fetchData]);
 
-  const allQuestions = material?.essay_questions ?? [];
+  const allQuestions = useMemo(() => material?.essay_questions ?? [], [material?.essay_questions]);
   const sectionCards = useMemo(() => parseSectionQuestionCards(material?.isi_materi), [material?.isi_materi]);
   const activeCard = useMemo(
     () => (sectionCardId ? sectionCards.find((card) => card.id === sectionCardId) || null : null),
@@ -635,6 +665,14 @@ export default function StudentMaterialDetailPage() {
   const isAfterSchedule = Boolean(scheduleEndWithGraceMs !== null && nowMs > scheduleEndWithGraceMs);
   const isSoalSubmissionBlockedBySchedule = isSoalContext && !isTugasContext && (isBeforeSchedule || isAfterSchedule);
   const canSubmitInCurrentState = !isSoalSubmissionBlockedBySchedule && !tabLocked;
+  const allSoalAnswered =
+    isSoalContext &&
+    !isTugasContext &&
+    displayQuestions.length > 0 &&
+    displayQuestions.every((q) => Boolean(q.submission_id) && !reattemptQuestionIds[q.id]);
+  const hideResultsForStudent = isSoalContext && !isTugasContext && sectionQuizSettings.hide_results_tab;
+  const shouldForceFullscreen = isSoalContext && !isTugasContext && sectionQuizSettings.require_fullscreen && !allSoalAnswered;
+  const isBulkSubmitMode = isSoalContext && !isTugasContext && !isCardAnswerMode && sectionQuizSettings.bulk_submit_mode;
   const isResultReleased = (() => {
     if (!isSoalContext || isTugasContext) return true;
     if (sectionQuizSettings.result_release_mode === "immediate") return true;
@@ -642,7 +680,7 @@ export default function StudentMaterialDetailPage() {
     if (!scheduleEndDate) return false;
     return nowMs >= scheduleEndDate.getTime();
   })();
-  const canOpenResultsTab = canShowResults && isResultReleased;
+  const canOpenResultsTab = canShowResults && isResultReleased && !hideResultsForStudent;
   const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
   const [currentTickSec, setCurrentTickSec] = useState(() => Math.floor(Date.now() / 1000));
   const [attemptStartSec, setAttemptStartSec] = useState<number | null>(null);
@@ -691,6 +729,12 @@ export default function StudentMaterialDetailPage() {
     return () => clearInterval(timer);
   }, [isCardAnswerMode, activeSection]);
 
+  useEffect(() => {
+    if (!isSoalContext || isTugasContext || activeSection !== "questions") return;
+    const timer = setInterval(() => setLiveTickMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isSoalContext, isTugasContext, activeSection]);
+
   const attemptStorageKey = useMemo(
     () => `sage_quiz_attempt_start:${classId}:${materialId}:${sectionCardId || "all"}`,
     [classId, materialId, sectionCardId]
@@ -731,7 +775,7 @@ export default function StudentMaterialDetailPage() {
       if (typeof prev[currentCardQuestion.id] === "number") return prev;
       return { ...prev, [currentCardQuestion.id]: Math.floor(Date.now() / 1000) };
     });
-  }, [isCardAnswerMode, sectionQuizSettings.timer_mode, sectionQuizSettings.per_question_seconds, currentCardQuestion?.id]);
+  }, [isCardAnswerMode, sectionQuizSettings.timer_mode, sectionQuizSettings.per_question_seconds, currentCardQuestion]);
 
   const perQuestionTimerRemainingSec =
     sectionQuizSettings.timer_mode === "per_question" &&
@@ -784,20 +828,32 @@ export default function StudentMaterialDetailPage() {
 
   useEffect(() => {
     if (!isSoalContext || isTugasContext) return;
-    if (!sectionQuizSettings.warn_on_tab_switch) return;
+    if (!sectionQuizSettings.warn_on_tab_switch && !shouldForceFullscreen) return;
     const handler = () => {
-      if (document.visibilityState !== "hidden") return;
-      setTabSwitchCount((prev) => {
-        const next = prev + 1;
-        if (
-          sectionQuizSettings.auto_lock_on_tab_switch_limit &&
-          sectionQuizSettings.max_tab_switch > 0 &&
-          next >= sectionQuizSettings.max_tab_switch
-        ) {
-          setTabLocked(true);
+      if (document.visibilityState === "hidden") {
+        tabChangePendingRef.current = true;
+        setTabSwitchCount((prev) => {
+          const next = prev + 1;
+          if (
+            sectionQuizSettings.auto_lock_on_tab_switch_limit &&
+            sectionQuizSettings.max_tab_switch > 0 &&
+            next >= sectionQuizSettings.max_tab_switch
+          ) {
+            setHardlockPending(true);
+          }
+          return next;
+        });
+        return;
+      }
+      if (tabChangePendingRef.current) {
+        tabChangePendingRef.current = false;
+        if (hardlockPending) {
+          setIntegrityPopupMessage("Batas pindah tab terlampaui. Setelah popup ini ditutup, attempt akan dikunci.");
+        } else {
+          setIntegrityPopupMessage("Dilarang pindah tab saat pengerjaan soal sedang berlangsung.");
         }
-        return next;
-      });
+        setIntegrityPopupOpen(true);
+      }
     };
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
@@ -807,7 +863,43 @@ export default function StudentMaterialDetailPage() {
     sectionQuizSettings.warn_on_tab_switch,
     sectionQuizSettings.auto_lock_on_tab_switch_limit,
     sectionQuizSettings.max_tab_switch,
+    shouldForceFullscreen,
+    hardlockPending,
   ]);
+
+  useEffect(() => {
+    if (!shouldForceFullscreen) return;
+    if (typeof document === "undefined") return;
+    document.body.classList.add("sage-quiz-fullscreen");
+    const requestFullscreen = async () => {
+      const root = document.documentElement;
+      if (document.fullscreenElement || !root.requestFullscreen) return;
+      try {
+        await root.requestFullscreen();
+      } catch {
+        // ignore browser restrictions
+      }
+    };
+    void requestFullscreen();
+    return () => {
+      document.body.classList.remove("sage-quiz-fullscreen");
+      if (document.fullscreenElement && document.exitFullscreen) {
+        void document.exitFullscreen().catch(() => undefined);
+      }
+    };
+  }, [shouldForceFullscreen]);
+
+  useEffect(() => {
+    if (!shouldForceFullscreen) return;
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+      setIntegrityPopupMessage("Dilarang kembali saat mode fullscreen pengerjaan aktif.");
+      setIntegrityPopupOpen(true);
+    };
+    window.history.pushState(null, "", window.location.href);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [shouldForceFullscreen]);
   const sortedQuestions = useMemo(() => {
     const withIndex = displayQuestions.map((q, index) => ({ q, index }));
     switch (questionSort) {
@@ -841,8 +933,8 @@ export default function StudentMaterialDetailPage() {
 
   const visibleQuestions = useMemo(() => {
     if (!hideAnsweredQuestions) return sortedQuestions;
-    return sortedQuestions.filter((q) => !q.submission_id);
-  }, [sortedQuestions, hideAnsweredQuestions]);
+    return sortedQuestions.filter((q) => !q.submission_id || !!reattemptQuestionIds[q.id]);
+  }, [sortedQuestions, hideAnsweredQuestions, reattemptQuestionIds]);
 
   const resultItems = useMemo(() => {
     const base = displayQuestions
@@ -973,6 +1065,61 @@ export default function StudentMaterialDetailPage() {
     return `${safeText.slice(0, 100)}...`;
   };
 
+  const getAttemptCount = (question: EssayQuestion): number => {
+    if (!question.submission_id) return 0;
+    const raw = Number(question.submission_attempt_count ?? 1);
+    if (!Number.isFinite(raw) || raw <= 0) return 1;
+    return Math.floor(raw);
+  };
+
+  const getRemainingCooldownSeconds = (question: EssayQuestion): number => {
+    if (!question.submission_id) return 0;
+    if (sectionQuizSettings.attempt_cooldown_minutes <= 0) return 0;
+    if (!question.submission_submitted_at) return 0;
+    const submittedAtMs = new Date(question.submission_submitted_at).getTime();
+    if (!Number.isFinite(submittedAtMs) || submittedAtMs <= 0) return 0;
+    const nextAllowedMs = submittedAtMs + sectionQuizSettings.attempt_cooldown_minutes * 60 * 1000;
+    const diff = Math.ceil((nextAllowedMs - liveTickMs) / 1000);
+    return diff > 0 ? diff : 0;
+  };
+
+  const canStartReattempt = (question: EssayQuestion): boolean => {
+    if (!question.submission_id) return false;
+    const attemptCount = getAttemptCount(question);
+    if (sectionQuizSettings.attempt_limit > 0 && attemptCount >= sectionQuizSettings.attempt_limit) return false;
+    if (getRemainingCooldownSeconds(question) > 0) return false;
+    return true;
+  };
+
+  const formatCooldown = (seconds: number): string => {
+    const safe = Math.max(0, seconds);
+    const mins = Math.floor(safe / 60);
+    const secs = safe % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const requestReattempt = (question: EssayQuestion) => {
+    if (!question.submission_id) return;
+    const cooldownSec = getRemainingCooldownSeconds(question);
+    if (cooldownSec > 0) {
+      setSubmitMessage((prev) => ({
+        ...prev,
+        [question.id]: `Coba ulang belum tersedia. Tunggu ${formatCooldown(cooldownSec)} lagi.`,
+      }));
+      return;
+    }
+    if (sectionQuizSettings.attempt_limit > 0 && getAttemptCount(question) >= sectionQuizSettings.attempt_limit) {
+      setSubmitMessage((prev) => ({
+        ...prev,
+        [question.id]: "Kesempatan percobaan untuk soal ini sudah habis.",
+      }));
+      return;
+    }
+    const methodLabel = sectionQuizSettings.attempt_scoring_method === "best" ? "Nilai terbaik" : "Nilai terakhir";
+    setRetryPopupMessage(`Mulai coba ulang untuk soal ini? Skema penilaian tetap ${methodLabel}.`);
+    setRetryConfirmQuestionId(question.id);
+  };
+
   const handleSubmitAnswer = async (questionId: string) => {
     if (!canSubmitInCurrentState) {
       setSubmitMessage((prev) => ({ ...prev, [questionId]: "Pengerjaan ditutup atau attempt dikunci." }));
@@ -1019,15 +1166,88 @@ export default function StudentMaterialDetailPage() {
             ? "Jawaban diterima, tetapi gagal masuk antrian AI."
             : "Jawaban diterima dan sedang diproses AI.";
       setSubmitMessage((prev) => ({ ...prev, [questionId]: data?.grading_message || defaultMessage }));
+      setReattemptQuestionIds((prev) => ({ ...prev, [questionId]: false }));
       await fetchData(false);
       if (isCardAnswerMode && sectionQuizSettings.auto_next_on_submit) {
         goToCardQuestionIndex(quizQuestionIndex + 1);
       }
-    } catch (err: any) {
-      setSubmitMessage((prev) => ({ ...prev, [questionId]: err.message || "Terjadi kesalahan saat submit." }));
+    } catch (err: unknown) {
+      setSubmitMessage((prev) => ({ ...prev, [questionId]: getErrorMessage(err, "Terjadi kesalahan saat submit.") }));
     } finally {
       setSubmitLoading((prev) => ({ ...prev, [questionId]: false }));
     }
+  };
+
+  const handleSubmitAllAnswers = async () => {
+    if (!isBulkSubmitMode) return;
+    if (!canSubmitInCurrentState) {
+      setBulkSubmitMessage("Pengerjaan ditutup atau attempt dikunci.");
+      return;
+    }
+    const unansweredQuestions = displayQuestions.filter((q) => !q.submission_id || !!reattemptQuestionIds[q.id]);
+    if (unansweredQuestions.length === 0) {
+      setBulkSubmitMessage("Semua soal sudah tersubmit.");
+      return;
+    }
+    const missingAnswers = unansweredQuestions.filter((q) => !(answerInputs[q.id] || "").trim());
+    if (missingAnswers.length > 0) {
+      setBulkSubmitMessage(`Masih ada ${missingAnswers.length} soal yang belum diisi. Lengkapi dulu sebelum submit semua.`);
+      return;
+    }
+
+    setBulkSubmitLoading(true);
+    setBulkSubmitMessage("");
+    const nextLoadingState: Record<string, boolean> = {};
+    unansweredQuestions.forEach((q) => {
+      nextLoadingState[q.id] = true;
+    });
+    setSubmitLoading((prev) => ({ ...prev, ...nextLoadingState }));
+
+    let successCount = 0;
+    let failedCount = 0;
+    for (const q of unansweredQuestions) {
+      try {
+        const answer = (answerInputs[q.id] || "").trim();
+        const res = await fetch("/api/submissions", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question_id: q.id,
+            teks_jawaban: answer,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.message || "Gagal mengirim jawaban.");
+        }
+        const data = await res.json().catch(() => ({}));
+        const status = String(data?.grading_status || "").toLowerCase();
+        const defaultMessage =
+          status === "completed"
+            ? "Jawaban berhasil dinilai."
+            : status === "failed"
+              ? "Jawaban diterima, tetapi gagal masuk antrian AI."
+              : "Jawaban diterima dan sedang diproses AI.";
+        setSubmitMessage((prev) => ({ ...prev, [q.id]: data?.grading_message || defaultMessage }));
+        setReattemptQuestionIds((prev) => ({ ...prev, [q.id]: false }));
+        successCount += 1;
+      } catch (err: unknown) {
+        const message = err instanceof Error && err.message ? err.message : "Terjadi kesalahan saat submit.";
+        setSubmitMessage((prev) => ({ ...prev, [q.id]: message }));
+        failedCount += 1;
+      } finally {
+        setSubmitLoading((prev) => ({ ...prev, [q.id]: false }));
+      }
+    }
+
+    await fetchData(false);
+    if (failedCount > 0) {
+      setBulkSubmitMessage(`${successCount} jawaban berhasil dikirim, ${failedCount} gagal. Coba kirim ulang yang gagal.`);
+    } else {
+      setBulkSubmitMessage(`Berhasil mengirim ${successCount} jawaban sekaligus.`);
+    }
+    setBulkSubmitLoading(false);
   };
 
   const handlePickTaskFile = (file: File | null) => {
@@ -1078,9 +1298,9 @@ export default function StudentMaterialDetailPage() {
       if (taskSubmissionQuestion?.id) {
         setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: "File berhasil diupload." }));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       const qid = taskSubmissionQuestion?.id || "task";
-      setSubmitMessage((prev) => ({ ...prev, [qid]: err?.message || "Gagal upload file tugas." }));
+      setSubmitMessage((prev) => ({ ...prev, [qid]: getErrorMessage(err, "Gagal upload file tugas.") }));
     } finally {
       setTaskUploading(false);
     }
@@ -1142,8 +1362,11 @@ export default function StudentMaterialDetailPage() {
             : "Tugas berhasil dikirim.";
       setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: data?.grading_message || defaultMessage }));
       await fetchData(false);
-    } catch (err: any) {
-      setSubmitMessage((prev) => ({ ...prev, [taskSubmissionQuestion.id]: err?.message || "Terjadi kesalahan saat submit tugas." }));
+    } catch (err: unknown) {
+      setSubmitMessage((prev) => ({
+        ...prev,
+        [taskSubmissionQuestion.id]: getErrorMessage(err, "Terjadi kesalahan saat submit tugas."),
+      }));
     } finally {
       setSubmitLoading((prev) => ({ ...prev, [taskSubmissionQuestion.id]: false }));
     }
@@ -1171,7 +1394,64 @@ export default function StudentMaterialDetailPage() {
   if (!material || !cls) return null;
 
   return (
-    <div className="space-y-6">
+    <div className={`student-material-view space-y-6 ${shouldForceFullscreen ? "min-h-screen bg-slate-950 p-4 md:p-6" : ""}`}>
+      {shouldForceFullscreen && (
+        <style jsx global>{`
+          body.sage-quiz-fullscreen #sidebar { display: none !important; }
+          body.sage-quiz-fullscreen .topbar-shell { display: none !important; }
+          body.sage-quiz-fullscreen main > div { max-width: 100% !important; padding: 0 !important; }
+        `}</style>
+      )}
+      {integrityPopupOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Peringatan Integritas</p>
+            <p className="mt-2 text-sm text-slate-700">{integrityPopupMessage}</p>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                className="sage-button"
+                onClick={() => {
+                  if (hardlockPending) {
+                    setTabLocked(true);
+                    setHardlockPending(false);
+                  }
+                  setIntegrityPopupOpen(false);
+                }}
+              >
+                Saya Mengerti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+              {retryConfirmQuestionId && (
+        <div className="fixed inset-0 z-[81] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-sky-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Konfirmasi Coba Ulang</p>
+            <p className="mt-2 text-sm text-slate-700">{retryPopupMessage}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="sage-button-outline" onClick={() => setRetryConfirmQuestionId(null)}>
+                Batal
+              </button>
+              <button
+                type="button"
+                className="sage-button"
+                onClick={() => {
+                  if (retryConfirmQuestionId) {
+                    setReattemptQuestionIds((prev) => ({ ...prev, [retryConfirmQuestionId]: true }));
+                    setSubmitMessage((prev) => ({ ...prev, [retryConfirmQuestionId]: "" }));
+                  }
+                  setRetryConfirmQuestionId(null);
+                }}
+              >
+                Lanjut Coba Ulang
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!shouldForceFullscreen && (
       <section className="sage-panel p-6">
         <Link href={`/dashboard/student/classes/${classId}`} className="text-sm text-[color:var(--sage-700)] hover:underline">
           ← Kembali ke daftar materi
@@ -1192,6 +1472,7 @@ export default function StudentMaterialDetailPage() {
           {pendingEvaluationCount > 0 && <span className="sage-pill bg-amber-100 text-amber-800">{pendingEvaluationCount} Sedang Dinilai AI</span>}
         </div>
       </section>
+      )}
 
       <section className="sage-panel p-3">
         <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
@@ -1241,9 +1522,9 @@ export default function StudentMaterialDetailPage() {
                   <div className="space-y-3">
                     {preferred.title && <h3 className="text-xl font-semibold text-[color:var(--ink-900)]">{preferred.title}</h3>}
                     {containsHtmlTag(content) ? (
-                      <div
+                      <SafeHtml
                         className="prose prose-slate max-w-none text-[color:var(--ink-700)]"
-                        dangerouslySetInnerHTML={{ __html: content }}
+                        html={content}
                       />
                     ) : (
                       <p className="leading-relaxed text-[color:var(--ink-700)] whitespace-pre-line">{content}</p>
@@ -1305,7 +1586,7 @@ export default function StudentMaterialDetailPage() {
                       return block.value ? (
                         <div key={block.id} className={`flex ${block.align === "right" ? "justify-end" : block.align === "center" ? "justify-center" : "justify-start"}`}>
                           <div className={`${getMediaWidthClass(block.size)} rounded-xl overflow-hidden border border-black/5`}>
-                            <img src={block.value} alt="Gambar Materi" className="w-full h-auto object-cover" />
+                            <Image src={block.value} alt="Gambar Materi" width={1200} height={800} unoptimized className="h-auto w-full object-cover" />
                           </div>
                         </div>
                       ) : null;
@@ -1316,7 +1597,7 @@ export default function StudentMaterialDetailPage() {
                         return (
                           <div key={block.id} className={`flex ${block.align === "right" ? "justify-end" : block.align === "center" ? "justify-center" : "justify-start"}`}>
                             <div className={`${getMediaWidthClass(block.size)} rounded-xl overflow-hidden border border-black/5`}>
-                              <img src={block.value} alt="Gambar Materi" className="w-full h-auto object-cover" />
+                              <Image src={block.value} alt="Gambar Materi" width={1200} height={800} unoptimized className="h-auto w-full object-cover" />
                             </div>
                           </div>
                         );
@@ -1357,12 +1638,7 @@ export default function StudentMaterialDetailPage() {
             }
             if (material.isi_materi) {
               if (containsHtmlTag(material.isi_materi)) {
-                return (
-                  <div
-                    className="prose prose-slate max-w-none text-[color:var(--ink-700)]"
-                    dangerouslySetInnerHTML={{ __html: material.isi_materi }}
-                  />
-                );
+                return <SafeHtml className="prose prose-slate max-w-none text-[color:var(--ink-700)]" html={material.isi_materi} />;
               }
               return <p className="leading-relaxed text-[color:var(--ink-700)] whitespace-pre-line">{material.isi_materi}</p>;
             }
@@ -1402,6 +1678,28 @@ export default function StudentMaterialDetailPage() {
                   Sembunyikan yang sudah dijawab
                 </label>
               </div>
+            </div>
+          )}
+          {!isTugasContext && isBulkSubmitMode && (
+            <div className="sage-panel p-4 border border-sky-200 bg-sky-50">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-sky-800">
+                  Mode submit semua aktif. Isi semua jawaban dulu, lalu kirim sekaligus.
+                </p>
+                <button
+                  type="button"
+                  className="sage-button"
+                  disabled={bulkSubmitLoading || !canSubmitInCurrentState}
+                  onClick={() => void handleSubmitAllAnswers()}
+                >
+                  {bulkSubmitLoading ? "Mengirim Semua..." : "Submit Semua Jawaban"}
+                </button>
+              </div>
+              {bulkSubmitMessage && (
+                <p className={`mt-2 text-sm ${bulkSubmitMessage.toLowerCase().includes("berhasil") ? "text-[color:var(--sage-700)]" : "text-red-600"}`}>
+                  {bulkSubmitMessage}
+                </p>
+              )}
             </div>
           )}
           {!isTugasContext && isCardAnswerMode && (
@@ -1455,7 +1753,12 @@ export default function StudentMaterialDetailPage() {
                   {tabLocked && " (attempt dikunci)"}
                 </div>
               )}
-              {!canOpenResultsTab && (
+              {hideResultsForStudent && (
+                <div className="sage-panel p-3 border border-slate-300 bg-slate-50 text-sm text-slate-700">
+                  Tab hasil penilaian disembunyikan oleh guru untuk sesi ini.
+                </div>
+              )}
+              {!hideResultsForStudent && !canOpenResultsTab && (
                 <div className="sage-panel p-3 border border-blue-200 bg-blue-50 text-sm text-blue-700">
                   Hasil penilaian belum dirilis guru.
                 </div>
@@ -1627,7 +1930,15 @@ export default function StudentMaterialDetailPage() {
           {!isTugasContext && !isCardAnswerMode && displayQuestions.length > 0 && visibleQuestions.length === 0 && (
             <div className="sage-panel p-6 text-[color:var(--ink-500)]">Semua soal sudah dijawab.</div>
           )}
-          {!isTugasContext && !isCardAnswerMode && visibleQuestions.map((q, index) => (
+          {!isTugasContext && !isCardAnswerMode && visibleQuestions.map((q, index) => {
+            const isReattempting = !!reattemptQuestionIds[q.id];
+            const attemptCount = getAttemptCount(q);
+            const attemptLimitLabel = sectionQuizSettings.attempt_limit > 0 ? String(sectionQuizSettings.attempt_limit) : "tak terbatas";
+            const cooldownSeconds = getRemainingCooldownSeconds(q);
+            const isAttemptLimitReached =
+              sectionQuizSettings.attempt_limit > 0 && attemptCount >= sectionQuizSettings.attempt_limit;
+            const canReattemptNow = canStartReattempt(q);
+            return (
             <div key={q.id} className="sage-card p-5">
               <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
               <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
@@ -1664,8 +1975,13 @@ export default function StudentMaterialDetailPage() {
                     q.submission_id ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
                   }`}
                 >
-                  {q.submission_id ? "Sudah Submit" : "Belum Submit"}
+                  {isReattempting ? "Mode Coba Ulang" : q.submission_id ? "Sudah Submit" : "Belum Submit"}
                 </span>
+                {q.submission_id && (
+                  <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                    Percobaan: {attemptCount} / {attemptLimitLabel}
+                  </span>
+                )}
                 {q.submission_id && (
                   <span className="sage-pill">
                     Nilai: {(() => {
@@ -1687,7 +2003,7 @@ export default function StudentMaterialDetailPage() {
                   }
                   return null;
                 })()}
-                {q.submission_id ? (
+                {q.submission_id && canOpenResultsTab ? (
                   <button
                     onClick={() => {
                       setSelectedResultQuestionId(q.id);
@@ -1697,13 +2013,38 @@ export default function StudentMaterialDetailPage() {
                   >
                     Lihat Hasil
                   </button>
-                ) : (
+                ) : !q.submission_id ? (
                   <button type="button" className="sage-button">
                     Siap Dikerjakan
                   </button>
+                ) : (
+                  <span className="sage-pill bg-slate-100 text-slate-700">Hasil disembunyikan</span>
+                )}
+                {q.submission_id && !isReattempting && (
+                  <button
+                    type="button"
+                    className="sage-button-outline"
+                    disabled={!canSubmitInCurrentState || !canReattemptNow}
+                    onClick={() => requestReattempt(q)}
+                  >
+                    {cooldownSeconds > 0
+                      ? `Cooldown ${formatCooldown(cooldownSeconds)}`
+                      : isAttemptLimitReached
+                        ? "Limit Attempt Habis"
+                        : "Coba Ulang"}
+                  </button>
+                )}
+                {q.submission_id && isReattempting && (
+                  <button
+                    type="button"
+                    className="sage-button-outline"
+                    onClick={() => setReattemptQuestionIds((prev) => ({ ...prev, [q.id]: false }))}
+                  >
+                    Batal Coba Ulang
+                  </button>
                 )}
               </div>
-              {!q.submission_id && (
+              {(!q.submission_id || isReattempting) && (
                 <div className="mt-4 space-y-3">
                   <textarea
                     className="sage-input min-h-32"
@@ -1713,14 +2054,16 @@ export default function StudentMaterialDetailPage() {
                     onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [q.id]: e.target.value }))}
                   />
                   <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      className="sage-button"
-                      disabled={!!submitLoading[q.id] || !canSubmitInCurrentState || !!lockedQuestionIds[q.id]}
-                      onClick={() => handleSubmitAnswer(q.id)}
-                    >
-                      {submitLoading[q.id] ? "Mengirim..." : "Submit Jawaban"}
+                    {!isBulkSubmitMode && (
+                      <button
+                        type="button"
+                        className="sage-button"
+                        disabled={!!submitLoading[q.id] || !canSubmitInCurrentState || !!lockedQuestionIds[q.id]}
+                        onClick={() => handleSubmitAnswer(q.id)}
+                      >
+                      {submitLoading[q.id] ? "Mengirim..." : isReattempting ? "Kirim Ulang Jawaban" : "Submit Jawaban"}
                     </button>
+                    )}
                     {submitMessage[q.id] && (
                       <span
                         className={`text-sm ${
@@ -1735,7 +2078,7 @@ export default function StudentMaterialDetailPage() {
                   </div>
                 </div>
               )}
-              {q.submission_id && q.student_essay_text && (
+              {q.submission_id && q.student_essay_text && !isReattempting && (
                 <div className="mt-4 bg-white border border-black/5 rounded-xl p-4">
                   <button
                     type="button"
@@ -1753,7 +2096,8 @@ export default function StudentMaterialDetailPage() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           {!isTugasContext && isCardAnswerMode && cardModeQuestions.length > 0 && currentCardQuestion && (
             <div className="sage-card p-6 space-y-4">
               <div className="flex items-center justify-between gap-3">
@@ -1761,6 +2105,11 @@ export default function StudentMaterialDetailPage() {
                   Soal {quizQuestionIndex + 1} dari {cardModeQuestions.length}
                 </p>
                 <div className="flex items-center gap-2">
+                  {currentCardQuestion.submission_id && (
+                    <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                      Percobaan: {getAttemptCount(currentCardQuestion)} / {sectionQuizSettings.attempt_limit > 0 ? sectionQuizSettings.attempt_limit : "tak terbatas"}
+                    </span>
+                  )}
                   <span className="sage-pill">
                     Bobot: {typeof currentCardQuestion.weight === "number" && currentCardQuestion.weight > 0 ? currentCardQuestion.weight : 1}
                   </span>
@@ -1769,7 +2118,7 @@ export default function StudentMaterialDetailPage() {
                       currentCardQuestion.submission_id ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
                     }`}
                   >
-                    {currentCardQuestion.submission_id ? "Sudah Submit" : "Belum Submit"}
+                    {reattemptQuestionIds[currentCardQuestion.id] ? "Mode Coba Ulang" : currentCardQuestion.submission_id ? "Sudah Submit" : "Belum Submit"}
                   </span>
                 </div>
               </div>
@@ -1801,7 +2150,7 @@ export default function StudentMaterialDetailPage() {
                 </div>
               )}
 
-              {!currentCardQuestion.submission_id ? (
+              {!currentCardQuestion.submission_id || !!reattemptQuestionIds[currentCardQuestion.id] ? (
                 <div className="space-y-3">
                   {isActiveTimerExpired && (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1827,8 +2176,23 @@ export default function StudentMaterialDetailPage() {
                       }
                       onClick={() => handleSubmitAnswer(currentCardQuestion.id)}
                     >
-                      {submitLoading[currentCardQuestion.id] ? "Mengirim..." : "Submit Jawaban"}
+                      {submitLoading[currentCardQuestion.id]
+                        ? "Mengirim..."
+                        : reattemptQuestionIds[currentCardQuestion.id]
+                          ? "Kirim Ulang Jawaban"
+                          : "Submit Jawaban"}
                     </button>
+                    {currentCardQuestion.submission_id && reattemptQuestionIds[currentCardQuestion.id] && (
+                      <button
+                        type="button"
+                        className="sage-button-outline"
+                        onClick={() =>
+                          setReattemptQuestionIds((prev) => ({ ...prev, [currentCardQuestion.id]: false }))
+                        }
+                      >
+                        Batal Coba Ulang
+                      </button>
+                    )}
                     {submitMessage[currentCardQuestion.id] && (
                       <span
                         className={`text-sm ${
@@ -1850,17 +2214,39 @@ export default function StudentMaterialDetailPage() {
                       {currentCardQuestion.student_essay_text || "-"}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => {
-                        setSelectedResultQuestionId(currentCardQuestion.id);
-                        setActiveSection("results");
-                      }}
+                      type="button"
                       className="sage-button-outline"
+                      disabled={!canSubmitInCurrentState || !canStartReattempt(currentCardQuestion)}
+                      onClick={() => requestReattempt(currentCardQuestion)}
                     >
-                      Lihat Hasil
+                      {(() => {
+                        const cooldown = getRemainingCooldownSeconds(currentCardQuestion);
+                        const reachedLimit =
+                          sectionQuizSettings.attempt_limit > 0 &&
+                          getAttemptCount(currentCardQuestion) >= sectionQuizSettings.attempt_limit;
+                        if (cooldown > 0) return `Cooldown ${formatCooldown(cooldown)}`;
+                        if (reachedLimit) return "Limit Attempt Habis";
+                        return "Coba Ulang";
+                      })()}
                     </button>
                   </div>
+                  {canOpenResultsTab ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedResultQuestionId(currentCardQuestion.id);
+                          setActiveSection("results");
+                        }}
+                        className="sage-button-outline"
+                      >
+                        Lihat Hasil
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="sage-pill bg-slate-100 text-slate-700">Hasil disembunyikan</span>
+                  )}
                 </div>
               )}
 

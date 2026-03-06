@@ -26,8 +26,6 @@ import {
   FiAward,
   FiLayers,
   FiUploadCloud,
-  FiChevronsLeft,
-  FiChevronsRight,
   FiChevronDown,
   FiChevronUp,
 } from "react-icons/fi";
@@ -39,6 +37,7 @@ import {
   InviteStudentModal,
   StudentProfileModal,
 } from "./ClassDetailModals";
+import WorkspaceSidebar, { type WorkspaceTab } from "./WorkspaceSidebar";
 
 interface ClassDetail {
   id: string;
@@ -280,13 +279,13 @@ export default function ClassDetailsPage() {
       pendingAssessmentCount: sectionsWithoutQuestion,
     };
   }, [materials, questionCountByMaterial]);
-  const workspaceTabs = [
+  const workspaceTabs: WorkspaceTab[] = [
     { id: "materials", label: "Materi", badge: String(materials.length) },
     { id: "modules", label: "Modul Ajar", badge: String(teachingModules.length) },
     { id: "students", label: "Siswa", badge: String(students.length) },
     { id: "assessment", label: "Penilaian", badge: String(summary.pendingAssessmentCount) },
     { id: "analytics", label: "Analitik" },
-  ] as const;
+  ];
   const activeWorkspace = workspaceTabs.find((tab) => tab.id === activeWorkspaceTab) || workspaceTabs[0];
 
   if (isLoading) {
@@ -317,11 +316,11 @@ export default function ClassDetailsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="teacher-class-view space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <Link
           href="/dashboard/teacher/classes"
-          className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-800"
+          className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
         >
           <FiArrowLeft /> Kembali ke Daftar Kelas
         </Link>
@@ -387,72 +386,13 @@ export default function ClassDetailsPage() {
           isWorkspaceSidebarCollapsed ? "lg:grid-cols-[52px_1fr]" : "lg:grid-cols-[220px_1fr]"
         }`}
       >
-        <aside
-          className={`rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-20 transition-all duration-300 ${
-            isWorkspaceSidebarCollapsed ? "p-2" : "p-3"
-          }`}
-        >
-          {isWorkspaceSidebarCollapsed ? (
-            <div className="flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setIsWorkspaceSidebarCollapsed(false)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 transition hover:bg-slate-100"
-                aria-label="Tampilkan sidebar ruang kelas"
-                title="Tampilkan sidebar ruang kelas"
-              >
-                <FiChevronsRight size={16} />
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="mb-2 flex items-center justify-between px-2">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Ruang Kelas</p>
-                <button
-                  type="button"
-                  onClick={() => setIsWorkspaceSidebarCollapsed(true)}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 transition hover:bg-slate-100"
-                  aria-label="Sembunyikan sidebar ruang kelas"
-                  title="Sembunyikan sidebar ruang kelas"
-                >
-                  <FiChevronsLeft size={14} />
-                </button>
-              </div>
-              <nav className="space-y-1">
-                {workspaceTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab(tab.id)}
-                    className={`group relative block w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                      activeWorkspaceTab === tab.id
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    <span
-                      className={`absolute inset-y-1 left-1 w-1 rounded-full transition ${
-                        activeWorkspaceTab === tab.id ? "bg-white/90" : "bg-transparent group-hover:bg-slate-300"
-                      }`}
-                    />
-                    <span className="ml-2 flex items-center justify-between gap-2">
-                      <span>{tab.label}</span>
-                      {tab.badge && (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            activeWorkspaceTab === tab.id ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
-                          }`}
-                        >
-                          {tab.badge}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </nav>
-            </>
-          )}
-        </aside>
+        <WorkspaceSidebar
+          collapsed={isWorkspaceSidebarCollapsed}
+          tabs={workspaceTabs}
+          activeTab={activeWorkspaceTab}
+          onToggleCollapsed={setIsWorkspaceSidebarCollapsed}
+          onSelectTab={setActiveWorkspaceTab}
+        />
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">

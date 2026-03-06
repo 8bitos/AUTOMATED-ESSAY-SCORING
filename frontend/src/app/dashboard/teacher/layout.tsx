@@ -34,9 +34,9 @@ const TeacherDashboardLayout = ({ children }: { children: React.ReactNode }) => 
   if (authLoading || !user || user.peran !== 'teacher') {
     // Show a loading indicator or redirect if not authorized as a teacher.
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">
-          <span className="inline-block h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-[color:var(--sand-100)] dark:bg-slate-950">
+        <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+          <span className="inline-block h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin dark:border-slate-600 dark:border-t-slate-200" />
           Memuat dashboard guru...
         </div>
       </div>
@@ -48,7 +48,7 @@ const TeacherDashboardLayout = ({ children }: { children: React.ReactNode }) => 
   }
 
   return (
-    <div className="flex min-h-screen h-[100dvh] bg-[color:var(--sand-100)] antialiased">
+    <div className="flex min-h-screen h-[100dvh] bg-[color:var(--sand-100)] antialiased dark:bg-slate-950">
       {/* Sidebar */}
       <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} user={user} />
 
@@ -60,7 +60,7 @@ const TeacherDashboardLayout = ({ children }: { children: React.ReactNode }) => 
         <main className="grow overflow-y-auto">
           <div className="px-4 sm:px-6 lg:px-8 py-10 pb-16 w-full max-w-7xl mx-auto">
             {user?.is_teacher_verified === false && (
-              <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-200">
                 Akun guru Anda <strong>belum terverifikasi</strong>. Anda tetap bisa melihat data, tetapi fitur create/update/delete dinonaktifkan sampai di-ACC oleh admin.
               </div>
             )}

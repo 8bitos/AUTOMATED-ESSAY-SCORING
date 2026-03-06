@@ -22,11 +22,15 @@ const SuperadminLayout = ({ children }: { children: React.ReactNode }) => {
   }, [authLoading, isAuthenticated, user, router]);
 
   if (authLoading || !user || user.peran !== "superadmin") {
-    return <div className="flex justify-center items-center min-h-screen text-sm text-slate-500">Loading superadmin...</div>;
+    return (
+      <div className="flex justify-center items-center min-h-screen text-sm text-slate-500 bg-[color:var(--sand-100)] dark:bg-slate-950 dark:text-slate-300">
+        Loading superadmin...
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 antialiased">
+    <div className="flex h-screen bg-[color:var(--sand-100)] antialiased dark:bg-slate-950">
       <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} user={user} />
       <div className="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
         <Topbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />

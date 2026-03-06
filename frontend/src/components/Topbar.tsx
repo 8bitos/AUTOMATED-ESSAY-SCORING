@@ -886,15 +886,15 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   };
 
   return (
-    <header className="topbar-shell sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header className="topbar-shell sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-700 dark:bg-slate-950/90">
       {impersonationActive && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6 lg:px-8 flex items-center justify-between">
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6 lg:px-8 flex items-center justify-between dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-200">
           <span>Mode impersonation aktif. Kamu sedang login sebagai user lain.</span>
           <button
             type="button"
             onClick={handleStopImpersonation}
             disabled={impersonationBusy}
-            className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100 disabled:opacity-60"
+            className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-medium hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-slate-900 dark:hover:bg-amber-900/40"
           >
             {impersonationBusy ? 'Stopping...' : 'Stop & balik superadmin'}
           </button>
@@ -906,14 +906,14 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
           <div className="flex items-center">
             {/* Mobile drawer button */}
             <button
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-700 shadow-sm hover:bg-slate-50 md:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               aria-controls="sidebar"
               aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
               <span className="sr-only">Buka sidebar</span>
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-xs font-semibold text-white">S</span>
-              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700">SAGE</span>
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-xs font-semibold text-white dark:bg-slate-700">S</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-slate-200">SAGE</span>
             </button>
           </div>
 
@@ -925,8 +925,8 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
               onClick={() => setCommandOpen(true)}
               className="topbar-input hidden md:inline-flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 md:w-[360px]"
             >
-              <span className="inline-flex items-center gap-2 text-slate-500">
-                <svg className="h-5 w-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+                <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-300">
+                  <svg className="h-5 w-5 text-slate-400 dark:text-slate-400" fill="currentColor" viewBox="0 0 20 20">
                   <path
                     fillRule="evenodd"
                     d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
@@ -935,7 +935,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                 </svg>
                 Cari kelas, materi, siswa...
               </span>
-              <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-500">
+              <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {shortcutHint}
               </span>
             </button>
@@ -973,13 +973,13 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                       ref={notifPanel}
                       className="topbar-popover absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg"
                     >
-                      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                        <p className="text-sm font-semibold text-slate-900">Notifikasi</p>
+                      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notifikasi</p>
                         <div className="flex items-center gap-3">
                           {hasNotifications && unreadCount > 0 && (
                             <button
                               type="button"
-                              className="text-xs text-slate-600 hover:underline"
+                              className="text-xs text-slate-600 hover:underline dark:text-slate-300"
                               onClick={handleMarkAllRead}
                             >
                               Tandai sudah dibaca
@@ -987,7 +987,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                           )}
                           <button
                             type="button"
-                            className="text-xs text-slate-700 hover:text-slate-900 hover:underline"
+                            className="text-xs text-slate-700 hover:text-slate-900 hover:underline dark:text-slate-200 dark:hover:text-white"
                             onClick={() => {
                               setNotifOpen(false);
                               router.push(notificationPageByRole(user.peran));
@@ -1000,9 +1000,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
 
                       <div className="max-h-80 overflow-y-auto px-2 py-2">
                         {notifLoading ? (
-                          <p className="px-2 py-3 text-xs text-slate-500">Memuat notifikasi...</p>
+                          <p className="px-2 py-3 text-xs text-slate-500 dark:text-slate-400">Memuat notifikasi...</p>
                         ) : notifications.length === 0 ? (
-                          <p className="px-2 py-3 text-xs text-slate-500">Belum ada notifikasi.</p>
+                          <p className="px-2 py-3 text-xs text-slate-500 dark:text-slate-400">Belum ada notifikasi.</p>
                         ) : (
                           notifications.slice(0, 3).map((item) => {
                             const isRead = readNotificationIds.includes(item.id);
@@ -1013,9 +1013,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                               onClick={() => openNotification(item)}
                               className={`topbar-list-item block w-full rounded-lg px-2 py-2 text-left hover:bg-slate-50 ${isRead ? 'opacity-70' : ''}`}
                             >
-                              <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                              <p className="mt-0.5 text-xs text-slate-600">{item.message}</p>
-                              <p className="mt-1 text-[11px] text-slate-400">{formatNotifDate(item.createdAt)}</p>
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{item.title}</p>
+                              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">{item.message}</p>
+                              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{formatNotifDate(item.createdAt)}</p>
                             </button>
                           )})
                         )}
@@ -1035,25 +1035,25 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                     onClick={() => setDropdownOpen(!dropdownOpen)}
                   >
                     <span className="sr-only">User menu</span>
-                    <span className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-xs font-semibold">
+                    <span className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-xs font-semibold dark:bg-slate-700 dark:text-slate-200">
                       {user.nama_lengkap ? user.nama_lengkap.charAt(0) : '?'}
                     </span>
-                    <span className="hidden lg:inline">{user.nama_lengkap || 'Loading...'} ({user.peran})</span>
-                    <svg className="-mr-1 hidden h-5 w-5 text-slate-400 sm:block" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <span className="hidden lg:inline dark:text-slate-100">{user.nama_lengkap || 'Loading...'} ({user.peran})</span>
+                    <svg className="-mr-1 hidden h-5 w-5 text-slate-400 sm:block dark:text-slate-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                       <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.21 8.27a.75.75 0 01.02-1.06z" clipRule="evenodd" />
                     </svg>
                   </button>
                   {dropdownOpen && (
                     <div
                       ref={dropdown}
-                      className="topbar-popover absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                      className="topbar-popover absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:bg-slate-900 dark:ring-slate-700"
                       role="menu"
                       aria-orientation="vertical"
                       aria-labelledby="menu-button"
                       tabIndex={-1}
                     >
                       <div className="py-1" role="none">
-                        <button onClick={handleLogout} className="text-slate-700 block w-full px-4 py-2 text-left text-sm hover:bg-slate-50" role="menuitem" tabIndex={-1} id="menu-item-0">
+                        <button onClick={handleLogout} className="text-slate-700 block w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800" role="menuitem" tabIndex={-1} id="menu-item-0">
                           Logout
                         </button>
                       </div>
@@ -1067,36 +1067,36 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
         </div>
       </div>
       {commandOpen && (
-        <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] p-3 sm:p-6" onClick={() => setCommandOpen(false)}>
+        <div className="fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-[1px] p-3 sm:p-6 dark:bg-slate-950/70" onClick={() => setCommandOpen(false)}>
           <div
-            className="mx-auto mt-6 w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            className="mx-auto mt-6 w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="border-b border-slate-200 p-3">
+            <div className="border-b border-slate-200 p-3 dark:border-slate-700">
               <input
                 ref={commandInputRef}
                 type="text"
                 value={commandQuery}
                 onChange={(e) => setCommandQuery(e.target.value)}
                 placeholder="Cari... (contoh: kelas:12A status:pending jenis:soal)"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
               />
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
                 Shortcut: <span className="font-semibold">Ctrl/Cmd+K</span> • Arrow untuk navigasi • Enter untuk buka
               </p>
             </div>
             <div className="max-h-[70vh] overflow-y-auto p-2">
               {commandLoading ? (
-                <p className="px-2 py-4 text-sm text-slate-500">Memuat data pencarian...</p>
+                <p className="px-2 py-4 text-sm text-slate-500 dark:text-slate-400">Memuat data pencarian...</p>
               ) : flatCommandItems.length === 0 ? (
-                <p className="px-2 py-4 text-sm text-slate-500">Tidak ada hasil. Coba kata kunci lain.</p>
+                <p className="px-2 py-4 text-sm text-slate-500 dark:text-slate-400">Tidak ada hasil. Coba kata kunci lain.</p>
               ) : (
                 (['Terakhir', 'Aksi', 'Navigasi', 'Kelas', 'Siswa', 'Konten'] as CommandCategory[]).map((cat) => {
                   const items = groupedCommandItems[cat];
                   if (!items.length) return null;
                   return (
                     <div key={cat} className="mb-2">
-                      <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{cat}</p>
+                      <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{cat}</p>
                       <div className="space-y-1">
                         {items.map((item) => {
                           const absoluteIndex = flatCommandItems.findIndex((x) => x.id === item.id);
@@ -1111,8 +1111,8 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                                 active ? 'border-slate-300 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'
                               }`}
                             >
-                              <p className="text-sm font-semibold text-slate-900">{item.label}</p>
-                              {item.description && <p className="text-xs text-slate-600">{item.description}</p>}
+                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.label}</p>
+                              {item.description && <p className="text-xs text-slate-600 dark:text-slate-300">{item.description}</p>}
                             </button>
                           );
                         })}

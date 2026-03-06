@@ -64,6 +64,7 @@ interface RubricScore {
 interface Submission {
   id: string;
   question_id: string;
+  attempt_count?: number;
   student_id?: string;
   student_name?: string;
   student_email?: string;
@@ -87,6 +88,7 @@ interface ReviewQueueItem {
   studentId: string;
   studentName: string;
   studentEmail: string;
+  attemptCount: number;
   submittedAt?: string;
   answerText?: string;
   aiScore?: number;
@@ -478,6 +480,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                     studentId: normalizeStudentKey(submission.student_id, submission.student_email, submission.id),
                     studentName: submission.student_name || "Unknown",
                     studentEmail: submission.student_email || "-",
+                    attemptCount: Number(submission.attempt_count || 1),
                     submittedAt: submission.submitted_at,
                     answerText: submission.teks_jawaban,
                     aiScore: submission.skor_ai,
@@ -1415,7 +1418,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
   );
 
   return (
-    <div className="space-y-3">
+    <div className="teacher-penilaian-view space-y-3">
       <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:from-slate-900 dark:to-slate-800/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -1861,6 +1864,9 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                                           className="w-full text-left"
                                         >
                                           <StatusBadge status={status} />
+                                          <span className="mt-1 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                                            Percobaan ke-{Math.max(1, submission.attemptCount || 1)}
+                                          </span>
                                           <p className="mt-1 max-w-[236px] whitespace-normal break-words text-[11px] leading-snug text-slate-600">
                                             {answerPreview || "Jawaban kosong"}
                                           </p>
@@ -2178,6 +2184,11 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                                 ? `Submit: ${new Date(selectedQuestionView.submission.submittedAt).toLocaleString("id-ID")}`
                                 : "Belum submit"}
                             </span>
+                            {hasSubmissionForSelectedQuestion && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                                Percobaan ke-{Math.max(1, selectedQuestionView.submission?.attemptCount || 1)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2317,6 +2328,18 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
                         </div>
                         {contentViewIndex === 0 ? (
                           <div className="mt-2">
+                            {hasSubmissionForSelectedQuestion && (
+                              <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
+                                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-medium text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                                  Percobaan ke-{Math.max(1, selectedQuestionView.submission?.attemptCount || 1)}
+                                </span>
+                                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-slate-600">
+                                  {selectedQuestionView.submission?.submittedAt
+                                    ? `Submit: ${new Date(selectedQuestionView.submission.submittedAt).toLocaleString("id-ID")}`
+                                    : "Belum submit"}
+                                </span>
+                              </div>
+                            )}
                             <div className="max-h-24 overflow-y-auto whitespace-pre-line rounded-lg border border-slate-200 bg-white p-2.5 text-xs text-slate-700">
                               {(selectedQuestionView.questionText || "").trim() || "Teks soal tidak tersedia."}
                             </div>

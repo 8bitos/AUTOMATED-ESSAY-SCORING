@@ -48,6 +48,10 @@ import {
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import NoticeDialog from '@/components/ui/NoticeDialog';
 import LoadingDialog from '@/components/ui/LoadingDialog';
+import SoalSettingsModal from './SoalSettingsModal';
+import QuestionsListSection, { type QuestionItem } from './QuestionsListSection';
+import ReviewModal from './ReviewModal';
+import { reorderQuestionIdsByDirection, reorderQuestionIdsByDrop } from './reorderUtils';
 
 // --- INTERFACES ---
 interface MaterialDetail {
@@ -89,6 +93,7 @@ interface SoalQuizSettings {
   total_seconds: number;
   extra_time_seconds: number;
   auto_next_on_submit: boolean;
+  bulk_submit_mode: boolean;
   allow_back_navigation: boolean;
   lock_question_after_leave: boolean;
   randomize_question_order: boolean;
@@ -106,9 +111,11 @@ interface SoalQuizSettings {
   show_ideal_answer: boolean;
   show_rubric_breakdown: boolean;
   show_rubric_in_question: boolean;
+  hide_results_tab: boolean;
   warn_on_tab_switch: boolean;
   max_tab_switch: number;
   auto_lock_on_tab_switch_limit: boolean;
+  require_fullscreen: boolean;
 }
 
 interface EditableDescriptor {
@@ -430,6 +437,7 @@ const parseSoalQuizSettings = (meta?: Record<string, unknown>): SoalQuizSettings
     total_seconds: clampDuration(root.total_seconds, 900),
     extra_time_seconds: clampDuration(root.extra_time_seconds, 0),
     auto_next_on_submit: readBoolean(root.auto_next_on_submit, true),
+    bulk_submit_mode: readBoolean(root.bulk_submit_mode, false),
     allow_back_navigation: readBoolean(root.allow_back_navigation, true),
     lock_question_after_leave: readBoolean(root.lock_question_after_leave, false),
     randomize_question_order: readBoolean(root.randomize_question_order, false),
@@ -450,9 +458,11 @@ const parseSoalQuizSettings = (meta?: Record<string, unknown>): SoalQuizSettings
     show_ideal_answer: readBoolean(root.show_ideal_answer, false),
     show_rubric_breakdown: readBoolean(root.show_rubric_breakdown, true),
     show_rubric_in_question: readBoolean(root.show_rubric_in_question, false),
+    hide_results_tab: readBoolean(root.hide_results_tab, false),
     warn_on_tab_switch: readBoolean(root.warn_on_tab_switch, false),
     max_tab_switch: clampDuration(root.max_tab_switch, 3),
     auto_lock_on_tab_switch_limit: readBoolean(root.auto_lock_on_tab_switch_limit, false),
+    require_fullscreen: readBoolean(root.require_fullscreen, false),
   };
 };
 
@@ -463,6 +473,7 @@ const toQuizSettingsMeta = (settings: SoalQuizSettings): Record<string, unknown>
   total_seconds: clampDuration(settings.total_seconds, 900),
   extra_time_seconds: clampDuration(settings.extra_time_seconds, 0),
   auto_next_on_submit: settings.auto_next_on_submit,
+  bulk_submit_mode: settings.bulk_submit_mode,
   allow_back_navigation: settings.allow_back_navigation,
   lock_question_after_leave: settings.lock_question_after_leave,
   randomize_question_order: settings.randomize_question_order,
@@ -480,9 +491,11 @@ const toQuizSettingsMeta = (settings: SoalQuizSettings): Record<string, unknown>
   show_ideal_answer: settings.show_ideal_answer,
   show_rubric_breakdown: settings.show_rubric_breakdown,
   show_rubric_in_question: settings.show_rubric_in_question,
+  hide_results_tab: settings.hide_results_tab,
   warn_on_tab_switch: settings.warn_on_tab_switch,
   max_tab_switch: clampDuration(settings.max_tab_switch, 3),
   auto_lock_on_tab_switch_limit: settings.auto_lock_on_tab_switch_limit,
+  require_fullscreen: settings.require_fullscreen,
 });
 
 const serializeSectionCards = (items: SectionCardItem[]) =>
@@ -992,17 +1005,19 @@ const Modal = ({
   title,
   children,
   panelClassName = "",
+  fullscreen = false,
 }: {
   isOpen: boolean,
   onClose: () => void,
   title: string,
   children: React.ReactNode,
   panelClassName?: string,
+  fullscreen?: boolean,
 }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4">
-      <div className={`sage-panel p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto ${panelClassName}`}>
+    <div className={`fixed inset-0 z-50 bg-black/50 flex ${fullscreen ? "items-stretch justify-stretch p-0" : "items-center justify-center p-4"}`}>
+      <div className={`sage-panel p-6 w-full max-w-lg relative max-h-[90vh] ${fullscreen ? "h-screen w-screen max-w-none max-h-none rounded-none border-0 overflow-hidden" : "overflow-y-auto"} ${panelClassName}`}>
         <button onClick={onClose} className="absolute top-4 right-4 text-[color:var(--ink-500)] hover:text-[color:var(--ink-900)]"><FiX size={24} /></button>
         <h2 className="text-xl font-bold text-[color:var(--ink-900)] mb-4">{title}</h2>
         {children}
@@ -1119,6 +1134,7 @@ const EssayQuestionFormModal = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showParameterPanel, setShowParameterPanel] = useState(true);
   const [questionMode, setQuestionMode] = useState<'manual' | 'auto'>('manual');
+  const [analyticInputMode, setAnalyticInputMode] = useState<'card' | 'table'>('card');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavingToBank, setIsSavingToBank] = useState(false);
   const [isBankPickerOpen, setIsBankPickerOpen] = useState(false);
@@ -1129,7 +1145,7 @@ const EssayQuestionFormModal = ({
   const [bankNotice, setBankNotice] = useState('');
   const [lastSavedBankSignature, setLastSavedBankSignature] = useState<string>('');
   const [generatedSourceMeta, setGeneratedSourceMeta] = useState<{ label: string; chars: number; preview: string; forcedHolisticC1: boolean } | null>(null);
-  const [showTopControlPanel, setShowTopControlPanel] = useState(true);
+  const [rubricTooltip, setRubricTooltip] = useState<RubricType | null>(null);
   const wasEditingExistingRef = useRef(false);
   const resetQuestionForm = useCallback(() => {
     setTeksSoal('');
@@ -1150,6 +1166,7 @@ const EssayQuestionFormModal = ({
     setShowAdvanced(false);
     setShowParameterPanel(true);
     setQuestionMode('manual');
+    setAnalyticInputMode('card');
     setIsGenerating(false);
     setIsSavingToBank(false);
     setIsBankPickerOpen(false);
@@ -1160,7 +1177,6 @@ const EssayQuestionFormModal = ({
     setBankNotice('');
     setLastSavedBankSignature('');
     setGeneratedSourceMeta(null);
-    setShowTopControlPanel(true);
   }, [materialId]);
 
   useEffect(() => {
@@ -1247,6 +1263,23 @@ const EssayQuestionFormModal = ({
     rubricType === 'analitik'
       ? analyticRubrics
       : [{ nama_aspek: holisticAspectName || 'Penilaian Holistik', rubric_type: 'holistik', descriptors: holisticDescriptors }];
+
+  const analyticTableColumnCount = useMemo(() => {
+    const maxCount = analyticRubrics.reduce((max, aspect) => Math.max(max, aspect.descriptors.length), 0);
+    return Math.max(1, maxCount);
+  }, [analyticRubrics]);
+
+  const analyticTableColumnScores = useMemo(
+    () =>
+      Array.from({ length: analyticTableColumnCount }, (_, idx) => {
+        for (const aspect of analyticRubrics) {
+          const score = aspect.descriptors[idx]?.score;
+          if (String(score ?? "").trim() !== "") return String(score);
+        }
+        return String(idx + 1);
+      }),
+    [analyticRubrics, analyticTableColumnCount]
+  );
 
   const validateStep = (targetStep: number) => {
     if (targetStep === 1) {
@@ -1512,6 +1545,17 @@ const EssayQuestionFormModal = ({
   };
 
   const addAnalyticAspect = () => {
+    if (analyticInputMode === "table") {
+      setAnalyticRubrics((prev) => [
+        ...prev,
+        {
+          nama_aspek: '',
+          rubric_type: 'analitik',
+          descriptors: analyticTableColumnScores.map((score) => ({ score, description: '' })),
+        },
+      ]);
+      return;
+    }
     setAnalyticRubrics((prev) => [...prev, { nama_aspek: '', rubric_type: 'analitik', descriptors: [{ score: '', description: '' }] }]);
   };
 
@@ -1562,6 +1606,53 @@ const EssayQuestionFormModal = ({
             }
           : aspect
       )
+    );
+  };
+
+  const switchAnalyticInputMode = (mode: 'card' | 'table') => {
+    setAnalyticInputMode(mode);
+    if (mode === 'table') {
+      setAnalyticRubrics((prev) =>
+        prev.map((aspect) => {
+          const widest = prev.reduce((max, item) => Math.max(max, item.descriptors.length), 0);
+          const minColumns = Math.max(3, widest);
+          const nextDescriptors = [...aspect.descriptors];
+          for (let idx = nextDescriptors.length; idx < minColumns; idx += 1) {
+            nextDescriptors.push({ score: String(idx + 1), description: '' });
+          }
+          return { ...aspect, descriptors: nextDescriptors };
+        })
+      );
+    }
+  };
+
+  const addAnalyticTableColumn = () => {
+    setAnalyticRubrics((prev) =>
+      prev.map((aspect) => ({
+        ...aspect,
+        descriptors: [...aspect.descriptors, { score: String(aspect.descriptors.length + 1), description: '' }],
+      }))
+    );
+  };
+
+  const removeAnalyticTableColumn = (columnIdx: number) => {
+    if (analyticTableColumnCount <= 1) return;
+    setAnalyticRubrics((prev) =>
+      prev.map((aspect) => ({
+        ...aspect,
+        descriptors: aspect.descriptors.filter((_, idx) => idx !== columnIdx),
+      }))
+    );
+  };
+
+  const updateAnalyticTableColumnScore = (columnIdx: number, value: string) => {
+    setAnalyticRubrics((prev) =>
+      prev.map((aspect) => ({
+        ...aspect,
+        descriptors: aspect.descriptors.map((descriptor, idx) =>
+          idx === columnIdx ? { ...descriptor, score: value } : descriptor
+        ),
+      }))
     );
   };
 
@@ -1845,12 +1936,22 @@ const EssayQuestionFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={existingQuestion ? 'Edit Soal Essay' : 'Buat Soal Essay'}
-      panelClassName="max-w-[98vw] lg:max-w-6xl h-[92vh] sm:h-[88vh] overflow-hidden"
+      fullscreen
+      panelClassName="h-screen w-screen max-w-none max-h-none overflow-hidden"
     >
       <form onSubmit={handleSubmit} className="h-full flex flex-col gap-4">
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-            {error}
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+            <p>{error}</p>
+            <button
+              type="button"
+              onClick={() => setError('')}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-red-200 text-red-600 hover:bg-red-100 dark:border-red-800/70 dark:hover:bg-red-900/40"
+              aria-label="Tutup pesan error"
+              title="Tutup pesan"
+            >
+              <FiX size={14} />
+            </button>
           </div>
         )}
         {bankNotice && (
@@ -1858,114 +1959,102 @@ const EssayQuestionFormModal = ({
             {bankNotice}
           </div>
         )}
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">Kontrol Cepat</p>
-            <button
-              type="button"
-              onClick={() => setShowTopControlPanel((prev) => !prev)}
-              className="sage-button-outline !py-1 !px-2 text-[11px] sm:text-xs"
-            >
-              {showTopControlPanel ? "Sembunyikan" : "Tampilkan"}
-            </button>
-          </div>
-          {showTopControlPanel && (
-          <>
-          <div className="mt-2 flex flex-col gap-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            {hasLocalDraft ? (
-              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 sm:py-1 sm:text-[11px]">
-                Draft tersimpan lokal
-              </span>
-            ) : (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 sm:py-1 sm:text-[11px]">
-                Draft kosong
-              </span>
-            )}
-            <button type="button" onClick={resetQuestionForm} className="sage-button-outline !py-1 !px-2 text-[11px] sm:text-xs">Buat Baru</button>
-          </div>
-          <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs dark:border-slate-700 dark:bg-slate-800 sm:w-auto sm:p-1 sm:text-sm">
-            <button
-              type="button"
-              onClick={() => setQuestionMode('manual')}
-              title="Isi soal, parameter, dan rubrik secara manual."
-              className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:flex-none sm:px-3 sm:py-1.5 ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
-            >
-              Mode Manual
-            </button>
-            <button
-              type="button"
-              onClick={() => setQuestionMode('auto')}
-              title="Gunakan AI untuk menghasilkan draft soal dari materi acuan."
-              className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:flex-none sm:px-3 sm:py-1.5 ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
-            >
-              Mode Auto (AI)
-            </button>
-          </div>
-          {questionMode === 'auto' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsBankPickerOpen(true);
-                  loadQuestionBankEntries();
-                }}
-                title="Buka bank soal dan pilih soal yang sudah pernah disimpan."
-                className="sage-button-outline !py-1 !px-2 text-[11px] sm:!py-2 sm:!px-3 sm:text-sm"
-              >
-                Panggil Bank Soal
-              </button>
-              <button
-                type="button"
-                onClick={handleAutoGenerate}
-                disabled={isGenerating}
-                title="Generate draft soal otomatis dari materi acuan RAG yang dipilih."
-                className="sage-button !py-1 !px-2 text-[11px] sm:!py-2 sm:!px-3 sm:text-sm"
-              >
-                {isGenerating ? 'Generating...' : 'Generate dari Materi'}
-              </button>
+        <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
+          <div className="h-full rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex h-full flex-col">
+              <p className="text-[11px] font-semibold text-slate-500 sm:text-xs">Kontrol Cepat</p>
+              <div className="mt-3 flex flex-1 flex-col gap-2.5 lg:gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {hasLocalDraft ? (
+                    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 sm:py-1 sm:text-[11px]">
+                      Draft tersimpan lokal
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 sm:py-1 sm:text-[11px]">
+                      Draft kosong
+                    </span>
+                  )}
+                  <button type="button" onClick={resetQuestionForm} className="sage-button-outline !py-1 !px-2 text-[11px] sm:text-xs">Buat Baru</button>
+                </div>
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                  <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] dark:border-slate-700 dark:bg-slate-800 sm:text-xs lg:flex-1">
+                    <button
+                      type="button"
+                      onClick={() => setQuestionMode('manual')}
+                      title="Isi soal, parameter, dan rubrik secara manual."
+                      className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:px-3 sm:py-1.5 ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    >
+                      Mode Manual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuestionMode('auto')}
+                      title="Gunakan AI untuk menghasilkan draft soal dari materi acuan."
+                      className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:px-3 sm:py-1.5 ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                    >
+                      Mode Auto (AI)
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap lg:overflow-visible">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsBankPickerOpen(true);
+                        loadQuestionBankEntries();
+                      }}
+                      title="Buka bank soal dan gunakan soal yang sudah ada."
+                      className="sage-button-outline !py-1 !px-2 text-[11px] sm:!py-1.5 sm:!px-2.5 sm:text-xs"
+                    >
+                      Panggil Bank Soal
+                    </button>
+                    {questionMode === 'auto' && (
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerate}
+                        disabled={isGenerating}
+                        title="Generate draft soal otomatis dari materi acuan RAG yang dipilih."
+                        className="sage-button !py-1 !px-2 text-[11px] sm:!py-1.5 sm:!px-2.5 sm:text-xs"
+                      >
+                        {isGenerating ? 'Generating...' : 'Generate dari Materi'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {generatedSourceMeta && (
+                <p className="mt-2 truncate text-[11px] text-slate-500">
+                  Sumber generate: <span className="font-medium text-slate-700">{generatedSourceMeta.label}</span>
+                  {generatedSourceMeta.forcedHolisticC1 ? " · C1 dipaksa Holistik" : ""}
+                </p>
+              )}
             </div>
-          )}
-          {questionMode === 'manual' && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsBankPickerOpen(true);
-                loadQuestionBankEntries();
-              }}
-              title="Buka bank soal dan gunakan soal yang sudah ada."
-              className="sage-button-outline !py-1 !px-2 text-[11px] sm:!py-2 sm:!px-3 sm:text-sm"
-            >
-              Panggil Bank Soal
-            </button>
-          )}
           </div>
-          {generatedSourceMeta && (
-            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-              <p>
-                Sumber generate: <strong>{generatedSourceMeta.label}</strong> · {generatedSourceMeta.chars} chars
-                {generatedSourceMeta.forcedHolisticC1 ? " · C1 dipaksa Holistik" : ""}
-              </p>
-              {generatedSourceMeta.preview && <p className="mt-1 line-clamp-3 whitespace-pre-wrap">{generatedSourceMeta.preview}</p>}
+
+          <div className="h-full rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <p className="text-[11px] font-semibold text-slate-500 sm:text-xs">Langkah Form</p>
+            <div className="mt-2 grid grid-cols-3 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 text-[11px] shadow-sm sm:text-xs dark:border-slate-700 dark:bg-slate-900">
+              {[1, 2, 3].map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => goToStep(i)}
+                  title={i === 1 ? "Atur teks soal dan parameter dasar." : i === 2 ? "Atur tipe rubrik dan deskriptor penilaian." : "Tinjau hasil akhir sebelum menyimpan."}
+                  className={`rounded-lg px-2.5 py-1.5 font-medium transition ${
+                    step === i ? 'bg-[color:var(--sage-700)] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {i}. {i === 1 ? 'Soal' : i === 2 ? 'Rubrik' : 'Preview'}
+                </button>
+              ))}
             </div>
-          )}
-          </>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-sm sm:text-sm dark:border-slate-700 dark:bg-slate-900">
-          {[1, 2, 3].map((i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => goToStep(i)}
-              title={i === 1 ? "Atur teks soal dan parameter dasar." : i === 2 ? "Atur tipe rubrik dan deskriptor penilaian." : "Tinjau hasil akhir sebelum menyimpan."}
-              className={`rounded-lg px-3 py-2 font-medium transition ${
-                step === i ? 'bg-[color:var(--sage-700)] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-              }`}
-            >
-              {i}. {i === 1 ? 'Soal' : i === 2 ? 'Rubrik' : 'Preview'}
-            </button>
-          ))}
+            <p className="mt-2 px-1 text-xs text-slate-500">
+              {step === 1
+                ? "Isi pertanyaan utama dan pastikan instruksi jelas untuk siswa."
+                : step === 2
+                  ? "Tentukan tipe rubrik lalu isi deskriptor penilaian secara rinci."
+                  : "Tinjau ulang detail soal, rubrik, dan parameter sebelum disimpan."}
+            </p>
+          </div>
         </div>
         <button
           type="button"
@@ -1980,23 +2069,24 @@ const EssayQuestionFormModal = ({
           <div className={`h-full overflow-y-auto pr-1 transition-[padding] duration-300 ${showParameterPanel ? 'lg:pr-[356px]' : ''}`}>
             <div className="min-w-0">
               {step === 1 && (
-                <section className="space-y-4">
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <section className="space-y-5">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Soal Inti</h3>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-200">Wajib</span>
                     </div>
-                    <div className="mt-3">
+                    <p className="mt-2 text-xs text-slate-500">Tulis pertanyaan utama yang dilihat siswa saat mengerjakan.</p>
+                    <div className="mt-5 space-y-2">
                       <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Teks Soal</label>
                       <textarea
                         value={teksSoal}
                         onChange={(e) => setTeksSoal(e.target.value)}
-                        rows={12}
+                        rows={7}
                         className="sage-input mt-1 text-justify"
                         title="Tulis pertanyaan utama yang harus dijawab siswa."
                         required
                       />
-                      <div className="mt-2 flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
+                      <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
                         <span>Tulis pertanyaan sejelas mungkin agar siswa mudah memahami konteks.</span>
                         <span>{teksSoal.trim().length} karakter</span>
                       </div>
@@ -2006,198 +2096,392 @@ const EssayQuestionFormModal = ({
               )}
 
               {step === 2 && (
-                <section className="space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100 mb-2">Tipe Rubrik</h3>
-                {levelKognitif === "C1" && rubricType === "analitik" && (
-                  <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">
-                    Catatan: C1 biasanya lebih stabil memakai Holistik. Untuk mode Generate AI, C1 akan diproses Holistik otomatis.
-                  </p>
-                )}
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => handleRubricTypeChange('analitik')}
-                    title="Rubrik dengan beberapa aspek penilaian terpisah."
-                    className={`rounded-xl border p-3 text-left transition ${
-                      rubricType === 'analitik'
-                        ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">Analitik</p>
-                    <p className="text-xs text-slate-600 dark:text-slate-300">Skor per aspek (mis. relevansi, pemahaman, analisis).</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRubricTypeChange('holistik')}
-                    title="Rubrik satu aspek untuk menilai kualitas jawaban secara keseluruhan."
-                    className={`rounded-xl border p-3 text-left transition ${
-                      rubricType === 'holistik'
-                        ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <p className="font-semibold text-slate-900 dark:text-slate-100">Holistik</p>
-                    <p className="text-xs text-slate-600 dark:text-slate-300">Satu aspek penilaian untuk kualitas jawaban secara keseluruhan.</p>
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Rubrik Penilaian</h3>
-                  {rubricType === 'analitik' && (
-                    <button
-                      type="button"
-                      onClick={addAnalyticAspect}
-                      title="Tambah aspek baru pada rubrik analitik."
-                      className="sage-button-outline"
-                    >
-                      + Tambah Aspek
-                    </button>
-                  )}
-                  {rubricType === 'holistik' && (
-                    <button
-                      type="button"
-                      onClick={addHolisticScoreRow}
-                      title="Tambah baris skor pada rubrik holistik."
-                      className="sage-button-outline"
-                    >
-                      + Tambah Skor
-                    </button>
-                  )}
-                </div>
-
-                {activeRubrics.length === 0 && (
-                  <p className="text-sm text-slate-500 dark:text-slate-300">
-                    {rubricType === 'analitik'
-                      ? 'Belum ada rubrik. Klik "Tambah Rubrik" untuk menambah skor-deskripsi.'
-                      : 'Belum ada rubrik holistik. Tambahkan minimal satu deskriptor.'}
-                  </p>
-                )}
-
-                {rubricType === 'analitik' &&
-                  analyticRubrics.map((rubric, i) => (
-                    <div key={i} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                      <div className="flex items-center gap-2">
-                        <input
-                          value={rubric.nama_aspek}
-                          onChange={(e) => updateAnalyticAspectName(i, e.target.value)}
-                          className="font-semibold bg-transparent border-b border-slate-200 outline-none w-full pb-1"
-                          placeholder={`Nama aspek ${i + 1} (contoh: Relevansi)`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeAnalyticAspect(i)}
-                          className="text-red-500"
-                          aria-label="Hapus aspek"
-                          title="Hapus aspek rubrik ini."
-                        >
-                          <FiTrash2 />
-                        </button>
-                      </div>
-
-                      {rubric.descriptors.map((d, j) => (
-                        <div key={j} className="grid grid-cols-1 gap-2 md:grid-cols-[110px_1fr_auto]">
-                          <input
-                            value={d.score}
-                            onChange={(e) => updateAnalyticScoreField(i, j, 'score', e.target.value)}
-                            className="sage-input"
-                            placeholder="Skor"
-                            title="Nilai skor untuk deskriptor ini."
-                          />
-                          <input
-                            value={d.description}
-                            onChange={(e) => updateAnalyticScoreField(i, j, 'description', e.target.value)}
-                            className="sage-input"
-                            placeholder="Deskripsi"
-                            title="Deskripsi kriteria jawaban untuk skor ini."
-                          />
+                <section className="space-y-3">
+                  <div className="grid grid-cols-1 items-start gap-2.5 xl:grid-cols-[minmax(130px,14%)_minmax(0,1fr)]">
+                    <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <h3 className="mb-1 text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Tipe Rubrik</h3>
+                      {levelKognitif === "C1" && rubricType === "analitik" && (
+                        <p className="mb-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[9px] leading-tight text-amber-700">
+                          Catatan: C1 biasanya lebih stabil memakai Holistik. Untuk mode Generate AI, C1 akan diproses Holistik otomatis.
+                        </p>
+                      )}
+                      <div className="grid grid-cols-1 gap-1.5">
+                        <div className="relative">
                           <button
                             type="button"
-                            onClick={() => removeAnalyticScoreRow(i, j)}
-                            className="rounded-md border border-slate-200 px-2 text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
-                            aria-label="Hapus skor"
-                            title="Hapus baris skor ini."
+                            onClick={() => handleRubricTypeChange('analitik')}
+                            className={`w-full rounded-md border px-2 py-1.5 pr-7 text-left transition ${
+                              rubricType === 'analitik'
+                                ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
+                                : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
+                            }`}
                           >
-                            <FiTrash2 />
+                            <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">Analitik</p>
+                            <p className="text-[9px] leading-tight text-slate-600 dark:text-slate-300">Skor per aspek.</p>
+                          </button>
+                          <button
+                            type="button"
+                            onMouseEnter={() => setRubricTooltip('analitik')}
+                            onMouseLeave={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
+                            onFocus={() => setRubricTooltip('analitik')}
+                            onBlur={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
+                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 hover:text-slate-800"
+                            title="Contoh rubrik analitik"
+                          >
+                            <FiHelpCircle size={14} />
+                          </button>
+                          {rubricTooltip === 'analitik' && (
+                            <div
+                              className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,480px)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                              onMouseEnter={() => setRubricTooltip('analitik')}
+                              onMouseLeave={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
+                            >
+                              <p className="text-xs font-semibold text-slate-700">Contoh Rubrik Analitik</p>
+                              <div className="mt-2 overflow-x-auto">
+                                <table className="min-w-full border-collapse text-[11px]">
+                                  <thead>
+                                    <tr className="bg-slate-50">
+                                      <th className="border border-slate-200 px-2 py-1 text-left">Aspek</th>
+                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor 1</th>
+                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor 2</th>
+                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor 3</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr>
+                                      <td className="border border-slate-200 px-2 py-1">Relevansi</td>
+                                      <td className="border border-slate-200 px-2 py-1">Tidak sesuai soal</td>
+                                      <td className="border border-slate-200 px-2 py-1">Sebagian sesuai</td>
+                                      <td className="border border-slate-200 px-2 py-1">Sangat sesuai</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border border-slate-200 px-2 py-1">Argumentasi</td>
+                                      <td className="border border-slate-200 px-2 py-1">Lemah</td>
+                                      <td className="border border-slate-200 px-2 py-1">Cukup jelas</td>
+                                      <td className="border border-slate-200 px-2 py-1">Kuat dan logis</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => handleRubricTypeChange('holistik')}
+                            className={`w-full rounded-md border px-2 py-1.5 pr-7 text-left transition ${
+                              rubricType === 'holistik'
+                                ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
+                                : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">Holistik</p>
+                            <p className="text-[9px] leading-tight text-slate-600 dark:text-slate-300">Satu aspek keseluruhan.</p>
+                          </button>
+                          <button
+                            type="button"
+                            onMouseEnter={() => setRubricTooltip('holistik')}
+                            onMouseLeave={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
+                            onFocus={() => setRubricTooltip('holistik')}
+                            onBlur={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
+                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 hover:text-slate-800"
+                            title="Contoh rubrik holistik"
+                          >
+                            <FiHelpCircle size={14} />
+                          </button>
+                          {rubricTooltip === 'holistik' && (
+                            <div
+                              className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,420px)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                              onMouseEnter={() => setRubricTooltip('holistik')}
+                              onMouseLeave={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
+                            >
+                              <p className="text-xs font-semibold text-slate-700">Contoh Rubrik Holistik</p>
+                              <div className="mt-2 overflow-x-auto">
+                                <table className="min-w-full border-collapse text-[11px]">
+                                  <thead>
+                                    <tr className="bg-slate-50">
+                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor</th>
+                                      <th className="border border-slate-200 px-2 py-1 text-left">Deskripsi</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr>
+                                      <td className="border border-slate-200 px-2 py-1">1</td>
+                                      <td className="border border-slate-200 px-2 py-1">Jawaban belum memenuhi inti pertanyaan.</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border border-slate-200 px-2 py-1">2</td>
+                                      <td className="border border-slate-200 px-2 py-1">Jawaban cukup, namun masih kurang detail/akurasi.</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border border-slate-200 px-2 py-1">3</td>
+                                      <td className="border border-slate-200 px-2 py-1">Jawaban lengkap, tepat, dan mudah dipahami.</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="w-full space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Rubrik Penilaian</h3>
+                        {rubricType === 'analitik' ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-[10px] dark:border-slate-700 dark:bg-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => switchAnalyticInputMode('card')}
+                                className={`rounded px-2 py-1 ${analyticInputMode === 'card' ? 'bg-slate-100 font-semibold text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                                title="Input rubrik per aspek dalam format kartu."
+                              >
+                                Kartu
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => switchAnalyticInputMode('table')}
+                                className={`rounded px-2 py-1 ${analyticInputMode === 'table' ? 'bg-slate-100 font-semibold text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
+                                title="Input rubrik per aspek dalam format tabel seperti contoh tooltip."
+                              >
+                                Tabel
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={addAnalyticAspect}
+                              title="Tambah aspek baru pada rubrik analitik."
+                              className="sage-button-outline !px-2 !py-1 text-[10px]"
+                            >
+                              + Tambah Aspek
+                            </button>
+                            {analyticInputMode === 'table' && (
+                              <button
+                                type="button"
+                                onClick={addAnalyticTableColumn}
+                                title="Tambah kolom skor baru pada tabel rubrik."
+                                className="sage-button-outline !px-2 !py-1 text-[10px]"
+                              >
+                                + Kolom Skor
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={addHolisticScoreRow}
+                            title="Tambah baris skor pada rubrik holistik."
+                            className="sage-button-outline !px-2 !py-1 text-[10px]"
+                          >
+                            + Tambah Skor
+                          </button>
+                        )}
+                      </div>
+
+                      {activeRubrics.length === 0 && (
+                        <p className="text-xs text-slate-500 dark:text-slate-300">
+                          {rubricType === 'analitik'
+                            ? 'Belum ada rubrik analitik. Klik "Tambah Aspek" untuk mulai.'
+                            : 'Belum ada rubrik holistik. Tambahkan minimal satu deskriptor.'}
+                        </p>
+                      )}
+
+                      {rubricType === 'analitik' && analyticInputMode === 'card' &&
+                        analyticRubrics.map((rubric, i) => (
+                          <div key={i} className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={rubric.nama_aspek}
+                                onChange={(e) => updateAnalyticAspectName(i, e.target.value)}
+                                className="w-full border-b border-slate-200 bg-transparent pb-1 text-[11px] font-semibold outline-none"
+                                placeholder={`Nama aspek ${i + 1} (contoh: Relevansi)`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeAnalyticAspect(i)}
+                                className="text-red-500"
+                                aria-label="Hapus aspek"
+                                title="Hapus aspek rubrik ini."
+                              >
+                                <FiTrash2 />
+                              </button>
+                            </div>
+
+                            {rubric.descriptors.map((d, j) => (
+                              <div key={j} className="grid grid-cols-1 gap-1.5 md:grid-cols-[78px_1fr_auto]">
+                                <input
+                                  value={d.score}
+                                  onChange={(e) => updateAnalyticScoreField(i, j, 'score', e.target.value)}
+                                  className="sage-input !px-2 !py-1.5 text-[11px]"
+                                  placeholder="Skor"
+                                  title="Nilai skor untuk deskriptor ini."
+                                />
+                                <input
+                                  value={d.description}
+                                  onChange={(e) => updateAnalyticScoreField(i, j, 'description', e.target.value)}
+                                  className="sage-input !px-2 !py-1.5 text-[11px]"
+                                  placeholder="Deskripsi"
+                                  title="Deskripsi kriteria jawaban untuk skor ini."
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeAnalyticScoreRow(i, j)}
+                                  className="rounded-md border border-slate-200 px-1.5 py-1 text-[11px] text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
+                                  aria-label="Hapus skor"
+                                  title="Hapus baris skor ini."
+                                >
+                                  <FiTrash2 />
+                                </button>
+                              </div>
+                            ))}
+
+                            <button
+                              type="button"
+                              onClick={() => addAnalyticScoreRow(i)}
+                              title="Tambah baris skor pada aspek ini."
+                              className="text-[11px] font-medium text-slate-700 hover:text-slate-900"
+                            >
+                              + Tambah Skor
+                            </button>
+                          </div>
+                        ))}
+
+                      {rubricType === 'analitik' && analyticInputMode === 'table' && (
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                          <table className="min-w-full border-collapse text-[11px]">
+                            <thead>
+                              <tr className="bg-slate-50 dark:bg-slate-900/60">
+                                <th className="border border-slate-200 px-2 py-1 text-left font-semibold dark:border-slate-700">Aspek</th>
+                                {Array.from({ length: analyticTableColumnCount }, (_, colIdx) => (
+                                  <th key={colIdx} className="border border-slate-200 px-2 py-1 text-left font-semibold dark:border-slate-700">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        value={analyticTableColumnScores[colIdx] ?? ''}
+                                        onChange={(e) => updateAnalyticTableColumnScore(colIdx, e.target.value)}
+                                        className="sage-input !h-7 !w-14 !min-w-0 !px-1.5 !py-1 text-[10px]"
+                                        placeholder={`S${colIdx + 1}`}
+                                        title={`Skor default kolom ${colIdx + 1}.`}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeAnalyticTableColumn(colIdx)}
+                                        className="rounded border border-slate-200 px-1 py-0.5 text-[10px] text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
+                                        title={`Hapus kolom skor ${colIdx + 1}.`}
+                                      >
+                                        x
+                                      </button>
+                                    </div>
+                                  </th>
+                                ))}
+                                <th className="border border-slate-200 px-2 py-1 text-left font-semibold dark:border-slate-700">Aksi</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {analyticRubrics.map((rubric, aspectIdx) => (
+                                <tr key={aspectIdx} className="align-top">
+                                  <td className="border border-slate-200 px-2 py-1 dark:border-slate-700">
+                                    <input
+                                      value={rubric.nama_aspek}
+                                      onChange={(e) => updateAnalyticAspectName(aspectIdx, e.target.value)}
+                                      className="sage-input !h-8 !px-2 !py-1 text-[11px]"
+                                      placeholder={`Aspek ${aspectIdx + 1}`}
+                                      title="Nama aspek penilaian."
+                                    />
+                                  </td>
+                                  {Array.from({ length: analyticTableColumnCount }, (_, colIdx) => (
+                                    <td key={`${aspectIdx}-${colIdx}`} className="border border-slate-200 px-2 py-1 dark:border-slate-700">
+                                      <textarea
+                                        rows={2}
+                                        value={rubric.descriptors[colIdx]?.description ?? ''}
+                                        onChange={(e) => updateAnalyticScoreField(aspectIdx, colIdx, 'description', e.target.value)}
+                                        className="sage-input !min-h-[52px] !px-2 !py-1 text-[11px]"
+                                        placeholder={`Deskripsi skor ${analyticTableColumnScores[colIdx] ?? colIdx + 1}`}
+                                        title="Deskripsi kriteria pada sel rubrik ini."
+                                      />
+                                    </td>
+                                  ))}
+                                  <td className="border border-slate-200 px-2 py-1 align-middle dark:border-slate-700">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeAnalyticAspect(aspectIdx)}
+                                      className="rounded border border-slate-200 px-2 py-1 text-[10px] text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
+                                      title="Hapus aspek ini."
+                                    >
+                                      Hapus
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {rubricType === 'holistik' && (
+                        <div className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                          <input
+                            value={holisticAspectName}
+                            onChange={(e) => setHolisticAspectName(e.target.value)}
+                            className="w-full border-b border-slate-200 bg-transparent pb-1 text-[11px] font-semibold outline-none"
+                            placeholder="Penilaian Holistik"
+                          />
+
+                          {holisticDescriptors.map((d, j) => (
+                            <div key={j} className="grid grid-cols-1 gap-1.5 md:grid-cols-[78px_1fr_auto]">
+                              <input
+                                value={d.score}
+                                onChange={(e) =>
+                                  setHolisticDescriptors((prev) =>
+                                    prev.map((item, idx) => (idx === j ? { ...item, score: e.target.value } : item))
+                                  )
+                                }
+                                className="sage-input !px-2 !py-1.5 text-[11px]"
+                                placeholder="Skor"
+                                title="Nilai skor untuk deskriptor holistik."
+                              />
+                              <input
+                                value={d.description}
+                                onChange={(e) =>
+                                  setHolisticDescriptors((prev) =>
+                                    prev.map((item, idx) => (idx === j ? { ...item, description: e.target.value } : item))
+                                  )
+                                }
+                                className="sage-input !px-2 !py-1.5 text-[11px]"
+                                placeholder="Deskripsi"
+                                title="Deskripsi kriteria holistik untuk skor ini."
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeHolisticScoreRow(j)}
+                                className="rounded-md border border-slate-200 px-1.5 py-1 text-[11px] text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
+                                aria-label="Hapus skor holistik"
+                                title="Hapus baris skor holistik ini."
+                              >
+                                <FiTrash2 />
+                              </button>
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            onClick={addHolisticScoreRow}
+                            title="Tambah baris skor holistik baru."
+                            className="text-[11px] font-medium text-slate-700 hover:text-slate-900"
+                          >
+                            + Tambah Skor
                           </button>
                         </div>
-                      ))}
-
-                      <button
-                        type="button"
-                        onClick={() => addAnalyticScoreRow(i)}
-                        title="Tambah baris skor pada aspek ini."
-                        className="text-sm font-medium text-[color:var(--sage-700)]"
-                      >
-                        + Tambah Skor
-                      </button>
+                      )}
                     </div>
-                  ))}
-
-                {rubricType === 'holistik' && (
-                  <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                    <input
-                      value={holisticAspectName}
-                      onChange={(e) => setHolisticAspectName(e.target.value)}
-                      className="font-semibold bg-transparent border-b border-slate-200 outline-none w-full pb-1"
-                      placeholder="Penilaian Holistik"
-                    />
-
-                    {holisticDescriptors.map((d, j) => (
-                      <div key={j} className="grid grid-cols-1 gap-2 md:grid-cols-[110px_1fr_auto]">
-                        <input
-                          value={d.score}
-                          onChange={(e) =>
-                            setHolisticDescriptors((prev) =>
-                              prev.map((item, idx) => (idx === j ? { ...item, score: e.target.value } : item))
-                            )
-                          }
-                          className="sage-input"
-                          placeholder="Skor"
-                          title="Nilai skor untuk deskriptor holistik."
-                        />
-                        <input
-                          value={d.description}
-                          onChange={(e) =>
-                            setHolisticDescriptors((prev) =>
-                              prev.map((item, idx) => (idx === j ? { ...item, description: e.target.value } : item))
-                            )
-                          }
-                          className="sage-input"
-                          placeholder="Deskripsi"
-                          title="Deskripsi kriteria holistik untuk skor ini."
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeHolisticScoreRow(j)}
-                          className="rounded-md border border-slate-200 px-2 text-red-500 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-950/40"
-                          aria-label="Hapus skor holistik"
-                          title="Hapus baris skor holistik ini."
-                        >
-                          <FiTrash2 />
-                        </button>
-                      </div>
-                    ))}
-
-                    <button
-                      type="button"
-                      onClick={addHolisticScoreRow}
-                      title="Tambah baris skor holistik baru."
-                      className="text-sm font-medium text-[color:var(--sage-700)]"
-                    >
-                      + Tambah Skor
-                    </button>
                   </div>
-                )}
-              </div>
                 </section>
               )}
 
               {step === 3 && (
-                <section className="space-y-4 border rounded-lg p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <section className="space-y-5 border rounded-lg p-5 dark:border-slate-700 dark:bg-slate-900/60">
                   <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Preview Soal</h3>
                   <div className="sage-card p-4 space-y-3 border border-slate-200 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                     <p className="text-sm text-slate-500">Langkah: {stepLabel}</p>
@@ -2277,7 +2561,7 @@ const EssayQuestionFormModal = ({
           </aside>
         </div>
 
-        <div className="border-t border-slate-200 bg-white pt-2 sm:sticky sm:bottom-0 sm:z-10 sm:pt-3 dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-t border-slate-200 bg-white pt-4 sm:sticky sm:bottom-0 sm:z-10 dark:border-slate-700 dark:bg-slate-900">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
             <button type="button" onClick={onClose} className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm" title="Tutup popup. Input tetap tersimpan sebagai draft lokal.">Batal</button>
@@ -2713,8 +2997,43 @@ export default function MaterialDetailsPage() {
     }
   };
 
-  const handleOpenEditQuestionModal = (question: EssayQuestion) => {
-      setEditingQuestion(question);
+  const handleOpenEditQuestionModal = (question: QuestionItem) => {
+      const normalizedRubrics: Rubric[] | undefined = Array.isArray(question.rubrics)
+        ? question.rubrics.map((rubric) => {
+            const source = rubric?.descriptors;
+            const descriptors: RubricDescriptors = {};
+
+            if (Array.isArray(source)) {
+              source.forEach((entry, idx) => {
+                const score = String(entry?.score ?? idx + 1);
+                descriptors[score] = formatDescriptor(entry?.description ?? entry?.deskripsi ?? "");
+              });
+            } else if (source && typeof source === "object") {
+              Object.entries(source).forEach(([score, desc]) => {
+                descriptors[score] = formatDescriptor(desc);
+              });
+            }
+
+            return {
+              nama_aspek: rubric?.nama_aspek || "",
+              descriptors,
+            };
+          })
+        : undefined;
+
+      const normalizedQuestion: EssayQuestion = {
+        id: question.id,
+        material_id: question.material_id,
+        teks_soal: question.teks_soal,
+        level_kognitif: question.level_kognitif,
+        ideal_answer: question.ideal_answer,
+        keywords: question.keywords,
+        weight: (question as { weight?: number }).weight,
+        round_score_to_5: (question as { round_score_to_5?: boolean }).round_score_to_5,
+        round_score_step: (question as { round_score_step?: number }).round_score_step,
+        rubrics: normalizedRubrics,
+      };
+      setEditingQuestion(normalizedQuestion);
       setEditQuestionModalOpen(true);
   };
 
@@ -2725,6 +3044,7 @@ export default function MaterialDetailsPage() {
 
   const handleMoveQuestion = useCallback(
     async (questionId: string, direction: "up" | "down") => {
+      if (movingQuestionId) return;
       if (!hasSectionCardScope || !material) {
         setNotice({
           open: true,
@@ -2753,15 +3073,8 @@ export default function MaterialDetailsPage() {
                 ? scopedQuestionIds
                 : [];
           const uniqueIds = baselineIds.filter((id, idx, arr) => arr.indexOf(id) === idx);
-          const currentIndex = uniqueIds.indexOf(questionId);
-          if (currentIndex < 0) return card;
-
-          const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-          if (targetIndex < 0 || targetIndex >= uniqueIds.length) return card;
-
-          const reordered = [...uniqueIds];
-          const [picked] = reordered.splice(currentIndex, 1);
-          reordered.splice(targetIndex, 0, picked);
+          const reordered = reorderQuestionIdsByDirection(uniqueIds, questionId, direction);
+          if (reordered === uniqueIds || reordered.join("|") === uniqueIds.join("|")) return card;
 
           return {
             ...card,
@@ -2791,11 +3104,12 @@ export default function MaterialDetailsPage() {
         setMovingQuestionId(null);
       }
     },
-    [hasSectionCardScope, material, scopedQuestionIds, sectionCardId]
+    [hasSectionCardScope, material, movingQuestionId, scopedQuestionIds, sectionCardId]
   );
 
   const handleDropReorderQuestion = useCallback(
     async (sourceQuestionId: string, targetQuestionId: string) => {
+      if (movingQuestionId) return;
       if (!hasSectionCardScope || !material || sourceQuestionId === targetQuestionId) return;
       setMovingQuestionId(sourceQuestionId);
       try {
@@ -2816,13 +3130,8 @@ export default function MaterialDetailsPage() {
                 ? scopedQuestionIds
                 : [];
           const uniqueIds = baselineIds.filter((id, idx, arr) => arr.indexOf(id) === idx);
-          const sourceIndex = uniqueIds.indexOf(sourceQuestionId);
-          const targetIndex = uniqueIds.indexOf(targetQuestionId);
-          if (sourceIndex < 0 || targetIndex < 0) return card;
-
-          const reordered = [...uniqueIds];
-          const [picked] = reordered.splice(sourceIndex, 1);
-          reordered.splice(targetIndex, 0, picked);
+          const reordered = reorderQuestionIdsByDrop(uniqueIds, sourceQuestionId, targetQuestionId);
+          if (reordered === uniqueIds || reordered.join("|") === uniqueIds.join("|")) return card;
 
           return {
             ...card,
@@ -2852,7 +3161,7 @@ export default function MaterialDetailsPage() {
         setMovingQuestionId(null);
       }
     },
-    [hasSectionCardScope, material, scopedQuestionIds, sectionCardId]
+    [hasSectionCardScope, material, movingQuestionId, scopedQuestionIds, sectionCardId]
   );
 
   const handleSaveQuizSettings = useCallback(async () => {
@@ -2963,10 +3272,10 @@ export default function MaterialDetailsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="teacher-material-view space-y-6">
       {/* Header */}
       <div className="sage-panel p-6">
-        <Link href={`/dashboard/teacher/class/${material.class_id}`} className="flex items-center gap-2 text-[color:var(--sage-700)] hover:underline mb-4">
+        <Link href={`/dashboard/teacher/class/${material.class_id}`} className="mb-4 flex items-center gap-2 text-slate-600 hover:text-slate-800 hover:underline">
           <FiArrowLeft />
           <span>Kembali ke Detail Kelas</span>
         </Link>
@@ -3060,6 +3369,8 @@ export default function MaterialDetailsPage() {
                 handleDropReorderQuestion={handleDropReorderQuestion}
                 canReorderQuestions={hasSectionCardScope}
                 movingQuestionId={movingQuestionId}
+                renderDoubleAsteriskBold={renderDoubleAsteriskBold}
+                formatDescriptor={formatDescriptor}
               />
           )}
           {activeTab === 'students' && (
@@ -3087,7 +3398,13 @@ export default function MaterialDetailsPage() {
           onQuestionSaved={linkQuestionToSectionCard}
         />
       )}
-      <ReviewModal isOpen={isReviewModalOpen} onClose={() => setReviewModalOpen(false)} submission={reviewingSubmission} onFinished={refreshAllData} />
+      <ReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        submission={reviewingSubmission}
+        onFinished={refreshAllData}
+        getErrorMessage={getErrorMessage}
+      />
     
       {/* Edit Material Modal */}
       {material && <EditMaterialModal isOpen={isEditMaterialModalOpen} onClose={() => setEditMaterialModalOpen(false)} material={material} sectionCardId={sectionCardId} onFinished={fetchData} />}
@@ -3184,559 +3501,6 @@ const OverviewSection = ({
     </div>
   );
 };
-
-const SoalSettingsModal = ({
-  isOpen,
-  onClose,
-  quizSettings,
-  setQuizSettings,
-  onSave,
-  saving,
-  disabled,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  quizSettings: SoalQuizSettings;
-  setQuizSettings: Dispatch<SetStateAction<SoalQuizSettings>>;
-  onSave: () => Promise<void>;
-  saving: boolean;
-  disabled: boolean;
-}) => {
-  const publishedLabel = quizSettings.result_manual_published
-    ? `Dipublish${quizSettings.result_manual_published_at ? `: ${quizSettings.result_manual_published_at}` : ""}`
-    : "Belum dipublish";
-  const toggleManualPublish = (published: boolean) => {
-    setQuizSettings((prev) => ({
-      ...prev,
-      result_manual_published: published,
-      result_manual_published_at: published ? new Date().toISOString() : "",
-    }));
-  };
-  const capsuleBase =
-    "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition border";
-  const capsuleOn = "border-sky-600 bg-sky-600 text-white shadow-sm";
-  const capsuleOff = "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50";
-  const numberInputClass =
-    "sage-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Pengaturan Mode Pengerjaan Siswa" panelClassName="max-w-6xl">
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-sky-50 via-cyan-50 to-emerald-50 p-4">
-          <p className="text-sm font-semibold text-slate-900">Konfigurasi Cepat</p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
-              <FiPlayCircle className="h-3.5 w-3.5" />
-              {quizSettings.answer_mode === "card" ? "Kartu per Soal" : "Daftar Soal"}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
-              <FiClock className="h-3.5 w-3.5" />
-              {quizSettings.timer_mode === "none" ? "Tanpa Timer" : quizSettings.timer_mode === "per_question" ? "Timer per Soal" : "Timer Total"}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
-              <FiShuffle className="h-3.5 w-3.5" />
-              {quizSettings.randomize_question_order ? "Urutan Acak" : "Urutan Tetap"}
-            </span>
-          </div>
-        </div>
-
-        {disabled && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Pengaturan ini aktif jika halaman dibuka dari card section soal (`sectionCardId`).
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <section className="space-y-3 rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiPlayCircle /> Mode Soal
-            </h3>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Jawaban</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.answer_mode === "list" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, answer_mode: "list" }))}>Daftar</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.answer_mode === "card" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, answer_mode: "card" }))}>Kartu</button>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Urutan Soal</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${!quizSettings.randomize_question_order ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, randomize_question_order: false }))}>Tetap</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.randomize_question_order ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, randomize_question_order: true }))}>Acak</button>
-              </div>
-            </div>
-            <label className="block space-y-1">
-              <span className="text-xs text-slate-600">Question Pool (0 = semua)</span>
-              <input
-                type="number"
-                min={0}
-                className={numberInputClass}
-                value={quizSettings.random_subset_count}
-                disabled={disabled}
-                onChange={(e) => setQuizSettings((prev) => ({ ...prev, random_subset_count: clampDuration(e.target.value, prev.random_subset_count) }))}
-              />
-            </label>
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><input type="checkbox" checked={quizSettings.auto_next_on_submit} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_next_on_submit: e.target.checked }))} />Auto-next setelah submit</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><input type="checkbox" checked={quizSettings.allow_back_navigation} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, allow_back_navigation: e.target.checked }))} />Izinkan kembali ke soal sebelumnya</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><input type="checkbox" checked={quizSettings.lock_question_after_leave} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, lock_question_after_leave: e.target.checked }))} />Kunci soal yang sudah dilewati</label>
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-sky-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiClock /> Timer
-            </h3>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Timer</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.timer_mode === "none" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, timer_mode: "none" }))}>Tanpa Timer</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.timer_mode === "per_question" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, timer_mode: "per_question" }))}>Per Soal</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.timer_mode === "all_questions" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, timer_mode: "all_questions" }))}>Total</button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1">
-                <span className="text-xs text-slate-600">Per Soal (detik)</span>
-                <input type="number" min={0} className={numberInputClass} disabled={disabled || quizSettings.timer_mode !== "per_question"} value={quizSettings.per_question_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, per_question_seconds: clampDuration(e.target.value, prev.per_question_seconds) }))} />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-xs text-slate-600">Total (detik)</span>
-                <input type="number" min={0} className={numberInputClass} disabled={disabled || quizSettings.timer_mode !== "all_questions"} value={quizSettings.total_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, total_seconds: clampDuration(e.target.value, prev.total_seconds) }))} />
-              </label>
-            </div>
-            <label className="block space-y-1">
-              <span className="text-xs text-slate-600">Extra Time (detik)</span>
-              <input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.extra_time_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, extra_time_seconds: clampDuration(e.target.value, prev.extra_time_seconds) }))} />
-            </label>
-            <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><input type="checkbox" checked={quizSettings.auto_submit_on_timeout} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_submit_on_timeout: e.target.checked }))} />Auto-submit saat habis waktu</label>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiCalendar /> Akses & Attempt
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1">
-                <span className="text-xs text-slate-600">Mulai</span>
-                <input type="datetime-local" className="sage-input" disabled={disabled} value={quizSettings.schedule_start_at} onChange={(e) => setQuizSettings((prev) => ({ ...prev, schedule_start_at: e.target.value }))} />
-              </label>
-              <label className="block space-y-1">
-                <span className="text-xs text-slate-600">Selesai</span>
-                <input type="datetime-local" className="sage-input" disabled={disabled} value={quizSettings.schedule_end_at} onChange={(e) => setQuizSettings((prev) => ({ ...prev, schedule_end_at: e.target.value }))} />
-              </label>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <label className="block space-y-1"><span className="text-xs text-slate-600">Grace (menit)</span><input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.grace_period_minutes} onChange={(e) => setQuizSettings((prev) => ({ ...prev, grace_period_minutes: clampDuration(e.target.value, prev.grace_period_minutes) }))} /></label>
-              <label className="block space-y-1"><span className="text-xs text-slate-600">Attempt limit</span><input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.attempt_limit} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_limit: clampDuration(e.target.value, prev.attempt_limit) }))} /></label>
-              <label className="block space-y-1"><span className="text-xs text-slate-600">Cooldown</span><input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.attempt_cooldown_minutes} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_cooldown_minutes: clampDuration(e.target.value, prev.attempt_cooldown_minutes) }))} /></label>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Skema Nilai Attempt</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.attempt_scoring_method === "last" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, attempt_scoring_method: "last" }))}>Nilai terakhir</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.attempt_scoring_method === "best" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, attempt_scoring_method: "best" }))}>Nilai terbaik</button>
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiShuffle /> Rilis Hasil & Feedback
-            </h3>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Rilis</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.result_release_mode === "immediate" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, result_release_mode: "immediate" }))}>Langsung</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.result_release_mode === "after_close" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, result_release_mode: "after_close" }))}>Setelah ditutup</button>
-                <button type="button" disabled={disabled} className={`${capsuleBase} ${quizSettings.result_release_mode === "manual" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, result_release_mode: "manual" }))}>Manual</button>
-              </div>
-            </div>
-            {quizSettings.result_release_mode === "manual" && (
-              <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
-                <p className="text-xs text-sky-700">Status publish: {publishedLabel}</p>
-                <div className="flex gap-2">
-                  <button type="button" className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(true)}>Publish Hasil</button>
-                  <button type="button" className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(false)}>Tarik Hasil</button>
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><input type="checkbox" checked={quizSettings.show_ideal_answer} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_ideal_answer: e.target.checked }))} />Tampilkan jawaban ideal di hasil</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><input type="checkbox" checked={quizSettings.show_rubric_in_question} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_rubric_in_question: e.target.checked }))} />Tampilkan rubrik saat siswa mengerjakan soal</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"><input type="checkbox" checked={quizSettings.show_rubric_breakdown} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_rubric_breakdown: e.target.checked }))} />Tampilkan detail rubrik di halaman hasil</label>
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-sm lg:col-span-2">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiShield /> Integritas
-            </h3>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><input type="checkbox" checked={quizSettings.warn_on_tab_switch} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, warn_on_tab_switch: e.target.checked }))} />Warn saat pindah tab</label>
-              <label className="block space-y-1">
-                <span className="text-xs text-slate-600">Batas pindah tab</span>
-                <input type="number" min={0} className={numberInputClass} disabled={disabled || !quizSettings.warn_on_tab_switch} value={quizSettings.max_tab_switch} onChange={(e) => setQuizSettings((prev) => ({ ...prev, max_tab_switch: clampDuration(e.target.value, prev.max_tab_switch) }))} />
-              </label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><input type="checkbox" checked={quizSettings.auto_lock_on_tab_switch_limit} disabled={disabled || !quizSettings.warn_on_tab_switch} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_lock_on_tab_switch_limit: e.target.checked }))} />Auto lock jika melebihi batas</label>
-            </div>
-          </section>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-3">
-          <button type="button" className="sage-button-outline" onClick={onClose}>Batal</button>
-          <button type="button" className="sage-button" disabled={disabled || saving} onClick={() => void onSave()}>
-            {saving ? "Menyimpan..." : "Simpan Pengaturan"}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-};
-
-type PreparedQuestionItem = {
-  question: EssayQuestion;
-  normalizedKeywords: string[];
-  rubrics: Rubric[];
-};
-
-const QuestionListCard = ({
-  item,
-  index,
-  total,
-  isOpen,
-  isDragging,
-  isShifted,
-  onToggle,
-  onEdit,
-  onDelete,
-  onMove,
-  onDragStart,
-  onDragEnd,
-  onDropOnCard,
-  onDragOverCard,
-  canReorder,
-  moving,
-}: {
-  item: PreparedQuestionItem;
-  index: number;
-  total: number;
-  isOpen: boolean;
-  isDragging: boolean;
-  isShifted: boolean;
-  onToggle: () => void;
-  onEdit: (question: EssayQuestion) => void;
-  onDelete: (questionId: string) => void;
-  onMove: (questionId: string, direction: "up" | "down") => void;
-  onDragStart: (questionId: string) => void;
-  onDragEnd: () => void;
-  onDropOnCard: (targetQuestionId: string) => void;
-  onDragOverCard: (e: DragEvent<HTMLDivElement>) => void;
-  canReorder: boolean;
-  moving: boolean;
-}) => {
-  const q = item.question;
-  const canMoveUp = canReorder && index > 0 && !moving;
-  const canMoveDown = canReorder && index < total - 1 && !moving;
-
-  return (
-    <div
-      className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${isDragging ? "opacity-60" : ""} ${isShifted ? "ring-2 ring-sky-300 ring-offset-1" : ""}`}
-      onDragOver={canReorder ? onDragOverCard : undefined}
-      onDrop={canReorder ? () => onDropOnCard(q.id) : undefined}
-    >
-      <div
-        className="grid cursor-pointer gap-4 bg-gradient-to-r from-indigo-50/70 via-sky-50/60 to-cyan-50/50 p-5 sm:grid-cols-[auto_1fr_auto]"
-        onClick={onToggle}
-      >
-        <div className="flex items-start gap-1">
-          {canReorder && (
-            <div className="flex items-stretch gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-              <button
-                type="button"
-                draggable
-                onDragStart={(e) => {
-                  e.stopPropagation();
-                  onDragStart(q.id);
-                }}
-                onDragEnd={(e) => {
-                  e.stopPropagation();
-                  onDragEnd();
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="h-[62px] rounded-lg border border-slate-200 bg-white px-2 text-sm font-bold tracking-wider text-slate-500 cursor-grab active:cursor-grabbing"
-                title="Drag untuk pindah urutan"
-              >
-                ::
-              </button>
-              <div className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMove(q.id, "up");
-                  }}
-                  disabled={!canMoveUp}
-                  className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Naikkan urutan soal"
-                >
-                  <FiChevronUp />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMove(q.id, "down");
-                  }}
-                  disabled={!canMoveDown}
-                  className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Turunkan urutan soal"
-                >
-                  <FiChevronDown />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-3 min-w-0">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-indigo-600 px-2 text-xs font-bold text-white">
-              {index + 1}
-            </span>
-            <p className="font-semibold leading-6 text-slate-900 text-justify">{q.teks_soal}</p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            {q.level_kognitif && (
-              <span className="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-700">{q.level_kognitif}</span>
-            )}
-            {item.normalizedKeywords.length > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-700">
-                <FiTag className="h-3 w-3" />
-                {item.normalizedKeywords.length} keyword
-              </span>
-            )}
-            {item.rubrics.length > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">
-                <FiAward className="h-3 w-3" />
-                {item.rubrics.length} rubrik
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-start gap-2 sm:justify-end">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            {isOpen ? <FiChevronUp /> : <FiChevronDown />}
-            Detail
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(q);
-            }}
-            className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-slate-800"
-            title="Edit soal"
-          >
-            <FiEdit />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(q.id);
-            }}
-            className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-red-600"
-            title="Hapus soal"
-          >
-            <FiTrash2 />
-          </button>
-        </div>
-      </div>
-
-      {isOpen && (
-        <div className="space-y-4 border-t border-slate-200 bg-slate-50 px-6 py-5 text-sm">
-          {q.ideal_answer && (
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Jawaban Ideal</p>
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                <p className="text-[color:var(--ink-500)]">{renderDoubleAsteriskBold(q.ideal_answer)}</p>
-              </div>
-            </div>
-          )}
-
-          {item.normalizedKeywords.length > 0 && (
-            <div>
-              <p className="mb-1 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <FiTag className="h-3.5 w-3.5" />
-                Kata Kunci
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {item.normalizedKeywords.map((k, i) => (
-                  <span
-                    key={i}
-                    className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 question-keyword-chip"
-                  >
-                    {k}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {item.rubrics.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Rubrik Penilaian</p>
-              <div className="space-y-3">
-                {item.rubrics.map((r: Rubric, ri: number) => (
-                  <div key={ri} className="rounded-xl border border-slate-200 bg-white p-3">
-                    <p className="mb-1 font-semibold text-[color:var(--ink-900)]">{r.nama_aspek}</p>
-                    <ul className="space-y-1 text-xs text-[color:var(--ink-500)]">
-                      {r.descriptors &&
-                        Object.entries(r.descriptors).map(
-                          ([score, desc]: [string, RubricDescriptorValue]) => (
-                            <li key={score}>
-                              <strong>{score}</strong>: {formatDescriptor(desc)}
-                            </li>
-                          )
-                        )}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const QuestionsListSection = ({
-  questions,
-  handleOpenAddQuestionModal,
-  handleOpenEditQuestionModal,
-  handleDeleteQuestion,
-  handleMoveQuestion,
-  handleDropReorderQuestion,
-  canReorderQuestions,
-  movingQuestionId,
-}: {
-  questions: EssayQuestion[];
-  handleOpenAddQuestionModal: () => void;
-  handleOpenEditQuestionModal: (question: EssayQuestion) => void;
-  handleDeleteQuestion: (questionId: string) => void;
-  handleMoveQuestion: (questionId: string, direction: "up" | "down") => void;
-  handleDropReorderQuestion: (sourceQuestionId: string, targetQuestionId: string) => void;
-  canReorderQuestions: boolean;
-  movingQuestionId: string | null;
-}) => {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [draggingQuestionId, setDraggingQuestionId] = useState<string | null>(null);
-  const [shiftedQuestionId, setShiftedQuestionId] = useState<string | null>(null);
-  const preparedQuestions = useMemo(
-    () =>
-      questions.map((q) => ({
-        question: q,
-        normalizedKeywords: Array.isArray(q.keywords)
-          ? q.keywords
-          : typeof q.keywords === "string"
-            ? q.keywords.split(",").map((k) => k.trim())
-            : [],
-        rubrics: Array.isArray(q.rubrics) ? q.rubrics : [],
-      })),
-    [questions]
-  );
-  const handleDragOverCard = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  }, []);
-  const handleDropOnCard = useCallback(
-    (targetQuestionId: string) => {
-      if (!draggingQuestionId) return;
-      if (draggingQuestionId === targetQuestionId) {
-        setDraggingQuestionId(null);
-        return;
-      }
-      handleDropReorderQuestion(draggingQuestionId, targetQuestionId);
-      setShiftedQuestionId(draggingQuestionId);
-      window.setTimeout(() => setShiftedQuestionId((prev) => (prev === draggingQuestionId ? null : prev)), 450);
-      setDraggingQuestionId(null);
-    },
-    [draggingQuestionId, handleDropReorderQuestion]
-  );
-  const handleMoveWithFeedback = useCallback(
-    (questionId: string, direction: "up" | "down") => {
-      handleMoveQuestion(questionId, direction);
-      setShiftedQuestionId(questionId);
-      window.setTimeout(() => setShiftedQuestionId((prev) => (prev === questionId ? null : prev)), 450);
-    },
-    [handleMoveQuestion]
-  );
-
-  return (
-    <div className="space-y-6">
-      <div className="sage-panel p-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-            <FiHelpCircle />
-            Daftar Soal
-          </h2>
-          <p className="text-sm text-slate-500">
-            Kelola pertanyaan dan rubrik penilaian.
-            {canReorderQuestions ? " Gunakan tombol atas/bawah untuk ubah urutan soal." : ""}
-          </p>
-        </div>
-        <button onClick={handleOpenAddQuestionModal} className="sage-button">
-          <FiPlus />
-          Tambah Soal
-        </button>
-      </div>
-
-      {/* LIST */}
-      {questions.length === 0 ? (
-        <div className="text-center py-16 border-2 border-dashed rounded-2xl text-[color:var(--ink-500)]">
-          Belum ada soal untuk materi ini.
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {preparedQuestions.map(({ question: q, normalizedKeywords, rubrics }, index) => {
-            const isOpen = expandedId === q.id;
-            const item: PreparedQuestionItem = { question: q, normalizedKeywords, rubrics };
-            return (
-              <QuestionListCard
-                key={q.id}
-                item={item}
-                index={index}
-                total={preparedQuestions.length}
-                isOpen={isOpen}
-                isDragging={draggingQuestionId === q.id}
-                isShifted={shiftedQuestionId === q.id}
-                onToggle={() => setExpandedId(isOpen ? null : q.id)}
-                onEdit={handleOpenEditQuestionModal}
-                onDelete={handleDeleteQuestion}
-                onMove={handleMoveWithFeedback}
-                onDragStart={(questionId) => {
-                  setDraggingQuestionId(questionId);
-                  setExpandedId(null);
-                }}
-                onDragEnd={() => setDraggingQuestionId(null)}
-                onDropOnCard={handleDropOnCard}
-                onDragOverCard={handleDragOverCard}
-                canReorder={canReorderQuestions}
-                moving={movingQuestionId === q.id}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-
 
 const StudentSubmissionsList = ({
   materialId,
@@ -4226,117 +3990,10 @@ const StudentSubmissionsList = ({
         tone={notice.tone}
         onClose={() => setNotice((prev) => ({ ...prev, open: false }))}
       />
-
       <LoadingDialog isOpen={!!deletingSubmissionId} message="Menghapus submission..." />
     </div>
   );
 };
-
-// --- REVIEW MODAL ---
-const ReviewModal = ({ isOpen, onClose, submission, onFinished }: { isOpen: boolean, onClose: () => void, submission: Submission | null, onFinished: () => void }) => {
-    const [revisedScore, setRevisedScore] = useState<string | number>('');
-    const [teacherFeedback, setTeacherFeedback] = useState('');
-    const [error, setError] = useState('');
-    const [reviewId, setReviewId] = useState<string | null>(null); // To store existing review ID
-
-    useEffect(() => {
-        const fetchReview = async () => {
-            if (submission?.id) {
-                try {
-                    const res = await fetch(`/api/teacher-reviews/submission/${submission.id}`, {
-                        credentials: 'include',
-                    });
-                    if (res.ok) {
-                        const reviewData = await res.json();
-                        setReviewId(reviewData.id);
-                        setRevisedScore(reviewData.revised_score ?? '');
-                        setTeacherFeedback(reviewData.teacher_feedback ?? '');
-                    } else if (res.status === 404) {
-                        // No existing review, treat as new
-                        setReviewId(null);
-                        setRevisedScore('');
-                        setTeacherFeedback('');
-                    } else {
-                        throw new Error(`Failed to fetch existing review: ${res.statusText}`);
-                    }
-                } catch (err: unknown) {
-                    setError(getErrorMessage(err, 'Error fetching review'));
-                    setReviewId(null);
-                    setRevisedScore('');
-                    setTeacherFeedback('');
-                }
-            } else {
-                setReviewId(null);
-                setRevisedScore('');
-                setTeacherFeedback('');
-            }
-        };
-
-        if (isOpen) {
-            fetchReview();
-        } else {
-            // Reset state when modal closes
-            setReviewId(null);
-            setRevisedScore('');
-            setTeacherFeedback('');
-            setError('');
-        }
-    }, [isOpen, submission]);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!submission) return;
-
-        const url = reviewId ? `/api/teacher-reviews/${reviewId}` : '/api/teacher-reviews';
-        const method = reviewId ? 'PUT' : 'POST';
-        
-        try {
-            const response = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    submission_id: submission.id,
-                    revised_score: Number(revisedScore),
-                    teacher_feedback: teacherFeedback,
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to save review.');
-            }
-            
-            await onFinished();
-            onClose();
-        } catch (err: unknown) {
-            setError(getErrorMessage(err, "Failed to save review."));
-        }
-    };
-
-    if (!isOpen) return null;
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Review Submission`}>
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {error && <p className="text-red-500 text-sm">{error}</p>}
-                <div>
-                    <label className="block text-sm font-medium">Skor Revisi</label>
-                    <input type="number" value={revisedScore} onChange={e => setRevisedScore(e.target.value)} className="sage-input mt-1" required />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium">Umpan Balik Guru</label>
-                    <textarea value={teacherFeedback} onChange={e => setTeacherFeedback(e.target.value)} className="sage-input mt-1" rows={4} />
-                </div>
-                <div className="flex justify-end gap-3 pt-2">
-                    <button type="button" onClick={onClose} className="sage-button-outline">Batal</button>
-                    <button type="submit" className="sage-button">Simpan Review</button>
-                </div>
-            </form>
-        </Modal>
-    );
-};
-
 // --- EDIT MATERIAL MODAL ---
 interface EditMaterialModalProps {
     isOpen: boolean;

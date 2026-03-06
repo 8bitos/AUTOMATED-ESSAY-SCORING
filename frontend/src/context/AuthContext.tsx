@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export interface User {
   id: string;
@@ -27,12 +27,18 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPopupOnlyMateri, setIsPopupOnlyMateri] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const isPopupOnlyMateri =
-    (pathname || "").includes("/dashboard/teacher/materi/") &&
-    (searchParams.get("popupOnly") === "1" || searchParams.get("openEditMaterial") === "1");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    const popupOnly =
+      (pathname || "").includes("/dashboard/teacher/materi/") &&
+      (qs.get("popupOnly") === "1" || qs.get("openEditMaterial") === "1");
+    setIsPopupOnlyMateri(popupOnly);
+  }, [pathname]);
 
   const checkUserLoggedIn = async () => {
     setLoading(true);
