@@ -169,9 +169,7 @@ export default function ClassDetailsPage() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"materials" | "modules" | "students" | "assessment" | "analytics">("materials");
   const [isWorkspaceSidebarCollapsed, setIsWorkspaceSidebarCollapsed] = useState(false);
-  const [isWorkspaceDrawerOpen, setIsWorkspaceDrawerOpen] = useState(false);
   const [showClassDescription, setShowClassDescription] = useState(false);
-  const pageRootRef = useRef<HTMLDivElement | null>(null);
 
   const [isAddMaterialModalOpen, setAddMaterialModalOpen] = useState(false);
 
@@ -290,43 +288,6 @@ export default function ClassDetailsPage() {
   ];
   const activeWorkspace = workspaceTabs.find((tab) => tab.id === activeWorkspaceTab) || workspaceTabs[0];
 
-  useEffect(() => {
-    if (!isWorkspaceDrawerOpen) return;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [isWorkspaceDrawerOpen]);
-
-  useEffect(() => {
-    if (!isWorkspaceDrawerOpen) return;
-    setIsWorkspaceDrawerOpen(false);
-  }, [activeWorkspaceTab, isWorkspaceDrawerOpen]);
-
-  useEffect(() => {
-    const root = pageRootRef.current;
-    if (!root) return;
-    const applyButtonTooltips = () => {
-      root.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
-        if ((btn.getAttribute("title") || "").trim()) return;
-        const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
-        const textLabel = (btn.textContent || "").replace(/\s+/g, " ").trim();
-        const title = ariaLabel || textLabel || "Aksi";
-        btn.setAttribute("title", title);
-      });
-    };
-    applyButtonTooltips();
-    const observer = new MutationObserver(() => applyButtonTooltips());
-    observer.observe(root, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["aria-label", "title"],
-    });
-    return () => observer.disconnect();
-  }, [activeWorkspaceTab, materials.length, students.length, pendingJoinRequests.length]);
-
   if (isLoading) {
     return <p className="text-center py-10 text-slate-600">Memuat data kelas...</p>;
   }
@@ -355,7 +316,7 @@ export default function ClassDetailsPage() {
   };
 
   return (
-    <div ref={pageRootRef} className="teacher-class-view space-y-6">
+    <div className="teacher-class-view space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <Link
           href="/dashboard/teacher/classes"
@@ -420,31 +381,18 @@ export default function ClassDetailsPage() {
         </div>
       </header>
 
-      <div className="lg:hidden">
-        <button
-          type="button"
-          onClick={() => setIsWorkspaceDrawerOpen(true)}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <FiLayers size={15} />
-          Ruang Kelas
-        </button>
-      </div>
-
       <section
         className={`grid gap-4 lg:items-start ${
           isWorkspaceSidebarCollapsed ? "lg:grid-cols-[52px_1fr]" : "lg:grid-cols-[220px_1fr]"
         }`}
       >
-        <div className="hidden lg:block">
-          <WorkspaceSidebar
-            collapsed={isWorkspaceSidebarCollapsed}
-            tabs={workspaceTabs}
-            activeTab={activeWorkspaceTab}
-            onToggleCollapsed={setIsWorkspaceSidebarCollapsed}
-            onSelectTab={setActiveWorkspaceTab}
-          />
-        </div>
+        <WorkspaceSidebar
+          collapsed={isWorkspaceSidebarCollapsed}
+          tabs={workspaceTabs}
+          activeTab={activeWorkspaceTab}
+          onToggleCollapsed={setIsWorkspaceSidebarCollapsed}
+          onSelectTab={setActiveWorkspaceTab}
+        />
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
@@ -515,60 +463,6 @@ export default function ClassDetailsPage() {
           )}
         </div>
       </section>
-
-      {isWorkspaceDrawerOpen && (
-        <div className="fixed inset-0 z-[90] lg:hidden" role="dialog" aria-modal="true" aria-label="Navigasi Ruang Kelas">
-          <button
-            type="button"
-            className="absolute inset-0 bg-slate-900/50 backdrop-blur-[1px]"
-            onClick={() => setIsWorkspaceDrawerOpen(false)}
-            aria-label="Tutup navigasi ruang kelas"
-          />
-          <div className="absolute inset-y-0 left-0 w-[84vw] max-w-xs border-r border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Ruang Kelas</p>
-              <button
-                type="button"
-                onClick={() => setIsWorkspaceDrawerOpen(false)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                aria-label="Tutup drawer ruang kelas"
-              >
-                <FiX size={16} />
-              </button>
-            </div>
-            <nav className="space-y-1">
-              {workspaceTabs.map((tab) => {
-                const isActive = activeWorkspaceTab === tab.id;
-                return (
-                  <button
-                    key={`mobile-workspace-${tab.id}`}
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab(tab.id)}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
-                      isActive
-                        ? "bg-slate-900 text-white dark:bg-slate-700 dark:text-slate-100"
-                        : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {tab.badge ? (
-                      <span
-                        className={`inline-flex min-w-[20px] items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          isActive
-                            ? "border border-white/20 bg-white/20 text-white dark:border-slate-500/60 dark:bg-slate-600 dark:text-slate-100"
-                            : "border border-slate-300 bg-slate-200 text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                        }`}
-                      >
-                        {tab.badge}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-      )}
 
       <AddMaterialNameModal
         isOpen={isAddMaterialModalOpen}
@@ -669,7 +563,6 @@ function MaterialsPane({
   const [viewMode, setViewMode] = useState<"card" | "table">("card");
   const [showSectionOrdinalBadge, setShowSectionOrdinalBadge] = useState(true);
   const [typeFilter, setTypeFilter] = useState<"all" | "materi" | "soal" | "tugas">("all");
-  const [isMoreMenuOpen, setMoreMenuOpen] = useState(false);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState<"" | "duplicate" | "delete">("");
   const [editingContentCard, setEditingContentCard] = useState<{ material: Material; card: SectionContentCardData } | null>(null);
@@ -686,9 +579,6 @@ function MaterialsPane({
   const questionByMaterialRef = useRef<Record<string, MaterialQuestionPreview[]>>({});
   const loadingQuestionByMaterialRef = useRef<Record<string, boolean>>({});
   const hasInitializedOrderRef = useRef(false);
-  const moreMenuRef = useRef<HTMLDivElement | null>(null);
-  const hasLoadedSectionBadgePreferenceRef = useRef(false);
-  const saveSectionBadgePreferenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setLocalMaterials(items);
@@ -696,78 +586,21 @@ function MaterialsPane({
 
   useEffect(() => {
     if (!userId) return;
-    hasLoadedSectionBadgePreferenceRef.current = false;
-    let isMounted = true;
-
     try {
       const stored = window.localStorage.getItem(`teacher-class:show-section-ordinal:${userId}`);
-      if (stored !== null) {
-        setShowSectionOrdinalBadge(stored !== "0");
-      }
+      setShowSectionOrdinalBadge(stored !== "0");
     } catch {
-      // ignore local storage errors
+      setShowSectionOrdinalBadge(true);
     }
-
-    const loadPreference = async () => {
-      try {
-        const res = await fetch("/api/user-preferences", { credentials: "include" });
-        if (!res.ok) return;
-        const data = await res.json().catch(() => ({}));
-        const serverValue = data?.preferences?.showSectionOrdinalBadge;
-        if (isMounted && typeof serverValue === "boolean") {
-          setShowSectionOrdinalBadge(serverValue);
-          try {
-            window.localStorage.setItem(`teacher-class:show-section-ordinal:${userId}`, serverValue ? "1" : "0");
-          } catch {
-            // ignore local storage errors
-          }
-        }
-      } finally {
-        if (isMounted) {
-          hasLoadedSectionBadgePreferenceRef.current = true;
-        }
-      }
-    };
-
-    void loadPreference();
-
-    return () => {
-      isMounted = false;
-    };
   }, [userId]);
 
   useEffect(() => {
-    if (!userId || !hasLoadedSectionBadgePreferenceRef.current) return;
-
+    if (!userId) return;
     try {
       window.localStorage.setItem(`teacher-class:show-section-ordinal:${userId}`, showSectionOrdinalBadge ? "1" : "0");
     } catch {
-      // ignore local storage errors
+      // ignore
     }
-
-    if (saveSectionBadgePreferenceTimerRef.current) {
-      clearTimeout(saveSectionBadgePreferenceTimerRef.current);
-    }
-    saveSectionBadgePreferenceTimerRef.current = setTimeout(() => {
-      void fetch("/api/user-preferences", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          preferences: {
-            showSectionOrdinalBadge,
-          },
-        }),
-      }).catch(() => {
-        // ignore server save errors; local storage fallback remains available
-      });
-    }, 250);
-
-    return () => {
-      if (saveSectionBadgePreferenceTimerRef.current) {
-        clearTimeout(saveSectionBadgePreferenceTimerRef.current);
-      }
-    };
   }, [showSectionOrdinalBadge, userId]);
 
   useEffect(() => {
@@ -1585,24 +1418,6 @@ function MaterialsPane({
     setSelectedSectionIds((prev) => prev.filter((id) => filteredByTypeItems.some((m) => m.id === id)));
   }, [filteredByTypeItems]);
 
-  useEffect(() => {
-    const onPointerDown = (event: MouseEvent) => {
-      if (!isMoreMenuOpen) return;
-      if (!moreMenuRef.current) return;
-      if (moreMenuRef.current.contains(event.target as Node)) return;
-      setMoreMenuOpen(false);
-    };
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMoreMenuOpen(false);
-    };
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [isMoreMenuOpen]);
-
   const toggleSelectSection = useCallback((id: string) => {
     setSelectedSectionIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }, []);
@@ -1689,65 +1504,21 @@ function MaterialsPane({
 
   return (
     <div className="space-y-4">
-      <div className="sticky top-2 z-10 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-black/30">
+      <div className="sticky top-2 z-10 rounded-xl border border-slate-200 bg-white/95 backdrop-blur p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SearchInput placeholder="Cari materi..." value={query} onChange={onQueryChange} />
-          <div className="relative flex items-center gap-2" ref={moreMenuRef}>
+          <div className="flex items-center gap-2">
+            <select
+              value={sort}
+              onChange={(e) => onSortChange(e.target.value as "newest" | "alpha")}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            >
+              <option value="newest">Urutkan: Terbaru</option>
+              <option value="alpha">Urutkan: Abjad</option>
+            </select>
             <button onClick={onAdd} className="sage-button">
               <FiPlus /> Tambah Section
             </button>
-            <button
-              type="button"
-              onClick={() => setMoreMenuOpen((prev) => !prev)}
-              className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
-                isMoreMenuOpen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-              aria-haspopup="menu"
-              aria-expanded={isMoreMenuOpen}
-              aria-label="Buka pengaturan tampilan section"
-            >
-              More
-            </button>
-            {isMoreMenuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Urutan
-                  <select
-                    value={sort}
-                    onChange={(e) => onSortChange(e.target.value as "newest" | "alpha")}
-                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-slate-300"
-                  >
-                    <option value="newest">Terbaru</option>
-                    <option value="alpha">Abjad</option>
-                  </select>
-                </label>
-                <div className="mb-2 flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("card")}
-                    className={`flex-1 rounded px-2 py-1 text-xs ${viewMode === "card" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-white"}`}
-                  >
-                    Card
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("table")}
-                    className={`flex-1 rounded px-2 py-1 text-xs ${viewMode === "table" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-white"}`}
-                  >
-                    Table
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowSectionOrdinalBadge((prev) => !prev)}
-                  className={`w-full rounded-md px-2 py-1.5 text-left text-xs ${
-                    showSectionOrdinalBadge ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"
-                  }`}
-                >
-                  {showSectionOrdinalBadge ? "Hide Section #" : "Show Section #"}
-                </button>
-              </div>
-            )}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -1772,7 +1543,37 @@ function MaterialsPane({
               </button>
             ))}
           </div>
-          <div className="text-[11px] text-slate-500">Mode: {viewMode === "card" ? "Card" : "Table"}</div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setViewMode("card")}
+              className={`rounded-md px-2.5 py-1 text-xs ${
+                viewMode === "card" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"
+              }`}
+            >
+              Card
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              className={`rounded-md px-2.5 py-1 text-xs ${
+                viewMode === "table" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"
+              }`}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSectionOrdinalBadge((prev) => !prev)}
+              className={`rounded-md px-2.5 py-1 text-xs ${
+                showSectionOrdinalBadge ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"
+              }`}
+              title={showSectionOrdinalBadge ? "Sembunyikan label Section 1/2/..." : "Tampilkan label Section 1/2/..."}
+              aria-label={showSectionOrdinalBadge ? "Sembunyikan label section" : "Tampilkan label section"}
+            >
+              {showSectionOrdinalBadge ? "Hide Section #" : "Show Section #"}
+            </button>
+          </div>
         </div>
         {selectedSectionIds.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1799,7 +1600,7 @@ function MaterialsPane({
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-sm font-semibold text-slate-900">Viewer Konten Per Section</p>
@@ -1809,7 +1610,7 @@ function MaterialsPane({
             {isSavingOrder && <p className="mt-1 text-xs text-slate-500">Menyimpan urutan section...</p>}
             {reorderError && <p className="mt-1 text-xs text-red-600">{reorderError}</p>}
           </div>
-          <div className="px-1 py-1 text-right">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
             <p className="text-[11px] uppercase tracking-wide text-slate-500">Total Section</p>
             <p className="mt-1 text-xl font-semibold text-slate-900">{filteredByTypeItems.length}</p>
           </div>
@@ -1817,7 +1618,7 @@ function MaterialsPane({
 
         {filteredByTypeItems.length > 0 ? (
           viewMode === "table" ? (
-            <div className="overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30">
+            <div className="overflow-auto rounded-lg border border-slate-200">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
@@ -1887,7 +1688,7 @@ function MaterialsPane({
               </table>
             </div>
           ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {filteredByTypeItems.map((material, index) => {
               const sectionQuestions = questionByMaterial[material.id] || [];
               const effectiveMaterialContent = getMaterialContent(material);
@@ -1945,15 +1746,13 @@ function MaterialsPane({
                     moveSectionByDrop(draggedId, material.id);
                     handleDragEnd();
                   }}
-                  className={`rounded-xl border bg-white ${compactDragMode ? "p-3" : "p-4"} space-y-4 shadow-sm transition-[box-shadow,transform,border-color] duration-200 ${
-                    isDropTarget
-                      ? "border-slate-400 ring-2 ring-slate-200 shadow-md"
-                      : "border-slate-200 hover:-translate-y-[1px] hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30 dark:hover:shadow-black/40"
+                  className={`rounded-lg border bg-slate-50 ${compactDragMode ? "p-3" : "p-4"} space-y-4 transition ${
+                    isDropTarget ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
                   }`}
                 >
                   {collapsedSummaryMode ? (
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1 py-0.5">
                         <span
                           draggable
                           onDragStart={(e) => handleDragStart(e, material.id, index + 1, material.judul)}
@@ -2025,7 +1824,7 @@ function MaterialsPane({
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1 py-0.5">
                         <span
                           draggable
                           onDragStart={(e) => handleDragStart(e, material.id, index + 1, material.judul)}
@@ -2061,7 +1860,7 @@ function MaterialsPane({
                         <span className="rounded-md bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">Section {index + 1}</span>
                       )}
                       <span className="min-w-0 truncate text-base font-semibold text-slate-900">{material.judul}</span>
-                      <label className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-slate-600">
+                      <label className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600">
                         <input
                           type="checkbox"
                           checked={selectedSectionIds.includes(material.id)}
@@ -2071,11 +1870,11 @@ function MaterialsPane({
                       </label>
                       {!compactDragMode && (
                         <>
-                          <div className="ml-auto flex items-center gap-1 shrink-0">
+                          <div className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1 shrink-0">
                             <button
                               type="button"
                               onClick={() => openQuickAdd(material)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-700 transition hover:bg-slate-200"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100"
                               aria-label="Tambah konten"
                               title="Tambah konten"
                             >
@@ -2084,7 +1883,7 @@ function MaterialsPane({
                             <button
                               type="button"
                               onClick={() => setEditingSection(material)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-700 transition hover:bg-slate-200"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100"
                               aria-label="Edit section"
                               title="Edit section"
                             >
@@ -2093,7 +1892,7 @@ function MaterialsPane({
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteSection(material)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-red-50 text-red-600 transition hover:bg-red-100"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 text-red-600 transition hover:bg-red-50"
                               aria-label="Hapus section"
                               title="Hapus section"
                             >
@@ -2107,7 +1906,7 @@ function MaterialsPane({
                                   [material.id]: !isExpanded,
                                 }))
                               }
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-700 transition hover:bg-slate-200"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100"
                               aria-label={isExpanded ? "Collapse section" : "Expand section"}
                               title={isExpanded ? "Collapse section" : "Expand section"}
                             >
@@ -2128,7 +1927,7 @@ function MaterialsPane({
                     <>
                       {sectionContentCards.length > 0 && (
                         <div>
-                          <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white shadow-sm dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/25">
+                          <div className="space-y-2">
                             {sectionContentCards.map((card, cardIdx) => {
                               const collapseKey = `${material.id}:${card.id}`;
                               const contentCardKey = `${material.id}:${card.id}`;
@@ -2173,32 +1972,21 @@ function MaterialsPane({
                                     void moveContentCardByDrop(material, draggedCardId, card.id);
                                     handleContentCardDragEnd();
                                   }}
-                                  className={`bg-white transition-[box-shadow,background-color] duration-200 ${
-                                    isContentDropTarget
-                                      ? "border-slate-400 ring-2 ring-slate-200 shadow-md"
-                                      : `${contentTone.accent} hover:shadow-sm`
+                                  className={`rounded-lg border bg-white overflow-hidden transition ${
+                                    isContentDropTarget ? "border-slate-400 ring-2 ring-slate-200" : contentTone.accent
                                   }`}
                                 >
-                                  <div
-                                    role="button"
-                                    tabIndex={0}
+                                  <button
+                                    type="button"
                                     onClick={() =>
                                       setCollapsedContentCards((prev) => ({
                                         ...prev,
                                         [collapseKey]: !isCollapsed,
                                       }))
                                     }
-                                    onKeyDown={(e) => {
-                                      if (e.key !== "Enter" && e.key !== " ") return;
-                                      e.preventDefault();
-                                      setCollapsedContentCards((prev) => ({
-                                        ...prev,
-                                        [collapseKey]: !isCollapsed,
-                                      }));
-                                    }}
-                                    className="flex w-full items-center gap-3 px-0 py-2.5 text-left hover:bg-slate-50"
+                                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50"
                                   >
-                                    <div className="flex shrink-0 items-center gap-1">
+                                    <div className="flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-1 py-0.5">
                                       <span
                                         draggable
                                         onDragStart={(e) =>
@@ -2246,8 +2034,8 @@ function MaterialsPane({
                                         ↓
                                       </button>
                                     </div>
-                                    <div className="flex min-w-0 items-start gap-2">
-                                      <span className={`inline-flex h-6 w-[74px] shrink-0 items-center justify-center rounded-full px-2.5 text-[11px] font-medium ${contentTone.badge}`}>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <span className={`inline-flex h-6 w-20 shrink-0 items-center justify-center rounded-full px-2 text-[11px] font-medium ${contentTone.badge}`}>
                                         {getSectionContentTypeLabel(card.type)}
                                       </span>
                                       <span className="truncate text-sm font-semibold text-slate-900">
@@ -2285,36 +2073,23 @@ function MaterialsPane({
                                       )}
                                       <span className="text-slate-500">{isCollapsed ? <FiChevronDown /> : <FiChevronUp />}</span>
                                     </div>
-                                  </div>
+                                  </button>
                                   {!isCollapsed && (
-                                    <div className="px-0 py-3">
+                                    <div className="border-t border-slate-200 px-3 py-3">
                                       {card.type !== "materi" && card.type !== "tugas" && card.type !== "soal" && (card.meta?.description || "").trim() && (
-                                        <div className="mb-2 rounded-md bg-slate-50 px-3 py-2">
+                                        <div className="mb-2 rounded-md border border-slate-200 bg-white px-3 py-2">
                                           <p className="whitespace-pre-wrap text-sm text-slate-700">{card.meta?.description}</p>
                                         </div>
                                       )}
                                       {card.type === "materi" && card.meta?.materi_mode === "lengkap" ? (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
-                                          {(() => {
-                                            const desc =
-                                              (card.meta?.materi_description || "").trim() ||
-                                              (((card.body || "") && !containsHtmlTag(card.body)) ? (card.body || "").trim() : "");
-                                            const hasBodyHtml = containsHtmlTag(card.body || "");
-                                            return (
-                                              <div className="space-y-2">
-                                                {desc ? (
-                                                  <p className="whitespace-pre-wrap text-sm text-slate-700">{desc}</p>
-                                                ) : (
-                                                  <p className="text-sm text-slate-600">Konten materi ini dikelola di editor materi lengkap.</p>
-                                                )}
-                                                {hasBodyHtml && (
-                                                  <div className="rounded-md border border-slate-200 bg-white p-3">
-                                                    <SectionMaterialContentRenderer isiMateri={card.body} />
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })()}
+                                          {((card.meta?.materi_description || "").trim() || ((card.body || "") && !containsHtmlTag(card.body) ? card.body.trim() : "")) ? (
+                                            <p className="whitespace-pre-wrap text-sm text-slate-700">
+                                              {(card.meta?.materi_description || "").trim() || ((card.body || "") && !containsHtmlTag(card.body) ? card.body.trim() : "")}
+                                            </p>
+                                          ) : (
+                                            <p className="text-sm text-slate-600">Konten materi ini dikelola di editor materi lengkap.</p>
+                                          )}
                                           <Link href={`/dashboard/teacher/materi/${material.id}?sectionCardId=${card.id}`} className="sage-button-outline !py-1.5 !px-3 text-xs inline-flex">
                                             Buka Editor Materi
                                           </Link>
@@ -2330,7 +2105,7 @@ function MaterialsPane({
                                             return (
                                               <>
                                                 {descText && (
-                                                  <div className="rounded-md bg-white px-3 py-2">
+                                                  <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
                                                     <p className="whitespace-pre-wrap text-sm text-slate-700">{descText}</p>
                                                   </div>
                                                 )}
@@ -2380,7 +2155,7 @@ function MaterialsPane({
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                                           {card.body ? (
                                             <div className="space-y-2">
-                                              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20">
+                                              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                                                 <img src={card.body} alt={card.title} className="h-auto w-full object-cover" />
                                               </div>
                                               <a href={card.body} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-slate-700 underline">
@@ -2394,7 +2169,7 @@ function MaterialsPane({
                                       ) : card.type === "video" ? (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                                           {card.body ? (
-                                            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20">
+                                            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                                               <iframe
                                                 src={normalizeEmbedUrl(card.body)}
                                                 title={card.title}
@@ -3163,11 +2938,7 @@ function SectionMaterialContentRenderer({
       // ignore non-JSON text
     }
     const html = containsHtmlTag(trimmed) ? trimmed : `<p>${escapeHtml(trimmed).replace(/\n/g, "<br/>")}</p>`;
-    return (
-      <div className="sage-quill-render ql-snow">
-        <div className="ql-editor" dangerouslySetInnerHTML={{ __html: html }} />
-      </div>
-    );
+    return <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
   if (fileUrl) {
@@ -3204,22 +2975,6 @@ function truncate100(value: string): string {
   return `${value.slice(0, 100)}...`;
 }
 
-function toAbsoluteUploadUrl(filePath: string): string {
-  const trimmed = filePath.trim();
-  if (!trimmed) return trimmed;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (trimmed.startsWith("/")) {
-    if (typeof window !== "undefined" && window.location?.origin) {
-      return `${window.location.origin}${trimmed}`;
-    }
-    return trimmed;
-  }
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return `${window.location.origin}/${trimmed.replace(/^\/+/, "")}`;
-  }
-  return trimmed;
-}
-
 function RichTextEditorField({
   value,
   onChange,
@@ -3227,298 +2982,298 @@ function RichTextEditorField({
   value: string;
   onChange: (html: string) => void;
 }) {
-  const [editorBundle, setEditorBundle] = useState<{
-    CKEditor: any;
-    ClassicEditor: any;
-    plugins: Record<string, any>;
-  } | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const draggingMediaIdRef = useRef<string | null>(null);
+  const [pendingImageFiles, setPendingImageFiles] = useState<Array<{ id: string; file: File; previewUrl: string }>>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
-    const loadEditor = async () => {
-      const [{ CKEditor }, ckeditor] = await Promise.all([
-        import("@ckeditor/ckeditor5-react"),
-        import("ckeditor5"),
-      ]);
-      if (!mounted) return;
-      setEditorBundle({
-        CKEditor,
-        ClassicEditor: ckeditor.ClassicEditor,
-        plugins: {
-          Alignment: ckeditor.Alignment,
-          Autoformat: ckeditor.Autoformat,
-          BlockQuote: ckeditor.BlockQuote,
-          Bold: ckeditor.Bold,
-          CodeBlock: ckeditor.CodeBlock,
-          Essentials: ckeditor.Essentials,
-          FontBackgroundColor: ckeditor.FontBackgroundColor,
-          FontColor: ckeditor.FontColor,
-          FontFamily: ckeditor.FontFamily,
-          FontSize: ckeditor.FontSize,
-          Heading: ckeditor.Heading,
-          Highlight: ckeditor.Highlight,
-          HorizontalLine: ckeditor.HorizontalLine,
-          Image: ckeditor.Image,
-          ImageCaption: ckeditor.ImageCaption,
-          ImageResize: ckeditor.ImageResize,
-          ImageStyle: ckeditor.ImageStyle,
-          ImageTextAlternative: ckeditor.ImageTextAlternative,
-          ImageToolbar: ckeditor.ImageToolbar,
-          ImageUpload: ckeditor.ImageUpload,
-          Indent: ckeditor.Indent,
-          Italic: ckeditor.Italic,
-          Link: ckeditor.Link,
-          List: ckeditor.List,
-          MediaEmbed: ckeditor.MediaEmbed,
-          PasteFromOffice: ckeditor.PasteFromOffice,
-          Paragraph: ckeditor.Paragraph,
-          RemoveFormat: ckeditor.RemoveFormat,
-          SourceEditing: ckeditor.SourceEditing,
-          Strikethrough: ckeditor.Strikethrough,
-          Table: ckeditor.Table,
-          TableCellProperties: ckeditor.TableCellProperties,
-          TableProperties: ckeditor.TableProperties,
-          TableToolbar: ckeditor.TableToolbar,
-          Underline: ckeditor.Underline,
-        },
-      });
-    };
-    void loadEditor();
+    if (!editorRef.current) return;
+    if (editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || "<p></p>";
+    }
+  }, [value]);
+
+  useEffect(() => {
     return () => {
-      mounted = false;
+      pendingImageFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     };
-  }, []);
+  }, [pendingImageFiles]);
 
-  const editorConfig = useMemo(
-    () => ({
-      licenseKey: "GPL",
-      placeholder: "Tulis materi singkat di sini...",
-      plugins: editorBundle
-        ? [
-            editorBundle.plugins.Essentials,
-            editorBundle.plugins.Paragraph,
-            editorBundle.plugins.Heading,
-            editorBundle.plugins.Bold,
-            editorBundle.plugins.Italic,
-            editorBundle.plugins.Underline,
-            editorBundle.plugins.Strikethrough,
-            editorBundle.plugins.Link,
-            editorBundle.plugins.List,
-            editorBundle.plugins.Indent,
-            editorBundle.plugins.Alignment,
-            editorBundle.plugins.Autoformat,
-            editorBundle.plugins.BlockQuote,
-            editorBundle.plugins.Image,
-            editorBundle.plugins.ImageToolbar,
-            editorBundle.plugins.ImageCaption,
-            editorBundle.plugins.ImageStyle,
-            editorBundle.plugins.ImageTextAlternative,
-            editorBundle.plugins.ImageResize,
-            editorBundle.plugins.ImageUpload,
-            editorBundle.plugins.CodeBlock,
-            editorBundle.plugins.FontBackgroundColor,
-            editorBundle.plugins.FontColor,
-            editorBundle.plugins.FontFamily,
-            editorBundle.plugins.FontSize,
-            editorBundle.plugins.Highlight,
-            editorBundle.plugins.HorizontalLine,
-            editorBundle.plugins.MediaEmbed,
-            editorBundle.plugins.PasteFromOffice,
-            editorBundle.plugins.RemoveFormat,
-            editorBundle.plugins.SourceEditing,
-            editorBundle.plugins.Table,
-            editorBundle.plugins.TableCellProperties,
-            editorBundle.plugins.TableProperties,
-            editorBundle.plugins.TableToolbar,
-          ]
-        : [],
-      toolbar: [
-        "heading",
-        "|",
-        "fontFamily",
-        "fontSize",
-        "|",
-        "bold",
-        "italic",
-        "underline",
-        "strikethrough",
-        "fontColor",
-        "fontBackgroundColor",
-        "highlight",
-        "|",
-        "link",
-        "bulletedList",
-        "numberedList",
-        "outdent",
-        "indent",
-        "|",
-        "alignment",
-        "blockQuote",
-        "codeBlock",
-        "horizontalLine",
-        "uploadImage",
-        "insertTable",
-        "mediaEmbed",
-        "sourceEditing",
-        "removeFormat",
-        "|",
-        "undo",
-        "redo",
-      ],
-      heading: {
-        options: [
-          {
-            model: "paragraph",
-            title: "Paragraph",
-            class: "ck-heading_paragraph",
-          },
-          {
-            model: "heading1",
-            view: "h1",
-            title: "Heading 1",
-            class: "ck-heading_heading1",
-          },
-          {
-            model: "heading2",
-            view: "h2",
-            title: "Heading 2",
-            class: "ck-heading_heading2",
-          },
-          {
-            model: "heading3",
-            view: "h3",
-            title: "Heading 3",
-            class: "ck-heading_heading3",
-          },
-        ],
-      },
-      image: {
-        toolbar: [
-          "imageTextAlternative",
-          "|",
-          "imageStyle:inline",
-          "imageStyle:block",
-          "imageStyle:side",
-          "|",
-          "resizeImage",
-        ],
-        resizeOptions: [
-          {
-            name: "resizeImage:original",
-            value: null,
-            label: "Original",
-          },
-          {
-            name: "resizeImage:50",
-            value: "50",
-            label: "50%",
-          },
-          {
-            name: "resizeImage:75",
-            value: "75",
-            label: "75%",
-          },
-        ],
-      },
-      table: {
-        contentToolbar: [
-          "tableColumn",
-          "tableRow",
-          "mergeTableCells",
-          "tableProperties",
-          "tableCellProperties",
-        ],
-      },
-      list: {
-        properties: {
-          styles: true,
-          startIndex: true,
-          reversed: true,
-        },
-      },
-      link: {
-        addTargetToExternalLinks: true,
-        defaultProtocol: "https://",
-      },
-    }),
-    [editorBundle],
-  );
+  const runCommand = (command: string, commandValue?: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    if (command === "formatBlock" && commandValue) {
+      document.execCommand("formatBlock", false, `<${commandValue}>`);
+    } else {
+      document.execCommand(command, false, commandValue);
+    }
+    onChange(editor.innerHTML);
+  };
 
-  const uploadAdapterPlugin = useCallback(
-    (editor: any) => {
-      const fileRepository = editor.plugins.get("FileRepository");
-      fileRepository.createUploadAdapter = (loader: any) => ({
-        upload: async () => {
-          const file = await loader.file;
-          if (!file) {
-            throw new Error("File gambar tidak ditemukan.");
-          }
-          const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
-          if (!mimeOk) {
-            throw new Error("Format gambar harus PNG/JPG.");
-          }
-          if (file.size > 10 * 1024 * 1024) {
-            throw new Error("Ukuran gambar maksimal 10MB.");
-          }
-          setUploadingImages(true);
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const res = await fetch("/api/upload", {
-              method: "POST",
-              credentials: "include",
-              body: formData,
-            });
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok || !body?.filePath) {
-              throw new Error(body?.message || `Gagal upload ${file.name}`);
-            }
-            return {
-              default: toAbsoluteUploadUrl(String(body.filePath || "")),
-            };
-          } finally {
-            setUploadingImages(false);
-          }
-        },
-        abort: () => {
-          setUploadingImages(false);
-        },
+  const triggerImagePicker = () => {
+    imageInputRef.current?.click();
+  };
+
+  const handlePickImages = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const valid: Array<{ id: string; file: File; previewUrl: string }> = [];
+    const rejected: string[] = [];
+    Array.from(files).forEach((file) => {
+      const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
+      if (!mimeOk) {
+        rejected.push(`${file.name}: format harus PNG/JPG`);
+        return;
+      }
+      if (file.size > 1024 * 1024) {
+        rejected.push(`${file.name}: maksimal 1MB`);
+        return;
+      }
+      valid.push({
+        id: `imgpick_${Math.random().toString(36).slice(2, 9)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
       });
-    },
-    [],
-  );
+    });
+    if (rejected.length > 0) {
+      window.alert(`Sebagian file ditolak:\n${rejected.join("\n")}`);
+    }
+    if (valid.length === 0) return;
+    setPendingImageFiles((prev) => [...prev, ...valid]);
+  };
+
+  const removePendingImage = (id: string) => {
+    setPendingImageFiles((prev) => {
+      const target = prev.find((x) => x.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((x) => x.id !== id);
+    });
+  };
+
+  const insertUploadedImageBlock = (imageUrl: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const mediaId = `imgblk_${Math.random().toString(36).slice(2, 9)}`;
+    editor.focus();
+    const safeUrl = escapeHtml(imageUrl);
+    document.execCommand(
+      "insertHTML",
+      false,
+      `<p><br/></p><div data-media-block="1" data-media-id="${mediaId}" draggable="true" contenteditable="false" style="position:relative;resize:both;overflow:auto;width:420px;max-width:100%;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px auto 8px 0;cursor:move;background:#fff;user-select:none;">
+        <button type="button" data-media-drag-handle="1" draggable="true" style="position:absolute;left:8px;top:8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;padding:2px 6px;font-size:11px;color:#475569;cursor:grab;z-index:4;">drag</button>
+        <img src="${safeUrl}" alt="Gambar materi" style="width:100%;height:auto;display:block;border-radius:8px;pointer-events:none;" />
+        <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ resize / drag</div>
+      </div><p><br/></p>`
+    );
+    onChange(editor.innerHTML);
+  };
+
+  const uploadSelectedImages = async () => {
+    if (pendingImageFiles.length === 0) return;
+    setUploadingImages(true);
+    try {
+      for (const item of pendingImageFiles) {
+        const formData = new FormData();
+        formData.append("file", item.file);
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body?.filePath) {
+          throw new Error(body?.message || `Gagal upload ${item.file.name}`);
+        }
+        insertUploadedImageBlock(body.filePath);
+      }
+      pendingImageFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      setPendingImageFiles([]);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    } catch (err: any) {
+      window.alert(err?.message || "Gagal upload gambar.");
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
+  const getCaretRangeFromPoint = (x: number, y: number): Range | null => {
+    const doc = document as Document & {
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+    if (typeof doc.caretRangeFromPoint === "function") {
+      return doc.caretRangeFromPoint(x, y);
+    }
+    if (typeof doc.caretPositionFromPoint === "function") {
+      const pos = doc.caretPositionFromPoint(x, y);
+      if (!pos) return null;
+      const range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+      return range;
+    }
+    return null;
+  };
+
+  const toolbarButton = "sage-button-outline !px-2 !py-1 text-xs";
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="sage-ckeditor-editor">
-        {!editorBundle ? (
-          <div className="p-3 text-xs text-slate-500">Menyiapkan editor...</div>
-        ) : (
-          <editorBundle.CKEditor
-            editor={editorBundle.ClassicEditor}
-            config={editorConfig}
-            data={value || ""}
-            onReady={(editor: any) => {
-              uploadAdapterPlugin(editor);
-            }}
-            onChange={(_: unknown, editor: any) => {
-              onChange(editor.getData());
-            }}
-          />
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-2">
+        <button type="button" className={`${toolbarButton} font-bold`} onMouseDown={(e) => { e.preventDefault(); runCommand("bold"); }}>
+          B
+        </button>
+        <button type="button" className={`${toolbarButton} italic`} onMouseDown={(e) => { e.preventDefault(); runCommand("italic"); }}>
+          I
+        </button>
+        <button type="button" className={`${toolbarButton} underline`} onMouseDown={(e) => { e.preventDefault(); runCommand("underline"); }}>
+          U
+        </button>
+        <button type="button" className={toolbarButton} onMouseDown={(e) => { e.preventDefault(); runCommand("insertUnorderedList"); }}>
+          Bullet
+        </button>
+        <button type="button" className={toolbarButton} onMouseDown={(e) => { e.preventDefault(); runCommand("insertOrderedList"); }}>
+          Number
+        </button>
+        <button type="button" className={toolbarButton} onMouseDown={(e) => { e.preventDefault(); runCommand("formatBlock", "h2"); }}>
+          H2
+        </button>
+        <button
+          type="button"
+          className={toolbarButton}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const url = window.prompt("Masukkan URL link:");
+            if (!url) return;
+            runCommand("createLink", url.trim());
+          }}
+        >
+          Link
+        </button>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            handlePickImages(e.target.files);
+          }}
+        />
+        <button
+          type="button"
+          className={toolbarButton}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            triggerImagePicker();
+          }}
+          title="Pilih banyak gambar (PNG/JPG, maks 1MB per file)"
+          aria-label="Pilih gambar"
+        >
+          <FiPlus />
+        </button>
+        <button
+          type="button"
+          className={toolbarButton}
+          disabled={uploadingImages || pendingImageFiles.length === 0}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            void uploadSelectedImages();
+          }}
+          title="Upload semua gambar terpilih dan sisipkan ke editor"
+          aria-label="Upload gambar"
+        >
+          <FiUploadCloud />
+        </button>
+        {pendingImageFiles.length > 0 && (
+          <span className="text-xs text-slate-500">({pendingImageFiles.length})</span>
         )}
       </div>
-      {uploadingImages && (
-        <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500">
-          Uploading gambar...
+      {pendingImageFiles.length > 0 && (
+        <div className="border-b border-slate-200 bg-slate-50 p-2">
+          <p className="text-[11px] font-medium text-slate-600">Preview gambar yang akan di-upload</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {pendingImageFiles.map((item) => (
+              <div key={item.id} className="rounded-md border border-slate-200 bg-white p-1.5">
+                <img src={item.previewUrl} alt={item.file.name} className="h-20 w-full rounded object-cover border border-slate-200" />
+                <p className="mt-1 truncate text-[11px] text-slate-600" title={item.file.name}>{item.file.name}</p>
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] text-red-600 hover:underline"
+                  onClick={() => removePendingImage(item.id)}
+                >
+                  Hapus
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
-      <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500">
-        Upload gambar: PNG/JPG/JPEG maksimal 10MB.
-      </div>
-      <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500">
-        Klik gambar untuk menampilkan toolbar gambar.
-      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        className="min-h-[180px] w-full p-3 text-sm text-slate-800 outline-none"
+        onInput={() => onChange(editorRef.current?.innerHTML || "")}
+        onDragStart={(e) => {
+          const target = e.target as HTMLElement;
+          const media =
+            (target.closest("[data-media-drag-handle='1']")?.closest("[data-media-block='1']") as HTMLDivElement | null) ||
+            (target.closest("[data-media-block='1']") as HTMLDivElement | null);
+          if (!media) return;
+          const mediaId = media.getAttribute("data-media-id");
+          if (!mediaId) return;
+          draggingMediaIdRef.current = mediaId;
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", mediaId);
+        }}
+        onDragEnd={() => {
+          draggingMediaIdRef.current = null;
+        }}
+        onDragOver={(e) => {
+          if (!draggingMediaIdRef.current) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(e) => {
+          if (!draggingMediaIdRef.current || !editorRef.current) return;
+          e.preventDefault();
+          const editor = editorRef.current;
+          const dragged = editor.querySelector<HTMLElement>(`[data-media-id='${draggingMediaIdRef.current}']`);
+          if (!dragged) {
+            draggingMediaIdRef.current = null;
+            return;
+          }
+          const dropRange = getCaretRangeFromPoint(e.clientX, e.clientY);
+          if (dropRange && editor.contains(dropRange.startContainer) && !dragged.contains(dropRange.startContainer)) {
+            dropRange.collapse(true);
+            dropRange.insertNode(dragged);
+            const after = document.createRange();
+            after.setStartAfter(dragged);
+            after.collapse(true);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(after);
+          } else {
+            const targetEl = (e.target as HTMLElement).closest("[data-media-block='1']") as HTMLElement | null;
+            if (targetEl && targetEl !== dragged && editor.contains(targetEl)) {
+              const rect = targetEl.getBoundingClientRect();
+              const shouldInsertAfter = e.clientY > rect.top + rect.height / 2;
+              if (shouldInsertAfter) {
+                targetEl.parentNode?.insertBefore(dragged, targetEl.nextSibling);
+              } else {
+                targetEl.parentNode?.insertBefore(dragged, targetEl);
+              }
+            } else {
+              editor.appendChild(dragged);
+            }
+          }
+          draggingMediaIdRef.current = null;
+          onChange(editor.innerHTML);
+        }}
+      />
     </div>
   );
 }
@@ -3674,6 +3429,7 @@ function QuickAddSectionContentModal({
   const [imageUrl, setImageUrl] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [pendingImagePreviewUrl, setPendingImagePreviewUrl] = useState("");
   const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
   const [taskInstruction, setTaskInstruction] = useState("");
@@ -3811,12 +3567,33 @@ function QuickAddSectionContentModal({
     }
   };
 
-  const uploadImageFile = async (file: File, previewUrlToRevoke?: string) => {
+  const handlePickImageFile = (file: File | null) => {
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      setError("Ukuran gambar maksimal 3MB.");
+      return;
+    }
+    const extOk = isAllowedImageExtension(file.name);
+    const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
+    if (!extOk && !mimeOk) {
+      setError("Format gambar harus PNG, JPG, atau JPEG.");
+      return;
+    }
+    if (pendingImagePreviewUrl) {
+      URL.revokeObjectURL(pendingImagePreviewUrl);
+    }
+    setError("");
+    setPendingImageFile(file);
+    setPendingImagePreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleUploadImage = async () => {
+    if (!pendingImageFile) return;
     setError("");
     setIsUploadingAsset(true);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", pendingImageFile);
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         credentials: "include",
@@ -3831,9 +3608,10 @@ function QuickAddSectionContentModal({
         throw new Error("Respons upload gambar tidak valid.");
       }
       setBody(uploadedPath);
-      setUploadedFileName(file.name);
-      if (previewUrlToRevoke) {
-        URL.revokeObjectURL(previewUrlToRevoke);
+      setUploadedFileName(pendingImageFile.name);
+      setPendingImageFile(null);
+      if (pendingImagePreviewUrl) {
+        URL.revokeObjectURL(pendingImagePreviewUrl);
       }
       setPendingImagePreviewUrl("");
     } catch (err: any) {
@@ -3842,27 +3620,6 @@ function QuickAddSectionContentModal({
       setIsUploadingAsset(false);
       if (imageFileInputRef.current) imageFileInputRef.current.value = "";
     }
-  };
-
-  const handlePickImageFile = async (file: File | null) => {
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      setError("Ukuran gambar maksimal 10MB.");
-      return;
-    }
-    const extOk = isAllowedImageExtension(file.name);
-    const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
-    if (!extOk && !mimeOk) {
-      setError("Format gambar harus PNG, JPG, atau JPEG.");
-      return;
-    }
-    if (pendingImagePreviewUrl) {
-      URL.revokeObjectURL(pendingImagePreviewUrl);
-    }
-    const nextPreviewUrl = URL.createObjectURL(file);
-    setError("");
-    setPendingImagePreviewUrl(nextPreviewUrl);
-    await uploadImageFile(file, nextPreviewUrl);
   };
 
   const handleAddVideoEmbed = () => {
@@ -4228,9 +3985,7 @@ function QuickAddSectionContentModal({
                     type="file"
                     accept=".png,.jpg,.jpeg,image/png,image/jpeg"
                     className="hidden"
-                    onChange={(e) => {
-                      void handlePickImageFile(e.target.files?.[0] || null);
-                    }}
+                    onChange={(e) => handlePickImageFile(e.target.files?.[0] || null)}
                   />
                   <button
                     type="button"
@@ -4238,12 +3993,20 @@ function QuickAddSectionContentModal({
                     className="sage-button-outline !py-2 !px-3 text-xs"
                     disabled={isUploadingAsset}
                   >
-                    Pilih Gambar (max 10MB, auto upload)
+                    Pilih Gambar (max 3MB)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleUploadImage()}
+                    className="sage-button-outline !py-2 !px-3 text-xs"
+                    disabled={!pendingImageFile || isUploadingAsset}
+                  >
+                    Upload Sekarang
                   </button>
                 </div>
                 {pendingImagePreviewUrl && (
-                  <div className="inline-block max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5">
-                    <img src={pendingImagePreviewUrl} alt="Preview gambar" className="block max-h-56 w-auto max-w-full rounded object-contain" />
+                  <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <img src={pendingImagePreviewUrl} alt="Preview gambar" className="h-40 w-full object-cover" />
                   </div>
                 )}
                 {body && <p className="text-xs text-slate-500 break-all">Tersimpan: {body}</p>}
@@ -4393,7 +4156,6 @@ function QuickEditSectionContentModal({
   }) => Promise<void>;
   onRefresh?: () => Promise<void> | void;
 }) {
-  const initializedCardIdRef = useRef<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [body, setBody] = useState("");
@@ -4411,13 +4173,7 @@ function QuickEditSectionContentModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) {
-      initializedCardIdRef.current = null;
-      return;
-    }
-    if (!card) return;
-    if (initializedCardIdRef.current === card.id) return;
-    initializedCardIdRef.current = card.id;
+    if (!isOpen || !card) return;
     setTitle(card.title || "");
     setDescription(card.type === "soal" ? (card.meta?.description || card.body || "") : (card.meta?.description || ""));
     const rawBody = card.body || "";
@@ -4968,16 +4724,10 @@ function StudentsPane({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {items.map((s) => (
-            <div
+            <button
               key={s.id}
-              role="button"
-              tabIndex={0}
+              type="button"
               onClick={() => setSelectedStudent(s)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" && e.key !== " ") return;
-                e.preventDefault();
-                setSelectedStudent(s);
-              }}
               className="text-left rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition"
             >
               <div className="flex items-center gap-3">
@@ -5013,7 +4763,7 @@ function StudentsPane({
                   <FiTrash2 /> {removingStudentId === s.id ? "Menghapus..." : "Hapus"}
                 </button>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}

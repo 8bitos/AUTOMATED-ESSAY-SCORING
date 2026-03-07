@@ -305,6 +305,130 @@ const FAQ_ITEMS: FAQItem[] = [
     ],
     keywords: ["stabil", "ai grading", "rubrik jelas", "kualitas soal"],
   },
+  {
+    id: "soal-rubrik-mode-global-per-soal",
+    category: "Materi & Soal",
+    question: "Apa beda Mode Rubrik Per Soal vs Global, dan scope-nya di mana?",
+    answer: [
+      "Scope pengaturan rubrik adalah per card soal (section card) yang aktif. Jadi pengaturan ini hanya memengaruhi soal di card tersebut.",
+      "Per Soal: setiap soal punya rubrik sendiri. Fungsi utamanya menjaga akurasi penilaian ketika tipe soal, tingkat kesulitan, atau indikator kompetensi berbeda.",
+      "Global: satu rubrik digunakan bersama untuk semua soal dalam satu card. Fungsi utamanya mempercepat setup ketika semua soal memiliki pola penilaian yang sama.",
+      "Cara pakai: buka halaman soal card terkait -> buka Mode Rubrik -> pilih Per Soal/Global -> simpan -> cek ulang rubrik aktif sebelum publish.",
+    ],
+    keywords: ["mode rubrik", "per soal", "global", "section card", "akurasi ai"],
+  },
+  {
+    id: "soal-rubrik-mode-confirmation",
+    category: "Materi & Soal",
+    question: "Kenapa saat simpan mode rubrik muncul konfirmasi dan tooltip?",
+    answer: [
+      "Konfirmasi berfungsi sebagai validasi akhir sebelum mode rubrik diterapkan ke card soal aktif, untuk mencegah perubahan tidak sengaja.",
+      "Tooltip dan alert berfungsi sebagai panduan keputusan: menjelaskan kapan Per Soal lebih presisi, dan kapan Global lebih efisien.",
+      "Cara pakai aman: baca ringkasan perbedaan mode -> pilih mode -> lanjut simpan pada popup konfirmasi -> verifikasi hasil pada daftar soal card tersebut.",
+    ],
+    keywords: ["konfirmasi", "tooltip", "alert", "simpan mode rubrik", "salah klik"],
+  },
+  {
+    id: "penilaian-fullscreen-spreadsheet",
+    category: "Penilaian",
+    question: "Bagaimana cara memakai mode fullscreen di halaman Penilaian (spreadsheet)?",
+    answer: [
+      "Fungsi mode fullscreen adalah memperluas area edit spreadsheet penilaian agar input skor/feedback lebih cepat dan minim distraksi.",
+      "Cara masuk: buka menu Penilaian -> aktifkan mode fullscreen dari kontrol spreadsheet. Tampilan akan menjadi overlay satu halaman penuh aplikasi (bukan F11 browser).",
+      "Saat fullscreen aktif, panel ringkasan disembunyikan supaya fokus ke grid nilai.",
+      "Cara keluar: gunakan tombol exit fullscreen atau shortcut keyboard yang ditampilkan di kontrol fullscreen.",
+    ],
+    keywords: ["fullscreen", "spreadsheet", "penilaian", "overlay", "shortcut"],
+  },
+  {
+    id: "search-ctrlk-content",
+    category: "Dashboard Guru",
+    question: "Sekarang Ctrl/Cmd+K bisa cari apa saja?",
+    answer: [
+      "Fungsi Command Search (Ctrl/Cmd+K) adalah navigasi cepat lintas menu dan konten pembelajaran.",
+      "Pencarian dapat mencocokkan judul menu, judul konten, isi materi, teks soal, keyword, jawaban ideal, dan deskriptor rubrik.",
+      "Cara pakai: tekan Ctrl/Cmd+K -> ketik kata kunci topik atau frasa soal -> pilih hasil paling relevan untuk langsung membuka halaman target.",
+    ],
+    keywords: ["ctrl k", "cmd k", "command search", "search konten", "rubrik"],
+  },
+  {
+    id: "materi-singkat-image-editor",
+    category: "Materi & Soal",
+    question: "Bagaimana memakai fitur gambar dan formatting di editor Materi Singkat?",
+    answer: [
+      "Fungsi editor Materi Singkat adalah menyusun materi teks + media secara cepat dalam satu area kerja.",
+      "Gambar: klik ikon gambar di toolbar -> pilih file (PNG/JPG/JPEG, maksimal 10MB) -> file terupload otomatis dan langsung tersisip ke editor.",
+      "Teks: gunakan toolbar untuk Bold, Italic, Underline, Strike, Bullet, Number, Heading, Link, dan alignment (kiri, tengah, kanan, kiri-kanan/justify).",
+      "Blok gambar: klik gambar untuk seleksi -> atur alignment kiri/tengah/kanan -> resize horizontal dari handle browser -> hapus dengan Delete/Backspace.",
+    ],
+    keywords: ["materi singkat", "upload otomatis", "10mb", "resize gambar", "formatting"],
+  },
+  {
+    id: "workspace-preference-account",
+    category: "Manajemen Kelas",
+    question: "Apakah preferensi tampilan workspace (mis. hide/show section detail) tersimpan per akun?",
+    answer: [
+      "Ya. Preferensi tampilan workspace disimpan per akun, sehingga setelan tetap konsisten saat login ulang.",
+      "Fungsi penyimpanan ini adalah menjaga pengalaman kerja yang sama di perangkat berbeda.",
+      "Cara pakai: atur opsi tampilan workspace sesuai kebutuhan (mis. show/hide detail tertentu), lalu lanjutkan kerja seperti biasa; sistem akan menyimpan preferensi tersebut.",
+    ],
+    keywords: ["workspace", "preferensi", "hide section", "per akun", "persist"],
+  },
+  {
+    id: "workspace-viewmode-bulk",
+    category: "Manajemen Kelas",
+    question: "Apa fungsi mode Card/Table dan bulk action di Workspace Kelas?",
+    answer: [
+      "Mode Card cocok untuk editing detail per section, sedangkan mode Table cocok untuk review cepat banyak section.",
+      "Bulk action membantu operasi massal seperti duplikasi atau hapus section terpilih tanpa mengulang aksi satu per satu.",
+      "Kombinasi filter + search + bulk action mempercepat rapikan struktur kelas skala besar.",
+    ],
+    keywords: ["card mode", "table mode", "bulk action", "duplikat section", "hapus section"],
+  },
+  {
+    id: "soal-ordering-dnd",
+    category: "Materi & Soal",
+    question: "Bagaimana mengatur urutan soal per card section?",
+    answer: [
+      "Urutan soal bisa diubah dengan drag-and-drop langsung pada daftar soal.",
+      "Tersedia juga tombol naik/turun untuk penyesuaian presisi per soal.",
+      "Setelah disimpan, urutan akan dipakai pada tampilan siswa sesuai card section terkait.",
+    ],
+    keywords: ["urut soal", "drag and drop", "naik turun", "section card"],
+  },
+  {
+    id: "soal-student-session-mode",
+    category: "Materi & Soal",
+    question: "Apa saja pengaturan mode pengerjaan siswa yang bisa diatur guru?",
+    answer: [
+      "Guru dapat mengatur visibilitas hasil, visibilitas rubrik saat pengerjaan, mode submit (per soal atau submit semua), serta batas/aturan attempt.",
+      "Sistem juga mendukung kontrol integritas seperti kewajiban fullscreen dan deteksi perpindahan tab sesuai kebutuhan sesi.",
+      "Selalu cek ulang konfigurasi sebelum publish agar perilaku sesi sesuai tujuan evaluasi.",
+    ],
+    keywords: ["mode pengerjaan", "show_rubric_in_question", "submit semua", "fullscreen", "attempt"],
+  },
+  {
+    id: "penilaian-banding-tab",
+    category: "Penilaian",
+    question: "Bagaimana alur kelola banding nilai di menu Penilaian?",
+    answer: [
+      "Menu Penilaian memiliki tab khusus banding untuk melihat pengajuan siswa per status dan per kelas.",
+      "Guru bisa memproses banding menjadi In Review, Diterima, atau Ditolak dengan respons yang terdokumentasi.",
+      "Jika banding diterima, skor revisi guru akan menjadi referensi utama di hasil siswa.",
+    ],
+    keywords: ["banding nilai", "in review", "diterima", "ditolak", "tab banding"],
+  },
+  {
+    id: "fitur-update-sistem-guru",
+    category: "Dashboard Guru",
+    question: "Menu Update Sistem/Revisi untuk guru fungsinya apa?",
+    answer: [
+      "Halaman ini menampilkan histori perubahan fitur (major/minor) antar versi sistem.",
+      "Gunakan halaman ini untuk briefing cepat tim pengajar sebelum memakai alur baru.",
+      "Visibilitas menu dikendalikan lewat feature flag publik oleh superadmin.",
+    ],
+    keywords: ["update sistem", "revisi", "changelog", "feature flag"],
+  },
 ];
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

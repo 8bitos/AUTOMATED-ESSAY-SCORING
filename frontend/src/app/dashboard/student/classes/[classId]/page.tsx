@@ -17,6 +17,7 @@ import {
   FiLink,
   FiPaperclip,
   FiSearch,
+  FiX,
 } from "react-icons/fi";
 import TeacherProfileModal from "@/components/TeacherProfileModal";
 import SafeHtml from "@/components/ui/SafeHtml";
@@ -97,6 +98,40 @@ interface GradeAppealItem {
   teacher_response?: string;
   created_at?: string;
 }
+
+type AppealReasonTemplate = {
+  id: string;
+  label: string;
+  reasonType: string;
+  reasonText: string;
+};
+
+const APPEAL_REASON_TEMPLATES: AppealReasonTemplate[] = [
+  {
+    id: "rubrik_tidak_sesuai",
+    label: "Skor AI tidak sesuai rubrik",
+    reasonType: "nilai_tidak_sesuai",
+    reasonText: "Skor AI tidak sesuai rubrik pada beberapa aspek penilaian.",
+  },
+  {
+    id: "feedback_tidak_relevan",
+    label: "Feedback AI tidak relevan",
+    reasonType: "feedback_tidak_relevan",
+    reasonText: "Feedback AI tidak relevan dengan jawaban yang saya kirim.",
+  },
+  {
+    id: "penilaian_tidak_konsisten",
+    label: "Penilaian tidak konsisten",
+    reasonType: "penilaian_tidak_konsisten",
+    reasonText: "Penilaian terlihat tidak konsisten dengan kriteria soal.",
+  },
+  {
+    id: "lainnya",
+    label: "Lainnya",
+    reasonType: "lainnya",
+    reasonText: "",
+  },
+];
 
 const parseSectionContentCards = (raw?: string): SectionContentCardData[] => {
   if (!raw) return [];
@@ -324,6 +359,13 @@ export default function StudentClassMaterialsPage() {
   const [collapsedGradeContents, setCollapsedGradeContents] = useState<Record<string, boolean>>({});
   const [collapsedGradeQuestions, setCollapsedGradeQuestions] = useState<Record<string, boolean>>({});
   const [gradeAppealsBySubmission, setGradeAppealsBySubmission] = useState<Record<string, GradeAppealItem>>({});
+  const [appealDialog, setAppealDialog] = useState<{
+    submissionId: string;
+    questionTitle: string;
+    selectedTemplateId: string;
+    customReason: string;
+    loading: boolean;
+  } | null>(null);
 
   const fetchClassDetails = useCallback(async () => {
     if (!classId) return;
@@ -390,6 +432,51 @@ export default function StudentClassMaterialsPage() {
   useEffect(() => {
     void loadMyAppeals();
   }, [loadMyAppeals]);
+
+  const closeAppealDialog = () => {
+    setAppealDialog((prev) => {
+      if (!prev || prev.loading) return prev;
+      return null;
+    });
+  };
+
+  const submitAppealDialog = useCallback(async () => {
+    if (!appealDialog || appealDialog.loading) return;
+    const selectedTemplate = APPEAL_REASON_TEMPLATES.find((t) => t.id === appealDialog.selectedTemplateId) || APPEAL_REASON_TEMPLATES[0];
+    const reasonText =
+      selectedTemplate.id === "lainnya" ? appealDialog.customReason.trim() : selectedTemplate.reasonText.trim();
+
+    if (!reasonText || reasonText.length < 10) {
+      window.alert("Alasan banding minimal 10 karakter agar guru bisa menindaklanjuti.");
+      return;
+    }
+
+    try {
+      setAppealDialog((prev) => (prev ? { ...prev, loading: true } : prev));
+      const res = await fetch("/api/grade-appeals", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          submission_id: appealDialog.submissionId,
+          reason_type: selectedTemplate.reasonType,
+          reason_text: reasonText,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(body?.message || "Gagal mengajukan banding.");
+        setAppealDialog((prev) => (prev ? { ...prev, loading: false } : prev));
+        return;
+      }
+      window.alert("Banding nilai berhasil diajukan ke guru.");
+      setAppealDialog(null);
+      await loadMyAppeals();
+    } catch {
+      window.alert("Terjadi kesalahan saat mengajukan banding.");
+      setAppealDialog((prev) => (prev ? { ...prev, loading: false } : prev));
+    }
+  }, [appealDialog, loadMyAppeals]);
 
   const materialUpdateSignature = (material: Material): string => material.updated_at || material.created_at || "";
   const isMaterialRead = (material: Material): boolean => {
@@ -932,9 +1019,8 @@ export default function StudentClassMaterialsPage() {
           return (
             <div
               key={material.id}
-              className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm ring-1 ring-black/5 transition hover:shadow-md sm:p-6 ${getSectionSurfaceTone(type)}`}
+              className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,transform,border-color] duration-200 hover:-translate-y-[1px] hover:shadow-md sm:p-5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30"
             >
-              <div className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${getSectionAccentTone(type)}`} />
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -953,29 +1039,14 @@ export default function StudentClassMaterialsPage() {
                     <span className="line-clamp-2">{material.judul}</span>
                   </h2>
                   <p className="line-clamp-2 max-w-3xl text-sm leading-relaxed text-[color:var(--ink-600)]">{briefDescription}</p>
-                  <div className="flex flex-wrap gap-2 text-xs text-[color:var(--ink-600)]">
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                      <FiBookOpen size={13} /> {summary.completedAssignments}/{summary.totalAssignments} Aktivitas
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                      <FiCheckCircle size={13} /> {summary.reviewedAssignments}/{summary.totalAssignments} Direview Guru
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                      {summary.isRead ? <FiCheckCircle size={13} /> : <FiClock size={13} />}
-                      {summary.isRead ? "Materi Dibaca" : "Belum Dibaca"}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                      {summary.status === "submitted" ? <FiCheckCircle size={13} /> : <FiClock size={13} />}
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone}`}>{statusLabel}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                      <FiLayers size={13} /> {cards.length} Konten
-                    </span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--ink-600)]">
+                    <span>{summary.completedAssignments}/{summary.totalAssignments} aktivitas</span>
+                    <span>{summary.reviewedAssignments}/{summary.totalAssignments} direview</span>
+                    <span>{cards.length} konten</span>
+                    <span>{summary.isRead ? "Materi dibaca" : "Belum dibaca"}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone}`}>{statusLabel}</span>
+                    <span className="font-semibold text-[color:var(--ink-800)]">Progress {summary.progress}%</span>
                   </div>
-                </div>
-                <div className="min-w-28 rounded-xl border border-slate-300/90 bg-white/95 px-3 py-2 text-right shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                  <p className="text-xs text-[color:var(--ink-500)]">Progress</p>
-                  <p className="text-lg font-semibold text-[color:var(--ink-900)]">{summary.progress}%</p>
                 </div>
               </div>
 
@@ -983,7 +1054,7 @@ export default function StudentClassMaterialsPage() {
                 <div className="h-full bg-[color:var(--sage-700)]" style={{ width: `${summary.progress}%` }} />
               </div>
 
-              <div className="mt-4 rounded-xl border border-slate-300/90 bg-slate-50/90 p-3 shadow-inner ring-1 ring-slate-200/60 sm:p-4 dark:border-slate-700 dark:bg-slate-800/70 dark:ring-slate-700/70">
+              <div className="mt-4 p-0">
                 <div className="w-full inline-flex items-center justify-between text-sm text-[color:var(--ink-700)]">
                   <button
                     type="button"
@@ -1045,7 +1116,7 @@ export default function StudentClassMaterialsPage() {
                 </div>
 
                 {isExpanded && (
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 space-y-3">
                     {cards.length === 0 && (
                       <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-[color:var(--ink-600)] whitespace-pre-line">
                         {toPlainText(material.capaian_pembelajaran || material.isi_materi || "") || "Konten section belum tersedia."}
@@ -1062,6 +1133,8 @@ export default function StudentClassMaterialsPage() {
                       </div>
                     )}
 
+                    {cards.length > 0 && (
+                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm divide-y divide-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:divide-slate-700 dark:shadow-black/20">
                     {cards.map((card, cardIndex) => {
                       const hasInlineView = card.type === "materi" || card.type === "gambar" || card.type === "video" || card.type === "upload";
                       const shouldOpenDetail = card.type === "soal" || card.type === "tugas" || card.type === "penilaian";
@@ -1082,10 +1155,7 @@ export default function StudentClassMaterialsPage() {
                         ) || "Konten tersedia di halaman materi.";
                       const shortBody = cardBody.length > 150 ? `${cardBody.slice(0, 150).trimEnd()}...` : cardBody;
                       return (
-                        <div
-                          key={card.id}
-                          className="rounded-xl border border-slate-300/80 bg-white p-3.5 shadow-sm ring-1 ring-slate-200/50 dark:border-slate-700 dark:bg-slate-900 dark:ring-slate-700/60"
-                        >
+                        <div key={card.id} className="bg-white dark:bg-slate-900">
                           <button
                             type="button"
                             onClick={() =>
@@ -1094,20 +1164,21 @@ export default function StudentClassMaterialsPage() {
                                 [collapseKey]: !prev[collapseKey],
                               }))
                             }
-                            className="flex w-full items-center justify-between gap-2 text-left"
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/70"
                           >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-semibold text-[color:var(--ink-500)]">{cardIndex + 1}.</span>
-                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${getTypeTone(card.type)}`}>
+                            <div className="flex min-w-0 items-start gap-2">
+                              <span className={`inline-flex h-6 w-[74px] shrink-0 items-center justify-center rounded-full px-2.5 text-[11px] font-medium ${getTypeTone(card.type)}`}>
                                 {getTypeLabel(card.type)}
                               </span>
-                              <p className="line-clamp-2 text-sm font-semibold text-[color:var(--ink-900)]">{card.title}</p>
+                              <p className="line-clamp-2 text-sm font-semibold text-[color:var(--ink-900)]">
+                                {cardIndex + 1}. {card.title}
+                              </p>
                             </div>
                             {isCollapsed ? <FiChevronDown className="shrink-0" /> : <FiChevronUp className="shrink-0" />}
                           </button>
 
                           {!isCollapsed && (
-                            <>
+                            <div className="px-3 pb-3">
                               {(card.type !== "materi" || isMateriLengkap) && (
                                 <p className="mt-1 text-sm text-[color:var(--ink-600)]">{shortBody}</p>
                               )}
@@ -1470,11 +1541,13 @@ export default function StudentClassMaterialsPage() {
                                   </Link>
                                 </div>
                               )}
-                            </>
+                            </div>
                           )}
                         </div>
                       );
                     })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1488,25 +1561,25 @@ export default function StudentClassMaterialsPage() {
       {activeTab === "nilai" && (
         <section className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-slate-300 bg-white p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Rata-rata Kelas</p>
-              <p className="text-2xl font-semibold text-slate-900">{gradeOverview.classAverage ?? "-"}</p>
+            <div className="rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Rata-rata Kelas</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{gradeOverview.classAverage ?? "-"}</p>
             </div>
-            <div className="rounded-xl border border-slate-300 bg-white p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Sudah Submit</p>
-              <p className="text-2xl font-semibold text-slate-900">
+            <div className="rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Sudah Submit</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
                 {gradeOverview.submittedCount}/{gradeOverview.totalQuestions}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-300 bg-white p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Sudah Dinilai</p>
-              <p className="text-2xl font-semibold text-slate-900">
+            <div className="rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Sudah Dinilai</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
                 {gradeOverview.gradedCount}/{gradeOverview.totalQuestions}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-300 bg-white p-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">Sudah Direview</p>
-              <p className="text-2xl font-semibold text-slate-900">
+            <div className="rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Sudah Direview</p>
+              <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
                 {gradeOverview.reviewedCount}/{gradeOverview.totalQuestions}
               </p>
             </div>
@@ -1546,37 +1619,37 @@ export default function StudentClassMaterialsPage() {
                 const soalContents = row.contents.filter((content) => content.type === "soal");
                 const tugasContents = row.contents.filter((content) => content.type === "tugas");
                 return (
-                <div key={row.id} className="rounded-xl border border-slate-300 bg-white p-4">
+                <div key={row.id} className="rounded-xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                   <button
                     type="button"
                     onClick={() => setCollapsedGradeSections((prev) => ({ ...prev, [row.id]: !prev[row.id] }))}
                     className="flex w-full items-start justify-between gap-3 text-left"
                   >
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Section {row.sectionNo}</p>
-                      <h3 className="text-base font-semibold text-slate-900">{row.title}</h3>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Section {row.sectionNo}</p>
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{row.title}</h3>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className="text-xs text-slate-500">Nilai Rata-rata</p>
-                        <p className="text-lg font-semibold text-slate-900">{row.averageScore ?? "-"}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Nilai Rata-rata</p>
+                        <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">{row.averageScore ?? "-"}</p>
                       </div>
-                      {sectionCollapsed ? <FiChevronDown className="mt-1 shrink-0" /> : <FiChevronUp className="mt-1 shrink-0" />}
+                      {sectionCollapsed ? <FiChevronDown className="mt-1 shrink-0 text-slate-500 dark:text-slate-300" /> : <FiChevronUp className="mt-1 shrink-0 text-slate-500 dark:text-slate-300" />}
                     </div>
                   </button>
                   {!sectionCollapsed && (
                     <>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
+                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                           Submit: {row.submittedCount}/{row.totalQuestions}
                         </span>
-                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
+                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                           Dinilai: {row.gradedCount}/{row.totalQuestions}
                         </span>
-                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
+                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                           Feedback: {row.feedbackCount}
                         </span>
-                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
+                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                           Progress: {row.progress}%
                         </span>
                         <span
@@ -1598,7 +1671,7 @@ export default function StudentClassMaterialsPage() {
 
                       <div className="mt-3 space-y-3">
                         {row.contents.length === 0 && (
-                          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             Belum ada konten soal/tugas dengan data penilaian pada section ini.
                           </div>
                         )}
@@ -1774,32 +1847,14 @@ export default function StudentClassMaterialsPage() {
                                                               <button
                                                                 type="button"
                                                                 className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100"
-                                                                onClick={async () => {
-                                                                  const reason = window.prompt(
-                                                                    "Tulis alasan banding (contoh: skor AI tidak sesuai rubrik):"
-                                                                  );
-                                                                  if (!reason || !reason.trim()) return;
-                                                                  try {
-                                                                    const res = await fetch("/api/grade-appeals", {
-                                                                      method: "POST",
-                                                                      credentials: "include",
-                                                                      headers: { "Content-Type": "application/json" },
-                                                                      body: JSON.stringify({
-                                                                        submission_id: item.submissionId,
-                                                                        reason_type: "nilai_tidak_sesuai",
-                                                                        reason_text: reason.trim(),
-                                                                      }),
-                                                                    });
-                                                                    const body = await res.json().catch(() => ({}));
-                                                                    if (!res.ok) {
-                                                                      window.alert(body?.message || "Gagal mengajukan banding.");
-                                                                      return;
-                                                                    }
-                                                                    window.alert("Banding nilai berhasil diajukan ke guru.");
-                                                                    await loadMyAppeals();
-                                                                  } catch {
-                                                                    window.alert("Terjadi kesalahan saat mengajukan banding.");
-                                                                  }
+                                                                onClick={() => {
+                                                                  setAppealDialog({
+                                                                    submissionId: item.submissionId || "",
+                                                                    questionTitle: item.title || "Soal",
+                                                                    selectedTemplateId: APPEAL_REASON_TEMPLATES[0].id,
+                                                                    customReason: "",
+                                                                    loading: false,
+                                                                  });
                                                                 }}
                                                               >
                                                                 Ajukan Banding
@@ -1892,6 +1947,98 @@ export default function StudentClassMaterialsPage() {
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
       />
+
+      {appealDialog && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/55 p-4" role="dialog" aria-modal="true" aria-label="Ajukan Banding Nilai">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Ajukan Banding Nilai</h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{appealDialog.questionTitle}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAppealDialog}
+                disabled={appealDialog.loading}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                aria-label="Tutup popup banding"
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Pilih Alasan</p>
+              {APPEAL_REASON_TEMPLATES.map((template) => (
+                <label
+                  key={`appeal-template-${template.id}`}
+                  className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <input
+                    type="radio"
+                    name="appeal_reason_template"
+                    className="mt-0.5"
+                    checked={appealDialog.selectedTemplateId === template.id}
+                    onChange={() =>
+                      setAppealDialog((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              selectedTemplateId: template.id,
+                            }
+                          : prev
+                      )
+                    }
+                    disabled={appealDialog.loading}
+                  />
+                  <span>{template.label}</span>
+                </label>
+              ))}
+
+              {appealDialog.selectedTemplateId === "lainnya" && (
+                <div className="mt-2">
+                  <label className="text-xs font-medium text-slate-700 dark:text-slate-200">Alasan Lainnya</label>
+                  <textarea
+                    className="sage-input mt-1 min-h-24"
+                    placeholder="Tulis alasan banding kamu..."
+                    value={appealDialog.customReason}
+                    onChange={(e) =>
+                      setAppealDialog((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              customReason: e.target.value,
+                            }
+                          : prev
+                      )
+                    }
+                    disabled={appealDialog.loading}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeAppealDialog}
+                disabled={appealDialog.loading}
+                className="sage-button-outline !px-3 !py-2 text-xs"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitAppealDialog()}
+                disabled={appealDialog.loading}
+                className="sage-button !px-3 !py-2 text-xs"
+              >
+                {appealDialog.loading ? "Mengirim..." : "Kirim Banding"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

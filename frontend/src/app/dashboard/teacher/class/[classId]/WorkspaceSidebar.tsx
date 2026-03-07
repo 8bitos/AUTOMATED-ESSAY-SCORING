@@ -36,7 +36,7 @@ export default function WorkspaceSidebar({
           <button
             type="button"
             onClick={() => onToggleCollapsed(false)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-100 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:shadow-black/35 dark:hover:bg-slate-800 dark:hover:shadow-black/50"
             aria-label="Tampilkan sidebar ruang kelas"
             title="Tampilkan sidebar ruang kelas"
           >

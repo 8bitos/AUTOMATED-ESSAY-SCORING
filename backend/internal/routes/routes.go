@@ -111,6 +111,8 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	protectedRouter.HandleFunc("/profile", authHandlers.ProfileHandler).Methods("GET")
 	protectedRouter.HandleFunc("/profile", authHandlers.UpdateProfileHandler).Methods("PATCH")
 	protectedRouter.HandleFunc("/profile/password", authHandlers.ChangePasswordHandler).Methods("POST")
+	protectedRouter.HandleFunc("/user-preferences", authHandlers.GetUserPreferencesHandler).Methods("GET")
+	protectedRouter.HandleFunc("/user-preferences", authHandlers.UpdateUserPreferencesHandler).Methods("PUT")
 	protectedRouter.HandleFunc("/profile-change-requests", authHandlers.MyProfileChangeRequestsHandler).Methods("GET")
 	protectedRouter.HandleFunc("/announcements/active", adminOpsHandlers.ListActiveAnnouncementsHandler).Methods("GET")
 	protectedRouter.HandleFunc("/feature-flags/public", adminOpsHandlers.ListPublicFeatureFlagsHandler).Methods("GET")

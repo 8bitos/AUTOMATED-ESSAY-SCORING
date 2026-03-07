@@ -204,6 +204,116 @@ const FAQ_ITEMS: FAQItem[] = [
     ],
     keywords: ["pengumuman", "notifikasi", "beda"],
   },
+  {
+    id: "materi-soal-compact-expand",
+    category: "Materi & Tugas",
+    question: "Kenapa daftar soal sekarang lebih ringkas dan detailnya harus dibuka dulu?",
+    answer: [
+      "Fungsi tampilan ringkas adalah mempercepat scanning daftar soal saat jumlah soal banyak.",
+      "Cara pakai: ketuk card soal untuk membuka detail (bobot, status submit, percobaan, nilai, dan aksi lanjutan), lalu ketuk lagi untuk menutup.",
+      "Model ini membantu fokus ke soal yang ingin dikerjakan tanpa harus scroll halaman panjang terus-menerus.",
+    ],
+    keywords: ["compact", "expand", "daftar soal", "detail soal", "ui baru"],
+  },
+  {
+    id: "materi-rubrik-collapse",
+    category: "Materi & Tugas",
+    question: "Rubrik di halaman pengerjaan bisa dibuka/tutup?",
+    answer: [
+      "Ya. Rubrik ditampilkan dalam panel collapse/expand ketika guru mengaktifkan visibilitas rubrik pada soal tersebut.",
+      "Cara pakai: buka detail soal -> klik panel Rubrik untuk melihat aspek dan deskriptor -> tutup kembali agar area kerja jawaban lebih lega.",
+      "Fungsi ini menjaga keseimbangan antara keterbacaan rubrik dan kerapian halaman pengerjaan.",
+    ],
+    keywords: ["rubrik", "collapse", "expand", "pengerjaan soal"],
+  },
+  {
+    id: "nilai-hasil-disembunyikan",
+    category: "Nilai & Feedback",
+    question: "Kenapa kadang muncul status “Hasil disembunyikan”?",
+    answer: [
+      "Guru dapat mengatur visibilitas hasil per sesi/card soal.",
+      "Jika status ini muncul, fungsi sistem adalah menahan akses detail nilai sementara meskipun submit tetap berjalan normal.",
+      "Kamu bisa lanjut mengerjakan/submit, lalu cek kembali setelah hasil dirilis oleh guru.",
+    ],
+    keywords: ["hasil disembunyikan", "visibilitas hasil", "release nilai"],
+  },
+  {
+    id: "nilai-ajukan-banding-template",
+    category: "Nilai & Feedback",
+    question: "Bagaimana alur Ajukan Banding terbaru?",
+    answer: [
+      "Fungsi fitur banding adalah memberi jalur resmi untuk meminta review ulang nilai.",
+      "Cara pakai: klik Ajukan Banding -> pilih template alasan (radio) yang paling sesuai -> jika memilih “Lainnya”, isi alasan custom pada textbox yang muncul.",
+      "Agar proses cepat, tulis alasan spesifik berdasarkan aspek rubrik, bagian jawaban, atau ketidaksesuaian skor yang kamu temukan.",
+    ],
+    keywords: ["ajukan banding", "template alasan", "radio", "lainnya"],
+  },
+  {
+    id: "fitur-search-content-ctrlk",
+    category: "Fitur Student",
+    question: "Ctrl/Cmd+K sekarang bisa cari isi konten juga?",
+    answer: [
+      "Fungsi Command Search (Ctrl/Cmd+K) adalah membuka halaman/fitur dengan cepat lewat satu kolom pencarian.",
+      "Pencarian dapat membaca nama menu dan konten belajar yang relevan sehingga hasil lebih tepat.",
+      "Cara pakai: tekan Ctrl/Cmd+K -> ketik topik/frasa soal/istilah penting -> pilih hasil untuk langsung pindah ke halaman target.",
+    ],
+    keywords: ["ctrl k", "cmd k", "search konten", "global search"],
+  },
+  {
+    id: "materi-submit-mode",
+    category: "Materi & Tugas",
+    question: "Apa beda submit per soal vs submit semua jawaban sekaligus?",
+    answer: [
+      "Per soal: jawaban dikirim satu per satu saat kamu menekan submit di card soal terkait.",
+      "Submit semua: semua jawaban di dalam sesi dikirim sekaligus lewat tombol submit akhir.",
+      "Mode yang aktif mengikuti pengaturan guru pada sesi/soal tersebut.",
+    ],
+    keywords: ["submit semua", "bulk submit", "submit per soal", "mode submit"],
+  },
+  {
+    id: "materi-attempt-cooldown",
+    category: "Materi & Tugas",
+    question: "Bagaimana aturan percobaan ulang (attempt) dan cooldown?",
+    answer: [
+      "Setiap soal bisa punya batas percobaan berbeda sesuai setelan guru.",
+      "Jika ada cooldown, kamu harus menunggu durasi tertentu sebelum bisa mencoba lagi.",
+      "Pada beberapa sesi, percobaan tak terbatas juga bisa diaktifkan oleh guru.",
+    ],
+    keywords: ["attempt", "coba ulang", "cooldown", "batas percobaan"],
+  },
+  {
+    id: "materi-integritas-ujian",
+    category: "Materi & Tugas",
+    question: "Kenapa saat ujian fullscreen/pindah tab bisa muncul peringatan?",
+    answer: [
+      "Sebagian sesi memakai pengaturan integritas pengerjaan dari guru.",
+      "Jika mode fullscreen wajib atau deteksi perpindahan tab aktif, sistem akan memberi peringatan saat aturan dilanggar.",
+      "Ikuti instruksi popup agar pengerjaan tetap valid dan tidak terkunci.",
+    ],
+    keywords: ["fullscreen", "pindah tab", "integritas", "peringatan ujian"],
+  },
+  {
+    id: "nilai-status-ai",
+    category: "Nilai & Feedback",
+    question: "Apa arti status Queued/Processing/Waiting Review di nilai?",
+    answer: [
+      "Queued: jawaban sudah masuk antrean penilaian AI.",
+      "Processing: AI sedang memproses jawaban.",
+      "Waiting Review: hasil AI ada, tetapi masih menunggu review/revisi guru (jika diperlukan).",
+    ],
+    keywords: ["queued", "processing", "waiting review", "status ai"],
+  },
+  {
+    id: "kelas-tab-materi-nilai",
+    category: "Kelas",
+    question: "Di detail kelas ada tab Materi dan Nilai, bedanya apa?",
+    answer: [
+      "Tab Materi fokus ke daftar materi, progres belajar, dan akses pengerjaan soal.",
+      "Tab Nilai fokus ke ringkasan nilai per materi/per soal serta status feedback.",
+      "Gunakan tab Nilai untuk cek cepat performa tanpa harus membuka tiap materi satu per satu.",
+    ],
+    keywords: ["tab materi", "tab nilai", "detail kelas", "progres"],
+  },
 ];
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

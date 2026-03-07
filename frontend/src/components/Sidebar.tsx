@@ -480,6 +480,9 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     { href: '/dashboard/superadmin/users', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H7m4-8a4 4 0 100-8 4 4 0 000 8z"></path></svg>
     ), label: 'Manajemen User' },
+    { href: '/dashboard/superadmin/help', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9a3.5 3.5 0 116.544 1.667c-.538.917-1.607 1.5-2.272 2.333-.39.488-.5 1-.5 1.5m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    ), label: 'Bantuan' },
   ];
 
   const updatesLink =
@@ -537,20 +540,6 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
         onClick={() => setSidebarOpen(false)}
       ></div>
 
-      {/* Floating open button (mobile) */}
-      <button
-        type="button"
-        className={`fixed left-3 top-1/2 z-50 -translate-y-1/2 rounded-r-xl border border-slate-200 bg-white px-2 py-2 text-slate-700 shadow-lg transition md:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 ${
-          sidebarOpen ? "pointer-events-none opacity-0" : "opacity-100 hover:bg-slate-50 dark:hover:bg-slate-800"
-        }`}
-        aria-label="Buka sidebar"
-        aria-controls="sidebar"
-        aria-expanded={sidebarOpen}
-        onClick={() => setSidebarOpen(true)}
-      >
-        <span className="text-sm font-semibold">{">"}</span>
-      </button>
-
       {/* Sidebar */}
       <div
         id="sidebar"
@@ -596,7 +585,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
             </div>
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">SAGE</p>
-              <p className="truncate text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Smart Automated Grading Engine</p>
+              <p className="text-[9px] uppercase tracking-[0.06em] text-slate-500 dark:text-slate-400">Smart Automated Grading Engine</p>
             </div>
           </div>
         </div>

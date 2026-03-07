@@ -258,6 +258,66 @@ func (h *AuthHandlers) MyProfileChangeRequestsHandler(w http.ResponseWriter, r *
 	respondWithJSON(w, http.StatusOK, requests)
 }
 
+func (h *AuthHandlers) GetUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok || userID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	prefs, err := h.AuthService.GetUserPreferences(userID)
+	if err != nil {
+		if err.Error() == "user not found" {
+			respondWithError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Failed to load user preferences")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"preferences": prefs,
+	})
+}
+
+func (h *AuthHandlers) UpdateUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok || userID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	var payload struct {
+		Preferences map[string]interface{} `json:"preferences"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if len(payload.Preferences) == 0 {
+		respondWithError(w, http.StatusBadRequest, "preferences is required")
+		return
+	}
+
+	updated, err := h.AuthService.UpdateUserPreferences(userID, payload.Preferences)
+	if err != nil {
+		if err.Error() == "user not found" {
+			respondWithError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if err.Error() == "no preference updates provided" {
+			respondWithError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Failed to save user preferences")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"preferences": updated,
+	})
+}
+
 // ReviewProfileChangeRequestHandler approves or rejects a profile change request.
 func (h *AuthHandlers) ReviewProfileChangeRequestHandler(w http.ResponseWriter, r *http.Request) {
 	reviewerID, ok := r.Context().Value("userID").(string)

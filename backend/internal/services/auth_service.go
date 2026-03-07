@@ -1935,3 +1935,55 @@ func requiresApproval(role, field string) bool {
 		return false
 	}
 }
+
+func (s *AuthService) GetUserPreferences(userID string) (map[string]interface{}, error) {
+	var raw []byte
+	if err := s.db.QueryRow(`SELECT COALESCE(ui_preferences, '{}'::jsonb) FROM users WHERE id = $1`, userID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("error loading user preferences: %w", err)
+	}
+
+	prefs := map[string]interface{}{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &prefs); err != nil {
+			return nil, fmt.Errorf("error parsing user preferences: %w", err)
+		}
+	}
+	return prefs, nil
+}
+
+func (s *AuthService) UpdateUserPreferences(userID string, patch map[string]interface{}) (map[string]interface{}, error) {
+	if len(patch) == 0 {
+		return nil, fmt.Errorf("no preference updates provided")
+	}
+
+	payload, err := json.Marshal(patch)
+	if err != nil {
+		return nil, fmt.Errorf("error encoding user preferences: %w", err)
+	}
+
+	var raw []byte
+	if err := s.db.QueryRow(
+		`UPDATE users
+		 SET ui_preferences = COALESCE(ui_preferences, '{}'::jsonb) || $1::jsonb
+		 WHERE id = $2
+		 RETURNING COALESCE(ui_preferences, '{}'::jsonb)`,
+		string(payload),
+		userID,
+	).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("error saving user preferences: %w", err)
+	}
+
+	updated := map[string]interface{}{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &updated); err != nil {
+			return nil, fmt.Errorf("error parsing saved user preferences: %w", err)
+		}
+	}
+	return updated, nil
+}

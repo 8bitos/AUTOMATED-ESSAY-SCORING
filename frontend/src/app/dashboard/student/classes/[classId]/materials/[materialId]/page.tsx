@@ -1663,20 +1663,20 @@ export default function StudentMaterialDetailPage() {
       {activeSection === "questions" && (isSoalContext || isTugasContext) && (
         <section className="space-y-4">
           {!isTugasContext && !isCardAnswerMode && (
-            <div className="sage-panel p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-sm text-[color:var(--ink-600)]">Urutkan Soal:</label>
+            <div className="sage-panel p-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--ink-500)]">Urutkan:</label>
                 <select
                   value={questionSort}
                   onChange={(e) => setQuestionSort(e.target.value as QuestionSort)}
-                  className="sage-input min-w-52"
+                  className="sage-input min-w-44"
                 >
                   <option value="default">Urutan Default</option>
                   <option value="weight_desc">Bobot Paling Besar</option>
                   <option value="alphabet">Alphabet</option>
                   <option value="unanswered_first">Belum Dijawab Dulu</option>
                 </select>
-                <label className="inline-flex items-center gap-2 text-sm text-[color:var(--ink-600)]">
+                <label className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/[0.02] px-2.5 py-1.5 text-xs font-medium text-[color:var(--ink-600)] dark:border-white/15 dark:bg-white/[0.03]">
                   <input
                     type="checkbox"
                     checked={hideAnsweredQuestions}
@@ -1952,8 +1952,13 @@ export default function StudentMaterialDetailPage() {
             const isAttemptLimitReached =
               sectionQuizSettings.attempt_limit > 0 && attemptCount >= sectionQuizSettings.attempt_limit;
             const canReattemptNow = canStartReattempt(q);
+            const gradingState = getQuestionGradingState(q);
+            const scoreLabel =
+              gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result"
+                ? "Sedang diproses..."
+                : q.revised_score ?? q.skor_ai ?? "-";
             return (
-            <div key={q.id} className="sage-card p-5">
+            <div key={q.id} className="sage-card p-3.5 md:p-4">
               <div
                 role="button"
                 tabIndex={0}
@@ -1974,39 +1979,55 @@ export default function StudentMaterialDetailPage() {
                   }
                 }}
               >
-                <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
-                  <p className="mt-1 text-[color:var(--ink-800)]">{q.teks_soal}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--ink-500)]">Soal {index + 1}</p>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        q.submission_id ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                      }`}
+                    >
+                      {isReattempting ? "Mode Coba Ulang" : q.submission_id ? "Sudah Submit" : "Belum Submit"}
+                    </span>
+                    {q.submission_id && (
+                      <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                        Nilai: {scoreLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-sm font-medium leading-relaxed text-[color:var(--ink-800)] md:text-[15px]">
+                    {q.teks_soal}
+                  </p>
                 </div>
-                <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-sm text-slate-600">
+                <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/80 text-sm text-slate-600 dark:border-white/15 dark:bg-slate-900/70 dark:text-slate-200">
                   {detailOpen ? "▴" : "▾"}
                 </span>
               </div>
 
               {detailOpen && sectionQuizSettings.show_rubric_in_question && Array.isArray(q.rubrics) && q.rubrics.length > 0 && (
-                <details className="group mt-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                <details className="group mt-3 overflow-hidden rounded-xl border border-black/10 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.03]">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Rubrik Penilaian</p>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--ink-600)]">Rubrik Penilaian</p>
+                      <p className="text-[11px] text-[color:var(--ink-500)]">
                         {q.rubrics.length} aspek • klik untuk buka/tutup
                       </p>
                     </div>
-                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 group-open:hidden">
+                    <span className="inline-flex rounded-full border border-black/10 bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--ink-700)] group-open:hidden dark:border-white/15 dark:bg-slate-900/70 dark:text-slate-200">
                       Buka
                     </span>
-                    <span className="hidden rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 group-open:inline-flex">
+                    <span className="hidden rounded-full border border-black/10 bg-white/80 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--ink-700)] group-open:inline-flex dark:border-white/15 dark:bg-slate-900/70 dark:text-slate-200">
                       Tutup
                     </span>
                   </summary>
-                  <div className="border-t border-slate-200 px-3 pb-3 pt-2 space-y-2">
+                  <div className="border-t border-black/10 px-3 pb-3 pt-2 space-y-2 dark:border-white/10">
                     {q.rubrics.map((rubric, rubricIndex) => {
                       const descriptors = normalizeRubricDescriptors(rubric);
                       return (
-                        <div key={`${q.id}-rubric-${rubricIndex}`} className="rounded-lg border border-slate-200 bg-white p-2.5">
-                          <p className="text-sm font-semibold text-slate-800">{rubric.nama_aspek || `Aspek ${rubricIndex + 1}`}</p>
+                        <div key={`${q.id}-rubric-${rubricIndex}`} className="rounded-lg border border-black/10 bg-white/80 p-2.5 dark:border-white/10 dark:bg-slate-900/60">
+                          <p className="text-sm font-semibold text-[color:var(--ink-800)]">{rubric.nama_aspek || `Aspek ${rubricIndex + 1}`}</p>
                           {descriptors.length > 0 ? (
-                            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                            <ul className="mt-1 space-y-0.5 text-xs text-[color:var(--ink-600)]">
                               {descriptors.map((row) => (
                                 <li key={`${q.id}-${rubricIndex}-${row.score}`}>
                                   <span className="font-semibold">{row.score}</span>: {row.description}
@@ -2014,7 +2035,7 @@ export default function StudentMaterialDetailPage() {
                               ))}
                             </ul>
                           ) : (
-                            <p className="mt-1 text-xs text-slate-500">Deskriptor rubrik belum tersedia.</p>
+                            <p className="mt-1 text-xs text-[color:var(--ink-500)]">Deskriptor rubrik belum tersedia.</p>
                           )}
                         </div>
                       );
@@ -2023,15 +2044,8 @@ export default function StudentMaterialDetailPage() {
                 </details>
               )}
               {detailOpen && (
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3 dark:border-white/10">
                 <span className="sage-pill">Bobot: {typeof q.weight === "number" && q.weight > 0 ? q.weight : 1}</span>
-                <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-                    q.submission_id ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  {isReattempting ? "Mode Coba Ulang" : q.submission_id ? "Sudah Submit" : "Belum Submit"}
-                </span>
                 {q.submission_id && (
                   <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
                     Percobaan: {attemptCount} / {attemptLimitLabel}
@@ -2039,17 +2053,10 @@ export default function StudentMaterialDetailPage() {
                 )}
                 {q.submission_id && (
                   <span className="sage-pill">
-                    Nilai: {(() => {
-                      const gradingState = getQuestionGradingState(q);
-                      if (gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result") {
-                        return "Sedang diproses...";
-                      }
-                      return q.revised_score ?? q.skor_ai ?? "-";
-                    })()}
+                    Nilai: {scoreLabel}
                   </span>
                 )}
                 {q.submission_id && (() => {
-                  const gradingState = getQuestionGradingState(q);
                   if (gradingState === "queued" || gradingState === "processing" || gradingState === "waiting_result") {
                     return <span className="sage-pill bg-amber-100 text-amber-800">AI {gradingState === "queued" ? "Queued" : "Processing"}</span>;
                   }
@@ -2078,7 +2085,7 @@ export default function StudentMaterialDetailPage() {
               </div>
               )}
               {detailOpen && (!q.submission_id || isReattempting) && (
-                <div className="mt-4 space-y-3">
+                <div className="mt-3 space-y-3">
                   <textarea
                     className="sage-input min-h-32"
                     placeholder="Tulis jawaban kamu di sini..."
@@ -2121,7 +2128,7 @@ export default function StudentMaterialDetailPage() {
                 </div>
               )}
               {detailOpen && q.submission_id && !isReattempting && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-black/5 pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3 dark:border-white/10">
                   <button
                     type="button"
                     className="sage-button-outline"
@@ -2137,7 +2144,7 @@ export default function StudentMaterialDetailPage() {
                 </div>
               )}
               {detailOpen && q.submission_id && q.student_essay_text && !isReattempting && (
-                <div className="mt-4 bg-white border border-black/5 rounded-xl p-4">
+                <div className="mt-3 rounded-xl border border-black/10 bg-white/80 p-3.5 dark:border-white/10 dark:bg-slate-900/60">
                   <button
                     type="button"
                     onClick={() => setOpenStudentAnswers((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}

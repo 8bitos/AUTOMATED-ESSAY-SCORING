@@ -21,8 +21,8 @@ func NewUploadHandler() *UploadHandler {
 
 // UploadFileHandler handles file uploads.
 func (h *UploadHandler) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse input, with a 5MB max file size
-	r.ParseMultipartForm(5 << 20) // 5 MB
+	// 1. Parse input, with a 10MB max file size
+	r.ParseMultipartForm(10 << 20) // 10 MB
 
 	// 2. Retrieve file from posted form-data
 	file, handler, err := r.FormFile("file") // "file" is the key in the form data

@@ -48,7 +48,8 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
       "Menambahkan animasi transisi halus pada popup CRUD dan dropdown menu aksi section untuk feedback interaksi yang lebih natural.",
       "Menyederhanakan halaman detail kelas dengan menghapus panel ringkasan metrik atas yang duplikatif agar fokus langsung ke workspace dan aksi utama.",
       "Menstabilkan auto-refresh data setelah CRUD utama section/konten (tambah, edit, hapus) agar panel dan badge tidak perlu refresh manual.",
-      "Menambahkan setting tampilan di workspace untuk show/hide label ordinal section (\"Section 1/2/...\"), termasuk persist preferensi per kelas.",
+      "Menambahkan setting tampilan di workspace untuk show/hide label ordinal section (\"Section 1/2/...\"), termasuk persist preferensi per akun (disimpan server-side).",
+      "Menyederhanakan lagi hierarki visual workspace section agar tidak terasa \"kotak di dalam kotak\" dengan mengurangi border bertumpuk pada panel konten.",
       "Menambahkan alur edit detail Materi Lengkap langsung dari modal edit konten melalui aksi \"edit di sini\" yang membuka popup editor rich text.",
       "Menghilangkan spinner panah atas/bawah pada seluruh input angka di modal pengaturan kuis agar tampilan lebih bersih dan konsisten.",
       "Mengembalikan border warna-warni per section pada modal pengaturan kuis (indigo/sky/emerald/violet/rose) sesuai preferensi visual terbaru.",
@@ -67,6 +68,7 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
       "Memperbaiki kontras link navigasi 'Kembali ke Detail Kelas' / 'Kembali ke Daftar Kelas' di dark mode.",
       "Memperbaiki kontras badge angka pada Workspace Sidebar (Ruang Kelas) agar nilai badge tetap terlihat pada state aktif/nonaktif.",
       "Merapikan mapping tipe callback edit soal (`QuestionItem` -> `EssayQuestion`) untuk menghilangkan error TypeScript mismatch dan menstabilkan build check.",
+      "Menyederhanakan UI pengerjaan soal pada halaman detail materi siswa: header soal dipadatkan (status + nilai langsung terlihat), panel kontrol urut/filter diringkas, detail metadata dipisah via expand, serta kontras dark mode rubrik/jawaban diperkuat agar tetap nyaman dibaca.",
     ],
   },
   {
