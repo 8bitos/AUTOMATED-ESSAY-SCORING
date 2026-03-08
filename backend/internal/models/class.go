@@ -8,16 +8,20 @@ import (
 // Class merepresentasikan sebuah kelas atau kursus dalam sistem.
 // Struktur ini berkorespondensi dengan tabel `classes` di database.
 type Class struct {
-	ID          string     `json:"id"`                     // ID unik kelas, biasanya UUID.
-	TeacherID   string     `json:"pengajar_id"`            // ID pengguna yang mengajar kelas ini (Foreign Key ke tabel users).
-	TeacherName string     `json:"teacher_name,omitempty"` // Nama guru pengampu/pembuat kelas.
-	ClassName   string     `json:"class_name"`             // Nama kelas (misalnya, "Matematika Dasar").
-	Description string     `json:"deskripsi"`              // Deskripsi singkat tentang kelas.
-	ClassCode   string     `json:"class_code"`             // Kode unik kelas untuk bergabung.
-	IsArchived  bool       `json:"is_archived"`            // Status arsip kelas.
-	CreatedAt   time.Time  `json:"created_at"`             // Timestamp ketika kelas dibuat.
-	UpdatedAt   time.Time  `json:"updated_at"`             // Timestamp terakhir kali kelas diperbarui.
-	Materials   []Material `json:"materials,omitempty"`    // Daftar materi yang terkait dengan kelas ini (opsional untuk output JSON).
+	ID                  string     `json:"id"`                     // ID unik kelas, biasanya UUID.
+	TeacherID           string     `json:"pengajar_id"`            // ID pengguna yang mengajar kelas ini (Foreign Key ke tabel users).
+	TeacherName         string     `json:"teacher_name,omitempty"` // Nama guru pengampu/pembuat kelas.
+	ClassName           string     `json:"class_name"`             // Nama kelas (misalnya, "Matematika Dasar").
+	Description         string     `json:"deskripsi"`              // Deskripsi singkat tentang kelas.
+	ClassCode           string     `json:"class_code"`             // Kode unik kelas untuk bergabung.
+	IsArchived          bool       `json:"is_archived"`            // Status arsip kelas.
+	AnnouncementEnabled bool       `json:"announcement_enabled"`
+	AnnouncementTitle   string     `json:"announcement_title,omitempty"`
+	AnnouncementContent string     `json:"announcement_content,omitempty"`
+	AnnouncementTone    string     `json:"announcement_tone,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`          // Timestamp ketika kelas dibuat.
+	UpdatedAt           time.Time  `json:"updated_at"`          // Timestamp terakhir kali kelas diperbarui.
+	Materials           []Material `json:"materials,omitempty"` // Daftar materi yang terkait dengan kelas ini (opsional untuk output JSON).
 }
 
 // CreateClassRequest mendefinisikan struktur data untuk permintaan pembuatan kelas baru.
@@ -46,9 +50,13 @@ type ReviewJoinRequest struct {
 
 // UpdateClassRequest untuk update metadata kelas oleh guru.
 type UpdateClassRequest struct {
-	ClassName   *string `json:"nama_kelas,omitempty"`
-	Description *string `json:"deskripsi,omitempty"`
-	IsArchived  *bool   `json:"is_archived,omitempty"`
+	ClassName           *string `json:"nama_kelas,omitempty"`
+	Description         *string `json:"deskripsi,omitempty"`
+	IsArchived          *bool   `json:"is_archived,omitempty"`
+	AnnouncementEnabled *bool   `json:"announcement_enabled,omitempty"`
+	AnnouncementTitle   *string `json:"announcement_title,omitempty"`
+	AnnouncementContent *string `json:"announcement_content,omitempty"`
+	AnnouncementTone    *string `json:"announcement_tone,omitempty"`
 }
 
 // StudentOption untuk daftar kandidat siswa pada popup invite.

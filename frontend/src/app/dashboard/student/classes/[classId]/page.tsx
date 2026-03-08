@@ -59,6 +59,14 @@ interface SectionContentCardData {
     tugas_submission_type?: "teks" | "file" | "keduanya";
     tugas_allowed_formats?: string[];
     tugas_max_file_mb?: number;
+    media_items?: Array<{
+      url: string;
+      width_percent?: number;
+      name?: string;
+      kind?: "image" | "video" | "document";
+      align?: "left" | "center" | "right";
+      caption?: string;
+    }>;
   };
 }
 
@@ -83,8 +91,21 @@ interface ClassDetail {
   teacher_name?: string;
   class_code: string;
   deskripsi: string;
+  announcement_enabled?: boolean;
+  announcement_title?: string;
+  announcement_content?: string;
+  announcement_tone?: "info" | "success" | "warning" | "urgent";
   materials?: Material[];
 }
+
+type AnnouncementTone = "info" | "success" | "warning" | "urgent";
+
+const getAnnouncementToneStyles = (tone?: AnnouncementTone) => {
+  if (tone === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (tone === "urgent") return "border-rose-200 bg-rose-50 text-rose-900";
+  return "border-sky-200 bg-sky-50 text-sky-900";
+};
 
 type MaterialFilter = "all" | "pending" | "submitted" | "reviewed";
 type MaterialSort = "section_order" | "updated_desc";
@@ -184,6 +205,57 @@ const normalizeEmbedUrl = (url: string): string => {
   const yWatch = trimmed.match(/https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([\w-]+)/i);
   if (yWatch) return `https://www.youtube.com/embed/${yWatch[1]}`;
   return trimmed;
+};
+
+type SectionMediaItem = {
+  url: string;
+  width_percent?: number;
+  name?: string;
+  kind?: "image" | "video" | "document";
+  align?: "left" | "center" | "right";
+  caption?: string;
+};
+
+const normalizeSectionMediaItems = (
+  type: SectionContentType,
+  body?: string,
+  meta?: SectionContentCardData["meta"],
+): SectionMediaItem[] => {
+  const items = Array.isArray(meta?.media_items)
+    ? meta.media_items
+        .filter((item): item is NonNullable<SectionContentCardData["meta"]>["media_items"][number] =>
+          !!item && typeof item.url === "string" && item.url.trim().length > 0
+        )
+        .map((item) => ({
+          url: item.url.trim(),
+          width_percent:
+            typeof item.width_percent === "number" && Number.isFinite(item.width_percent)
+              ? Math.max(type === "upload" ? 40 : 25, Math.min(100, item.width_percent))
+              : type === "gambar"
+                ? 60
+                : type === "video"
+                  ? 70
+                  : 100,
+          name: item.name,
+          kind: item.kind,
+          align: item.align === "left" || item.align === "right" ? item.align : "center",
+          caption: typeof item.caption === "string" ? item.caption : "",
+        }))
+    : [];
+
+  if (items.length > 0) return items;
+
+  return (body || "")
+    .split("\n")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((url) => ({
+      url,
+      width_percent: type === "gambar" ? 60 : type === "video" ? 70 : 100,
+      kind: type === "gambar" ? "image" : type === "video" ? "video" : "document",
+      align: "center" as const,
+      caption: "",
+    }));
 };
 
 const parseDueDate = (value?: string): Date | null => {
@@ -338,6 +410,7 @@ export default function StudentClassMaterialsPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<MaterialFilter>("all");
   const [sortBy, setSortBy] = useState<MaterialSort>("section_order");
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [expandedMaterials, setExpandedMaterials] = useState<Record<string, boolean>>({});
   const [collapsedContentCards, setCollapsedContentCards] = useState<Record<string, boolean>>({});
   const [seenUpdateByMaterial, setSeenUpdateByMaterial] = useState<Record<string, string>>({});
@@ -893,6 +966,13 @@ export default function StudentClassMaterialsPage() {
             <p className="text-[color:var(--ink-500)] mt-1">{cls.deskripsi}</p>
           </div>
         </div>
+        {cls.announcement_enabled && cls.announcement_title && cls.announcement_content ? (
+          <div className={`mt-4 rounded-2xl border px-4 py-4 shadow-sm ${getAnnouncementToneStyles(cls.announcement_tone)}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] opacity-70">Pengumuman Kelas</p>
+            <h2 className="mt-1 text-lg font-semibold">{cls.announcement_title}</h2>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed opacity-90">{cls.announcement_content}</p>
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-[color:var(--ink-600)]">
           <span className="sage-pill">Kode: {cls.class_code}</span>
           <span className="sage-pill">
@@ -947,39 +1027,55 @@ export default function StudentClassMaterialsPage() {
       {activeTab === "materi" && (
         <>
       <section className="sage-panel sticky top-16 z-20 border border-slate-300/90 bg-white/95 p-4 backdrop-blur">
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <label className="relative block">
-            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Cari section/materi..."
-              className="sage-input pl-10"
-            />
-          </label>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as MaterialSort)} className="sage-input min-w-44">
-            <option value="section_order">Urutan Section</option>
-            <option value="updated_desc">Update Terbaru</option>
-          </select>
+        <div className="flex items-center justify-between gap-3 sm:hidden">
+          <div>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Filter Materi</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Cari dan rapikan tampilan section.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileFilterOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {isMobileFilterOpen ? "Sembunyikan" : "Tampilkan"}
+            {isMobileFilterOpen ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+          </button>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[
-            { id: "all", label: "Semua" },
-            { id: "pending", label: "Perlu Dikerjakan" },
-            { id: "submitted", label: "Sudah Selesai" },
-            { id: "reviewed", label: "Sudah Direview" },
-          ].map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              onClick={() => setFilter(chip.id as MaterialFilter)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                filter === chip.id ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {chip.label}
-            </button>
-          ))}
+        <div className={`${isMobileFilterOpen ? "mt-3 block" : "hidden"} space-y-3 sm:mt-0 sm:block`}>
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <label className="relative block">
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Cari section/materi..."
+                className="sage-input pl-10"
+              />
+            </label>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as MaterialSort)} className="sage-input min-w-44">
+              <option value="section_order">Urutan Section</option>
+              <option value="updated_desc">Update Terbaru</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: "all", label: "Semua" },
+              { id: "pending", label: "Perlu Dikerjakan" },
+              { id: "submitted", label: "Sudah Selesai" },
+              { id: "reviewed", label: "Sudah Direview" },
+            ].map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => setFilter(chip.id as MaterialFilter)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  filter === chip.id ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -1199,7 +1295,7 @@ export default function StudentClassMaterialsPage() {
                                     <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
                                       {containsHtmlTag(fullContent) ? (
                                         <SafeHtml
-                                          className="prose prose-slate max-w-none text-[color:var(--ink-700)]"
+                                          className="sage-tiptap-content max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
                                           html={fullContent}
                                         />
                                       ) : (
@@ -1212,14 +1308,31 @@ export default function StudentClassMaterialsPage() {
 
                               {hasInlineView && card.type === "gambar" && (
                                 <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-                                  {card.body ? (
-                                    <div className="space-y-2">
-                                      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                                        <img src={card.body} alt={card.title} className="h-auto w-full object-cover" />
-                                      </div>
-                                      <a href={card.body} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline">
-                                        <FiExternalLink size={12} /> Buka gambar
-                                      </a>
+                                  {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
+                                    <div className="space-y-3">
+                                      {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
+                                        <div
+                                          key={`${item.url}-${idx}`}
+                                          className={`space-y-2 ${
+                                            item.align === "left"
+                                              ? "mr-auto"
+                                              : item.align === "right"
+                                                ? "ml-auto"
+                                                : "mx-auto"
+                                          }`}
+                                          style={{ width: `${Math.max(25, Math.min(100, item.width_percent || 60))}%`, maxWidth: "100%" }}
+                                        >
+                                          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                                            <img src={item.url} alt={item.name || `${card.title}-${idx + 1}`} className="h-auto w-full object-cover" />
+                                          </div>
+                                          {item.caption?.trim() && (
+                                            <p className="text-center text-xs italic text-slate-500 dark:text-slate-400">{item.caption.trim()}</p>
+                                          )}
+                                          <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline">
+                                            <FiExternalLink size={12} /> Buka gambar {idx + 1}
+                                          </a>
+                                        </div>
+                                      ))}
                                     </div>
                                   ) : (
                                     <p className="text-xs text-[color:var(--ink-500)]">Gambar belum tersedia.</p>
@@ -1229,16 +1342,35 @@ export default function StudentClassMaterialsPage() {
 
                               {hasInlineView && card.type === "video" && (
                                 <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-                                  {card.body ? (
-                                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                                      <iframe
-                                        src={normalizeEmbedUrl(card.body)}
-                                        title={card.title}
-                                        className="h-56 w-full"
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                        referrerPolicy="strict-origin-when-cross-origin"
-                                        allowFullScreen
-                                      />
+                                  {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
+                                    <div className="space-y-3">
+                                      {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
+                                        <div
+                                          key={`${item.url}-${idx}`}
+                                          className={`overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 ${
+                                            item.align === "left"
+                                              ? "mr-auto"
+                                              : item.align === "right"
+                                                ? "ml-auto"
+                                                : "mx-auto"
+                                          }`}
+                                          style={{ width: `${Math.max(25, Math.min(100, item.width_percent || 70))}%`, maxWidth: "100%" }}
+                                        >
+                                          <iframe
+                                            src={normalizeEmbedUrl(item.url)}
+                                            title={`${card.title}-${idx + 1}`}
+                                            className="h-56 w-full"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                            referrerPolicy="strict-origin-when-cross-origin"
+                                            allowFullScreen
+                                          />
+                                          {item.caption?.trim() && (
+                                            <div className="border-t border-slate-200 px-3 py-2 text-center text-xs italic text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                              {item.caption.trim()}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
                                     </div>
                                   ) : (
                                     <p className="text-xs text-[color:var(--ink-500)]">Video belum tersedia.</p>
@@ -1248,10 +1380,41 @@ export default function StudentClassMaterialsPage() {
 
                               {hasInlineView && card.type === "upload" && (
                                 <div className="mt-2">
-                                  {card.body ? (
-                                    <a href={card.body} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline">
-                                      <FiExternalLink size={12} /> Buka dokumen
-                                    </a>
+                                  {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
+                                    <div className="space-y-3">
+                                      {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) =>
+                                        /\.pdf(\?.*)?$/i.test(item.url) ? (
+                                          <div
+                                            key={`${item.url}-${idx}`}
+                                            className={`overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 ${
+                                              item.align === "left"
+                                                ? "mr-auto"
+                                                : item.align === "right"
+                                                  ? "ml-auto"
+                                                  : "mx-auto"
+                                            }`}
+                                            style={{ width: `${Math.max(40, Math.min(100, item.width_percent || 100))}%`, maxWidth: "100%" }}
+                                          >
+                                            <iframe src={item.url} title={`${item.name || "Dokumen"}-${idx + 1}`} className="h-64 w-full" />
+                                            {item.caption?.trim() && (
+                                              <div className="border-t border-slate-200 px-3 py-2 text-center text-xs italic text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                                {item.caption.trim()}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <a
+                                            key={`${item.url}-${idx}`}
+                                            href={item.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs font-medium text-[color:var(--sage-700)] hover:underline"
+                                          >
+                                            <FiExternalLink size={12} /> {item.name || `Buka dokumen ${idx + 1}`}
+                                          </a>
+                                        )
+                                      )}
+                                    </div>
                                   ) : (
                                     <p className="text-xs text-[color:var(--ink-500)]">Dokumen belum tersedia.</p>
                                   )}

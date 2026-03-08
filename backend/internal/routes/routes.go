@@ -256,4 +256,9 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	adminRouter.HandleFunc("/announcements", adminOpsHandlers.AdminCreateAnnouncementHandler).Methods("POST")
 	adminRouter.HandleFunc("/announcements/{announcementId}", adminOpsHandlers.AdminUpdateAnnouncementHandler).Methods("PUT")
 	adminRouter.HandleFunc("/announcements/{announcementId}", adminOpsHandlers.AdminDeleteAnnouncementHandler).Methods("DELETE")
+	adminRouter.HandleFunc("/database/tables", adminOpsHandlers.AdminDatabaseTablesHandler).Methods("GET")
+	adminRouter.HandleFunc("/database/{table}", adminOpsHandlers.AdminDatabaseRowsHandler).Methods("GET")
+	adminRouter.HandleFunc("/database/{table}/rows", adminOpsHandlers.AdminDatabaseCreateRowHandler).Methods("POST")
+	adminRouter.HandleFunc("/database/{table}/rows", adminOpsHandlers.AdminDatabaseUpdateRowHandler).Methods("PUT")
+	adminRouter.HandleFunc("/database/{table}/rows", adminOpsHandlers.AdminDatabaseDeleteRowHandler).Methods("DELETE")
 }

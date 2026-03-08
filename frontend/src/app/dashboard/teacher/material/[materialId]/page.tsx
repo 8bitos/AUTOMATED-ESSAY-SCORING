@@ -38,7 +38,6 @@ import {
   FiType,
   FiMaximize2,
   FiMinimize2,
-  FiDownload,
   FiSettings,
   FiClock,
   FiShield,
@@ -48,6 +47,7 @@ import {
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import NoticeDialog from '@/components/ui/NoticeDialog';
 import LoadingDialog from '@/components/ui/LoadingDialog';
+import RichContentEditor from '@/components/editor/RichContentEditor';
 import SoalSettingsModal from './SoalSettingsModal';
 import QuestionsListSection, { type QuestionItem } from './QuestionsListSection';
 import ReviewModal from './ReviewModal';
@@ -658,30 +658,31 @@ const sanitizeEditorHtml = (html: string): string => {
   return noScript || "<p></p>";
 };
 
-const normalizeEditorNodeDirection = (root: HTMLDivElement): void => {
-  root.setAttribute("dir", "ltr");
-  root.style.direction = "ltr";
-  root.style.unicodeBidi = "normal";
-  root.style.writingMode = "horizontal-tb";
-  root.style.textAlign = "left";
+const cleanRichPreviewHtml = (html: string): string => {
+  if (typeof document === "undefined") return sanitizeEditorHtml(html);
 
-  root.querySelectorAll<HTMLElement>("[dir='rtl'], [dir='auto']").forEach((el) => {
-    el.setAttribute("dir", "ltr");
+  const container = document.createElement("div");
+  container.innerHTML = sanitizeEditorHtml(html);
+
+  container.querySelectorAll("[data-media-delete='1'], [data-media-hint='1']").forEach((node) => node.remove());
+
+  container.querySelectorAll<HTMLElement>("[data-media-block='1']").forEach((block) => {
+    block.removeAttribute("contenteditable");
+    block.style.outline = "none";
+    block.style.boxShadow = "none";
+    block.style.resize = "none";
+    block.style.overflow = "visible";
+    block.style.border = "0";
+    block.style.padding = "0";
+    block.style.background = "transparent";
+    block.style.minHeight = "";
+
+    block.querySelectorAll<HTMLElement>("iframe, video, embed, object, a").forEach((el) => {
+      el.style.pointerEvents = "";
+    });
   });
 
-  root.querySelectorAll<HTMLElement>("[style*='direction'], [style*='unicode-bidi'], [style*='writing-mode']").forEach((el) => {
-    const style = el.getAttribute("style") || "";
-    const cleaned = style
-      .replace(/direction\s*:\s*rtl\s*;?/gi, "")
-      .replace(/unicode-bidi\s*:\s*(bidi-override|plaintext|isolate-override)\s*;?/gi, "")
-      .replace(/writing-mode\s*:\s*[^;]+;?/gi, "")
-      .trim();
-    if (cleaned) {
-      el.setAttribute("style", cleaned);
-    } else {
-      el.removeAttribute("style");
-    }
-  });
+  return sanitizeEditorHtml(container.innerHTML);
 };
 
 const normalizeEmbedUrl = (url: string): string => {
@@ -775,108 +776,6 @@ const stripHtmlTags = (value: string): string =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-const buildMaterialExportHtml = (material: MaterialDetail, sectionCardId?: string): string => {
-  const sectionCards = parseSectionCards(material.isi_materi);
-  const parts: string[] = [];
-
-  if (sectionCards && sectionCards.length > 0) {
-    const scopedCards = sectionCardId ? sectionCards.filter((c) => c.id === sectionCardId) : sectionCards;
-    scopedCards.forEach((card, idx) => {
-      const title = (card.title || "").trim() || `Konten ${idx + 1}`;
-      parts.push(`<h2>${escapeHtml(title)}</h2>`);
-
-      if (card.type === "materi") {
-        const text = stripHtmlTags(card.body || "");
-        parts.push(`<p>${escapeHtml(text || "Konten materi kosong.")}</p>`);
-        return;
-      }
-      if (card.type === "video") {
-        const link = (card.body || "").trim();
-        parts.push(`<p><strong>Link video:</strong> ${link ? `<a href="${escapeHtml(link)}">${escapeHtml(link)}</a>` : "Tidak ada link video."}</p>`);
-        return;
-      }
-      if (card.type === "upload") {
-        const fileLink = (card.body || "").trim();
-        if (isPdfLikeUrl(fileLink)) {
-          parts.push("<p><em>File PDF tidak bisa di eksport.</em></p>");
-        } else if (fileLink) {
-          parts.push(`<p><strong>Referensi file:</strong> <a href="${escapeHtml(fileLink)}">${escapeHtml(fileLink)}</a></p>`);
-        } else {
-          parts.push("<p><em>Tidak ada file lampiran.</em></p>");
-        }
-        return;
-      }
-      if (card.type === "gambar") {
-        const link = (card.body || "").trim();
-        parts.push(`<p><strong>Referensi gambar:</strong> ${link ? `<a href="${escapeHtml(link)}">${escapeHtml(link)}</a>` : "Tidak ada link gambar."}</p>`);
-        return;
-      }
-      parts.push(`<p>${escapeHtml(stripHtmlTags(card.body || "") || "Konten tidak dapat diekspor sebagai teks.")}</p>`);
-    });
-  } else {
-    const blocks = parseMaterialBlocks(material.isi_materi);
-    if (blocks && blocks.length > 0) {
-      blocks.forEach((block) => {
-        if (block.type === "heading") {
-          parts.push(`<h2>${escapeHtml(block.value)}</h2>`);
-          return;
-        }
-        if (block.type === "paragraph" || block.type === "bullet_list" || block.type === "number_list") {
-          parts.push(`<p>${escapeHtml(block.value)}</p>`);
-          return;
-        }
-        if (block.type === "video") {
-          const link = normalizeEmbedUrl(block.value || "");
-          parts.push(`<p><strong>Link video:</strong> ${link ? `<a href="${escapeHtml(link)}">${escapeHtml(link)}</a>` : "Tidak ada link video."}</p>`);
-          return;
-        }
-        if (block.type === "pdf") {
-          parts.push("<p><em>File PDF tidak bisa di eksport.</em></p>");
-          return;
-        }
-        if (block.type === "link" || block.type === "ppt" || block.type === "image") {
-          const link = (block.value || "").trim();
-          parts.push(`<p><strong>Referensi:</strong> ${link ? `<a href="${escapeHtml(link)}">${escapeHtml(link)}</a>` : "-"}</p>`);
-        }
-      });
-    } else {
-      const raw = (material.isi_materi || "").trim();
-      if (raw) {
-        parts.push(`<p>${escapeHtml(stripHtmlTags(raw))}</p>`);
-      } else if (material.file_url) {
-        const fileLink = material.file_url.trim();
-        if (isPdfLikeUrl(fileLink)) {
-          parts.push("<p><em>File PDF tidak bisa di eksport.</em></p>");
-        } else {
-          parts.push(`<p><strong>Referensi file:</strong> <a href="${escapeHtml(fileLink)}">${escapeHtml(fileLink)}</a></p>`);
-        }
-      } else {
-        parts.push("<p><em>Materi kosong.</em></p>");
-      }
-    }
-  }
-
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Materi - ${escapeHtml(material.judul)}</title>
-    <style>
-      body { font-family: Arial, sans-serif; line-height: 1.5; color: #0f172a; margin: 24px; }
-      h1 { font-size: 24px; margin: 0 0 12px; }
-      h2 { font-size: 18px; margin: 18px 0 8px; }
-      p { margin: 0 0 10px; white-space: pre-wrap; }
-      a { color: #0f766e; word-break: break-all; }
-      em { color: #475569; }
-    </style>
-  </head>
-  <body>
-    <h1>${escapeHtml(material.judul || "Materi")}</h1>
-    ${parts.join("\n")}
-  </body>
-</html>`;
-};
-
 const getTextAlignClass = (align?: BlockAlign) => {
   if (align === "center") return "text-center";
   if (align === "right") return "text-right";
@@ -911,7 +810,7 @@ const MaterialContentRenderer = ({
       return (
         <div
           className="prose max-w-none text-slate-700"
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: cleanRichPreviewHtml(html) }}
         />
       );
     }
@@ -1041,7 +940,7 @@ const MaterialContentRenderer = ({
     return (
       <div
         className="prose max-w-none text-slate-700"
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: cleanRichPreviewHtml(html) }}
       />
     );
   }
@@ -3735,21 +3634,6 @@ export default function MaterialDetailsPage() {
     [activeRubricSettings.mode, activeRubricSettings.rubrics, hasSectionCardScope, material, scopedQuestions, sectionCardId]
   );
 
-  const handleExportMateriPdf = useCallback(() => {
-    if (!material) return;
-    const html = buildMaterialExportHtml(material, sectionCardId);
-    const popup = window.open("", "_blank", "noopener,noreferrer");
-    if (!popup) {
-      setError("Popup diblokir browser. Izinkan popup untuk export PDF.");
-      return;
-    }
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
-    popup.focus();
-    popup.print();
-  }, [material, sectionCardId]);
-
   const ragReferenceOptions = useMemo(() => buildRAGReferenceOptions(material), [material]);
   const ragPreviewMap = useMemo(
     () =>
@@ -3813,9 +3697,6 @@ export default function MaterialDetailsPage() {
                 <p className="text-sm text-[color:var(--ink-500)]">Detail {contentTypeLabel}</p>
             </div>
             <div className="flex gap-2">
-                {isMateriRoute ? (
-                  <button onClick={handleExportMateriPdf} className="sage-button-outline"><FiDownload/> Export PDF</button>
-                ) : null}
                 {isSoalRoute ? (
                   <>
                     <button
@@ -4557,530 +4438,17 @@ interface EditMaterialModalProps {
 const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinished, startInFocusMode = false }: EditMaterialModalProps) => {
     const [judul, setJudul] = useState(material.judul);
     const [editorHtml, setEditorHtml] = useState("");
-    const [textColor, setTextColor] = useState("#111827");
-    const [fontSizePx, setFontSizePx] = useState(16);
-    const [showFontSizeMenu, setShowFontSizeMenu] = useState(false);
-    const [showTablePicker, setShowTablePicker] = useState(false);
-    const [tableHover, setTableHover] = useState({ rows: 0, cols: 0 });
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const editorRef = useRef<HTMLDivElement | null>(null);
-    const imageInputRef = useRef<HTMLInputElement | null>(null);
-    const pdfInputRef = useRef<HTMLInputElement | null>(null);
-    const toolbarRef = useRef<HTMLDivElement | null>(null);
-    const savedRangeRef = useRef<Range | null>(null);
-    const hoveredMediaRef = useRef<HTMLDivElement | null>(null);
-    const selectedMediaRef = useRef<HTMLDivElement | null>(null);
-    const historyRef = useRef<string[]>([]);
-    const redoRef = useRef<string[]>([]);
-
-    const mediaDeleteButtonHtml =
-      `<button data-media-delete="1" type="button" style="display:none;position:absolute;top:6px;right:6px;width:24px;height:24px;border:1px solid #fecaca;border-radius:999px;background:#fff;color:#b91c1c;font-weight:700;line-height:1;align-items:center;justify-content:center;cursor:pointer;z-index:5;" title="Hapus media">×</button>`;
 
     useEffect(() => {
         if (!isOpen) return;
         setJudul(material.judul);
         const initialHtml = normalizeMaterialForRichEditor(material.isi_materi, material.file_url, sectionCardId);
         setEditorHtml(initialHtml);
-        if (editorRef.current) {
-          editorRef.current.innerHTML = initialHtml;
-          normalizeEditorNodeDirection(editorRef.current);
-          ensureMediaBlocksEditableBehavior(editorRef.current);
-        }
-        historyRef.current = [initialHtml];
-        redoRef.current = [];
-        setFontSizePx(16);
-        setShowFontSizeMenu(false);
-        setShowTablePicker(false);
         setIsFocusMode(startInFocusMode);
     }, [material, isOpen, sectionCardId, startInFocusMode]);
-
-    useEffect(() => {
-      const handleOutsideClick = (event: MouseEvent) => {
-        if (!toolbarRef.current) return;
-        if (!toolbarRef.current.contains(event.target as Node)) {
-          setShowFontSizeMenu(false);
-          setShowTablePicker(false);
-        }
-      };
-      document.addEventListener("mousedown", handleOutsideClick);
-      return () => document.removeEventListener("mousedown", handleOutsideClick);
-    }, []);
-
-    const pushHistorySnapshot = (html: string) => {
-      const normalized = sanitizeEditorHtml(html);
-      const history = historyRef.current;
-      if (history.length === 0 || history[history.length - 1] !== normalized) {
-        history.push(normalized);
-        if (history.length > 200) {
-          history.shift();
-        }
-      }
-    };
-
-    const showMediaDeleteButton = (media: HTMLDivElement | null, visible: boolean) => {
-      if (!media) return;
-      const btn = media.querySelector<HTMLElement>("[data-media-delete='1']");
-      if (!btn) return;
-      btn.style.display = visible ? "inline-flex" : "none";
-    };
-
-    const applyMediaSelectedStyle = (media: HTMLDivElement | null, selected: boolean) => {
-      if (!media) return;
-      media.style.outline = selected ? "2px solid #2563eb" : "none";
-      media.style.boxShadow = selected ? "0 0 0 3px rgba(37,99,235,0.15)" : "none";
-    };
-
-    const setSelectedMedia = (media: HTMLDivElement | null) => {
-      if (selectedMediaRef.current && selectedMediaRef.current !== media) {
-        applyMediaSelectedStyle(selectedMediaRef.current, false);
-        if (selectedMediaRef.current !== hoveredMediaRef.current) {
-          showMediaDeleteButton(selectedMediaRef.current, false);
-        }
-      }
-      selectedMediaRef.current = media;
-      if (media) {
-        applyMediaSelectedStyle(media, true);
-        showMediaDeleteButton(media, true);
-      }
-    };
-
-    const setHoveredMedia = (media: HTMLDivElement | null) => {
-      if (hoveredMediaRef.current && hoveredMediaRef.current !== media && hoveredMediaRef.current !== selectedMediaRef.current) {
-        showMediaDeleteButton(hoveredMediaRef.current, false);
-      }
-      hoveredMediaRef.current = media;
-      if (media) {
-        showMediaDeleteButton(media, true);
-      }
-    };
-
-    const ensureMediaBlocksEditableBehavior = (editor: HTMLDivElement | null) => {
-      if (!editor) return;
-      const mediaBlocks = editor.querySelectorAll<HTMLDivElement>("[data-media-block='1']");
-      mediaBlocks.forEach((block) => {
-        block.setAttribute("contenteditable", "false");
-        block.style.position = "relative";
-
-        let deleteBtn = block.querySelector<HTMLElement>("[data-media-delete='1']");
-        if (!deleteBtn) {
-          block.insertAdjacentHTML("afterbegin", mediaDeleteButtonHtml);
-          deleteBtn = block.querySelector<HTMLElement>("[data-media-delete='1']");
-        }
-        if (deleteBtn) {
-          deleteBtn.style.zIndex = "8";
-          deleteBtn.style.pointerEvents = "auto";
-        }
-
-        block.querySelectorAll<HTMLElement>("iframe,video,embed,object").forEach((el) => {
-          el.style.pointerEvents = "none";
-          el.setAttribute("tabindex", "-1");
-        });
-        block.querySelectorAll<HTMLAnchorElement>("a").forEach((a) => {
-          a.style.pointerEvents = "none";
-          a.setAttribute("tabindex", "-1");
-          a.removeAttribute("target");
-        });
-      });
-    };
-
-    const applyEditorCommand = (command: string, value?: string) => {
-        const editor = editorRef.current;
-        if (!editor) return;
-        editor.focus();
-        if (savedRangeRef.current) {
-          const selection = window.getSelection();
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(savedRangeRef.current);
-          }
-        }
-        if (command === "formatBlock" && value) {
-          document.execCommand("formatBlock", false, `<${value.toLowerCase()}>`);
-        } else {
-          document.execCommand(command, false, value);
-        }
-        normalizeEditorNodeDirection(editor);
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-          savedRangeRef.current = selection.getRangeAt(0).cloneRange();
-        }
-        setEditorHtml(editor.innerHTML);
-        pushHistorySnapshot(editor.innerHTML);
-        redoRef.current = [];
-    };
-
-    const handleAddLink = () => {
-        const url = window.prompt("Masukkan URL link:");
-        if (!url) return;
-        const trimmed = url.trim();
-        const youtubeMatch = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/i) || trimmed.match(/youtube\.com\/shorts\/([^&?/]+)/i);
-        if (youtubeMatch?.[1]) {
-          const embedUrl = `https://www.youtube.com/embed/${youtubeMatch[1]}`;
-          applyEditorCommand(
-            "insertHTML",
-            `<p><br/></p><div data-media-block="1" contenteditable="false" style="position:relative;resize:both;overflow:auto;width:560px;max-width:100%;min-height:260px;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px auto 8px 0;background:#f8fafc;">
-              ${mediaDeleteButtonHtml}
-              <iframe src="${embedUrl}" title="Embedded YouTube" style="width:100%;height:100%;min-height:240px;border:0;border-radius:8px;pointer-events:none;" allowfullscreen></iframe>
-              <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ drag</div>
-            </div><p><br/></p>`
-          );
-          return;
-        }
-        const editor = editorRef.current;
-        if (!editor) return;
-        const selection = window.getSelection();
-        if (selection && !selection.isCollapsed) {
-          applyEditorCommand("createLink", trimmed);
-          return;
-        }
-        applyEditorCommand("insertHTML", `<a href="${escapeHtml(trimmed)}" target="_blank" rel="noopener noreferrer">${escapeHtml(trimmed)}</a>`);
-    };
-
-    const handleInsertImageByUrl = () => {
-      const url = window.prompt("Masukkan URL gambar:");
-      if (!url) return;
-      const safe = escapeHtml(url.trim());
-      applyEditorCommand(
-        "insertHTML",
-        `<p><br/></p><div data-media-block="1" contenteditable="false" style="position:relative;resize:both;overflow:auto;width:420px;max-width:100%;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px auto 8px 0;">
-          ${mediaDeleteButtonHtml}
-          <img src="${safe}" alt="Gambar materi" style="width:100%;height:auto;display:block;border-radius:8px;" />
-          <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ drag</div>
-        </div><p><br/></p>`
-      );
-    };
-
-    const handleUploadImage = async (file: File | null) => {
-      if (!file) return;
-      setError("");
-      if (file.size > 1024 * 1024) {
-        setError("Ukuran gambar maksimal 1MB.");
-        return;
-      }
-      if (!file.type.startsWith("image/")) {
-        setError("File harus berupa gambar.");
-        return;
-      }
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          credentials: "include",
-          body: formData,
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(getBodyMessage(body) || "Gagal upload gambar.");
-        }
-        if (!body?.filePath) {
-          throw new Error("Respons upload gambar tidak valid.");
-        }
-        const safePath = escapeHtml(body.filePath);
-        applyEditorCommand(
-          "insertHTML",
-          `<p><br/></p><div data-media-block="1" contenteditable="false" style="position:relative;resize:both;overflow:auto;width:420px;max-width:100%;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px auto 8px 0;">
-            ${mediaDeleteButtonHtml}
-            <img src="${safePath}" alt="Gambar materi" style="width:100%;height:auto;display:block;border-radius:8px;" />
-            <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ drag</div>
-          </div><p><br/></p>`
-        );
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, "Gagal upload gambar."));
-      }
-    };
-
-    const handleUploadPdf = async (file: File | null) => {
-      if (!file) return;
-      setError("");
-      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-      if (!isPdf) {
-        setError("File harus berformat PDF.");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setError("Ukuran PDF maksimal 5MB.");
-        return;
-      }
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          credentials: "include",
-          body: formData,
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(getBodyMessage(body) || "Gagal upload PDF.");
-        if (!body?.filePath) throw new Error("Respons upload PDF tidak valid.");
-        const safePath = escapeHtml(body.filePath);
-        applyEditorCommand(
-          "insertHTML",
-          `<p><br/></p><div data-media-block="1" contenteditable="false" style="position:relative;resize:both;overflow:auto;width:520px;max-width:100%;min-height:220px;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px auto 8px 0;background:#f8fafc;">
-            ${mediaDeleteButtonHtml}
-            <iframe src="${safePath}" title="PDF Materi" style="width:100%;height:100%;min-height:200px;border:0;border-radius:8px;pointer-events:none;"></iframe>
-            <div style="margin-top:6px;font-size:12px;color:#475569;">Preview PDF (non-interaktif saat mode edit)</div>
-            <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ drag</div>
-          </div><p><br/></p>`
-        );
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, "Gagal upload PDF."));
-      }
-    };
-
-    const getSelectedMediaBlock = () => {
-      const editor = editorRef.current;
-      const selection = window.getSelection();
-      if (!editor || !selection || selection.rangeCount === 0) return null;
-      const range = selection.getRangeAt(0);
-      const node = range.commonAncestorContainer;
-      const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement | null);
-      const media = host?.closest("[data-media-block='1']") as HTMLDivElement | null;
-      if (!media || !editor.contains(media)) return null;
-      return { editor, media };
-    };
-
-    const alignSelectedMedia = (position: "left" | "center" | "right") => {
-      const selected = selectedMediaRef.current;
-      const editor = editorRef.current;
-      if (!selected || !editor || !editor.contains(selected)) return;
-      if (position === "left") {
-        selected.style.marginLeft = "0";
-        selected.style.marginRight = "auto";
-      } else if (position === "center") {
-        selected.style.marginLeft = "auto";
-        selected.style.marginRight = "auto";
-      } else {
-        selected.style.marginLeft = "auto";
-        selected.style.marginRight = "0";
-      }
-      setEditorHtml(editor.innerHTML);
-      pushHistorySnapshot(editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const removeSelectedMediaBlock = () => {
-      const editor = editorRef.current;
-      const media = selectedMediaRef.current;
-      if (!editor || !media || !editor.contains(media)) return;
-      const prev = media.previousElementSibling as HTMLElement | null;
-      const next = media.nextElementSibling as HTMLElement | null;
-      media.remove();
-      if (prev && prev.tagName === "P" && (prev.textContent || "").trim() === "") prev.remove();
-      if (next && next.tagName === "P" && (next.textContent || "").trim() === "") next.remove();
-      setSelectedMedia(null);
-      setHoveredMedia(null);
-      setEditorHtml(editor.innerHTML);
-      pushHistorySnapshot(editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const insertTableAtSelection = (rows: number, cols: number) => {
-      if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0 || rows > 20 || cols > 10) {
-        setError("Ukuran tabel tidak valid. Maksimal 20x10.");
-        return;
-      }
-
-      const headerCells = Array.from({ length: cols }, (_, i) => `<th style="border:1px solid #cbd5e1;padding:8px;background:#f8fafc;">Kolom ${i + 1}</th>`).join("");
-      const bodyRows = Array.from({ length: rows - 1 }, () =>
-        `<tr>${Array.from({ length: cols }, () => `<td style="border:1px solid #cbd5e1;padding:8px;">&nbsp;</td>`).join("")}</tr>`
-      ).join("");
-      const tableHtml = `<div style="position:relative;resize:both;overflow:auto;width:100%;max-width:100%;border:1px dashed #cbd5e1;border-radius:10px;padding:6px;margin:8px 0;background:#fff;">
-        <table style="border-collapse:collapse;width:100%;margin:0;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
-        <div style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#64748b;pointer-events:none;">◢ drag</div>
-      </div><p></p>`;
-      applyEditorCommand("insertHTML", tableHtml);
-      setShowTablePicker(false);
-      setTableHover({ rows: 0, cols: 0 });
-    };
-
-    const getTableContext = () => {
-      const editor = editorRef.current;
-      const selection = window.getSelection();
-      if (!editor || !selection || selection.rangeCount === 0) return null;
-      const range = selection.getRangeAt(0);
-      const node = range.commonAncestorContainer;
-      const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement | null);
-      const cell = host?.closest("td,th") as HTMLTableCellElement | null;
-      const table = host?.closest("table") as HTMLTableElement | null;
-      if (!cell || !table || !editor.contains(table)) return null;
-      const row = cell.parentElement as HTMLTableRowElement | null;
-      if (!row) return null;
-      return {
-        editor,
-        table,
-        cell,
-        row,
-        rowIndex: row.rowIndex,
-        cellIndex: cell.cellIndex,
-      };
-    };
-
-    const handleDeleteCurrentTable = () => {
-      const ctx = getTableContext();
-      if (!ctx) return;
-      ctx.table.remove();
-      normalizeEditorNodeDirection(ctx.editor);
-      setEditorHtml(ctx.editor.innerHTML);
-      pushHistorySnapshot(ctx.editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const handleAddTableRow = () => {
-      const ctx = getTableContext();
-      if (!ctx) return;
-      const colCount = ctx.row.cells.length || 1;
-      const newRow = ctx.table.insertRow(ctx.rowIndex + 1);
-      for (let i = 0; i < colCount; i++) {
-        const td = newRow.insertCell();
-        td.style.border = "1px solid #cbd5e1";
-        td.style.padding = "8px";
-        td.innerHTML = "&nbsp;";
-      }
-      setEditorHtml(ctx.editor.innerHTML);
-      pushHistorySnapshot(ctx.editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const handleDeleteTableRow = () => {
-      const ctx = getTableContext();
-      if (!ctx) return;
-      if (ctx.table.rows.length <= 1) {
-        ctx.table.remove();
-      } else {
-        ctx.table.deleteRow(ctx.rowIndex);
-      }
-      setEditorHtml(ctx.editor.innerHTML);
-      pushHistorySnapshot(ctx.editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const handleAddTableColumn = () => {
-      const ctx = getTableContext();
-      if (!ctx) return;
-      Array.from(ctx.table.rows).forEach((r) => {
-        const isHeaderRow = (r.parentElement?.tagName || "").toLowerCase() === "thead" || Array.from(r.cells).some((c) => c.tagName.toLowerCase() === "th");
-        const cell = document.createElement(isHeaderRow ? "th" : "td");
-        cell.style.border = "1px solid #cbd5e1";
-        cell.style.padding = "8px";
-        cell.innerHTML = isHeaderRow ? "Kolom Baru" : "&nbsp;";
-        if (ctx.cellIndex + 1 >= r.cells.length) {
-          r.appendChild(cell);
-        } else {
-          r.insertBefore(cell, r.cells[ctx.cellIndex + 1]);
-        }
-      });
-      setEditorHtml(ctx.editor.innerHTML);
-      pushHistorySnapshot(ctx.editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const handleDeleteTableColumn = () => {
-      const ctx = getTableContext();
-      if (!ctx) return;
-      const colCount = ctx.row.cells.length;
-      if (colCount <= 1) {
-        ctx.table.remove();
-      } else {
-        Array.from(ctx.table.rows).forEach((r) => {
-          if (ctx.cellIndex < r.cells.length) {
-            r.deleteCell(ctx.cellIndex);
-          }
-        });
-      }
-      setEditorHtml(ctx.editor.innerHTML);
-      pushHistorySnapshot(ctx.editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const applyFontSize = (sizePx: number) => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      editor.focus();
-      if (savedRangeRef.current) {
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-          selection.addRange(savedRangeRef.current);
-        }
-      }
-      document.execCommand("styleWithCSS", false, "true");
-      document.execCommand("fontSize", false, "7");
-      editor.querySelectorAll("font[size='7']").forEach((fontNode) => {
-        const span = document.createElement("span");
-        span.style.fontSize = `${sizePx}px`;
-        span.innerHTML = fontNode.innerHTML;
-        fontNode.replaceWith(span);
-      });
-      normalizeEditorNodeDirection(editor);
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        savedRangeRef.current = selection.getRangeAt(0).cloneRange();
-      }
-      setEditorHtml(editor.innerHTML);
-      pushHistorySnapshot(editor.innerHTML);
-      redoRef.current = [];
-    };
-
-    const handleUndo = () => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      const history = historyRef.current;
-      if (history.length <= 1) return;
-      const current = history.pop();
-      if (current) {
-        redoRef.current.push(current);
-      }
-      const previous = history[history.length - 1] || "<p></p>";
-      editor.innerHTML = previous;
-      normalizeEditorNodeDirection(editor);
-      setEditorHtml(previous);
-    };
-
-    const handleRedo = () => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      const next = redoRef.current.pop();
-      if (!next) return;
-      editor.innerHTML = next;
-      normalizeEditorNodeDirection(editor);
-      setEditorHtml(next);
-      pushHistorySnapshot(next);
-    };
-
-    const updateSelectionRange = () => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      const common = range.commonAncestorContainer;
-      if (editor.contains(common.nodeType === Node.TEXT_NODE ? common.parentNode : common)) {
-        savedRangeRef.current = range.cloneRange();
-      }
-    };
-
-    const runToolbarAction = (action: () => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      action();
-    };
-
-    const toolbarButtonClass = "sage-button-outline !px-2 !py-1 text-xs";
-    const toolbarButtons: Array<{
-      key: string;
-      label: string;
-      tooltip: string;
-      action: () => void;
-      className?: string;
-    }> = [
-      { key: "bold", label: "B", tooltip: "Bold: menebalkan teks terpilih.", action: () => applyEditorCommand("bold"), className: "font-bold" },
-      { key: "italic", label: "I", tooltip: "Italic: memiringkan teks terpilih.", action: () => applyEditorCommand("italic"), className: "italic" },
-      { key: "underline", label: "U", tooltip: "Underline: memberi garis bawah pada teks terpilih.", action: () => applyEditorCommand("underline"), className: "underline" },
-      { key: "unlink", label: "Unlink", tooltip: "Unlink: hapus tautan dari teks terpilih.", action: () => applyEditorCommand("unlink") },
-      { key: "clear", label: "Clear", tooltip: "Clear Format: hapus format dan kembali ke teks biasa.", action: () => applyEditorCommand("removeFormat") },
-    ];
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -5090,7 +4458,7 @@ const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinishe
         const formData = new FormData();
         formData.append('judul', judul);
 
-        const htmlFromEditor = sanitizeEditorHtml(editorRef.current?.innerHTML || editorHtml);
+        const htmlFromEditor = sanitizeEditorHtml(editorHtml);
         const plainText = htmlFromEditor.replace(/<[^>]+>/g, "").trim();
         if (!plainText) {
             setError('Isi materi tidak boleh kosong.');
@@ -5153,293 +4521,28 @@ const EditMaterialModal = ({ isOpen, onClose, material, sectionCardId, onFinishe
                     <input type="text" value={judul} onChange={e => setJudul(e.target.value)} className="sage-input mt-1" required />
                 </div>
                 )}
-                <div className={`flex-1 min-h-0 grid gap-4 ${isFocusMode ? "grid-cols-1" : "lg:grid-cols-[1.25fr_1fr]"}`}>
-                    <div className="min-h-0 overflow-y-auto pr-1 space-y-3">
-                        <label className="block text-sm font-medium">Isi Materi (Rich Text)</label>
-                        <div className="rounded-lg border border-slate-200 bg-white">
-                            <div ref={toolbarRef} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mr-1">Format</p>
-                                {toolbarButtons.map((btn) => (
-                                  <button
-                                    key={btn.key}
-                                    type="button"
-                                    title={btn.tooltip}
-                                    aria-label={btn.tooltip}
-                                    className={`${toolbarButtonClass} ${btn.className || ""}`.trim()}
-                                    onMouseDown={runToolbarAction(btn.action)}
-                                  >
-                                    {btn.label}
-                                  </button>
-                                ))}
-                                </div>
-                                <label className="inline-flex items-center gap-2 text-xs text-slate-600 ml-1" title="Text Color: ubah warna teks terpilih.">
-                                  <span>Color</span>
-                                  <input
-                                    type="color"
-                                    value={textColor}
-                                    onChange={(e) => {
-                                      const next = e.target.value;
-                                      setTextColor(next);
-                                      applyEditorCommand("foreColor", next);
-                                    }}
-                                    className="h-7 w-9 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
-                                    aria-label="Text Color: ubah warna teks terpilih"
-                                  />
-                                </label>
-                                <div className="relative">
-                                  <button
-                                    type="button"
-                                    title="Ukuran Font: pilih ukuran teks terpilih."
-                                    aria-label="Ukuran Font: pilih ukuran teks terpilih"
-                                    className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      setShowFontSizeMenu((prev) => !prev);
-                                      setShowTablePicker(false);
-                                    }}
-                                  >
-                                    <FiType size={14} /> {fontSizePx}px
-                                  </button>
-                                  {showFontSizeMenu && (
-                                    <div className="absolute right-0 top-9 z-20 w-28 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                                      {[12, 14, 16, 18, 20, 24, 28, 32].map((size) => (
-                                        <button
-                                          key={size}
-                                          type="button"
-                                          className={`w-full rounded-md px-2 py-1 text-left text-xs hover:bg-slate-100 ${fontSizePx === size ? "bg-slate-100 font-semibold" : ""}`}
-                                          onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            setFontSizePx(size);
-                                            applyFontSize(size);
-                                            setShowFontSizeMenu(false);
-                                          }}
-                                        >
-                                          {size}px
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="h-5 w-px bg-slate-200" />
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mr-1">Sisipkan</p>
-                                  <button
-                                    type="button"
-                                    title="Sisipkan Link / Embed: jika YouTube akan otomatis embed."
-                                    aria-label="Sisipkan Link atau Embed YouTube"
-                                    className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                    onMouseDown={runToolbarAction(handleAddLink)}
-                                  >
-                                    <FiLink size={14} /> Link
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Sisipkan Gambar URL: menambahkan gambar dari URL."
-                                    aria-label="Sisipkan Gambar URL: menambahkan gambar dari URL"
-                                    className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                    onMouseDown={runToolbarAction(handleInsertImageByUrl)}
-                                  >
-                                    <FiImage size={14} /> URL
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Upload Gambar: unggah file gambar (maksimal 1MB)."
-                                    aria-label="Upload Gambar: unggah file gambar maksimal 1MB"
-                                    className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      imageInputRef.current?.click();
-                                    }}
-                                  >
-                                    <FiUploadCloud size={14} /> Upload
-                                  </button>
-                                  <input
-                                    ref={imageInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0] || null;
-                                      handleUploadImage(file);
-                                      e.currentTarget.value = "";
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    title="Sisipkan PDF: upload file PDF maksimal 5MB."
-                                    aria-label="Sisipkan PDF maksimal 5MB"
-                                    className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      pdfInputRef.current?.click();
-                                    }}
-                                  >
-                                    <FiFileText size={14} /> PDF
-                                  </button>
-                                  <input
-                                    ref={pdfInputRef}
-                                    type="file"
-                                    accept=".pdf,application/pdf"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0] || null;
-                                      handleUploadPdf(file);
-                                      e.currentTarget.value = "";
-                                    }}
-                                  />
-                                  <div className="relative">
-                                    <button
-                                      type="button"
-                                      title="Insert Table: pilih ukuran tabel secara interaktif."
-                                      aria-label="Insert Table: pilih ukuran tabel secara interaktif"
-                                      className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        setShowTablePicker((prev) => !prev);
-                                        setShowFontSizeMenu(false);
-                                      }}
-                                    >
-                                      <FiGrid size={14} /> Table
-                                    </button>
-                                    {showTablePicker && (
-                                      <div className="absolute right-0 top-9 z-20 w-[320px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
-                                        <div className="grid grid-cols-8 gap-2">
-                                          {Array.from({ length: 64 }, (_, idx) => {
-                                            const r = Math.floor(idx / 8) + 1;
-                                            const c = (idx % 8) + 1;
-                                            const active = r <= tableHover.rows && c <= tableHover.cols;
-                                            return (
-                                              <button
-                                                key={`${r}-${c}`}
-                                                type="button"
-                                                className={`h-7 w-7 rounded-[4px] border ${active ? "border-slate-700 bg-slate-700" : "border-slate-300 bg-white"}`}
-                                                onMouseEnter={() => setTableHover({ rows: r, cols: c })}
-                                                onMouseDown={(e) => {
-                                                  e.preventDefault();
-                                                  insertTableAtSelection(r, c);
-                                                }}
-                                                aria-label={`Insert table ${r}x${c}`}
-                                                title={`Insert table ${r}x${c}`}
-                                              />
-                                            );
-                                          })}
-                                        </div>
-                                        <p className="mt-2 text-xs text-slate-600 text-center">{tableHover.rows || 0} x {tableHover.cols || 0}</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="h-5 w-px bg-slate-200" />
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mr-1">Tabel</p>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1" title="Tambah Baris: tambah baris di bawah sel aktif." onMouseDown={runToolbarAction(handleAddTableRow)}><FiPlusSquare size={14} /> Baris</button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1" title="Hapus Baris: hapus baris aktif." onMouseDown={runToolbarAction(handleDeleteTableRow)}><FiMinusSquare size={14} /> Baris</button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1" title="Tambah Kolom: tambah kolom di kanan sel aktif." onMouseDown={runToolbarAction(handleAddTableColumn)}><FiPlusSquare size={14} /> Kolom</button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1" title="Hapus Kolom: hapus kolom aktif." onMouseDown={runToolbarAction(handleDeleteTableColumn)}><FiMinusSquare size={14} /> Kolom</button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1 text-red-700 border-red-200 hover:bg-red-50" title="Hapus Tabel: hapus seluruh tabel aktif." onMouseDown={runToolbarAction(handleDeleteCurrentTable)}><FiTrash2 size={14} /> Tabel</button>
-                                </div>
-                                <div className="h-5 w-px bg-slate-200" />
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mr-1">Paragraf</p>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Rata Kiri" onMouseDown={runToolbarAction(() => applyEditorCommand("justifyLeft"))}><FiAlignLeft size={14} /></button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Rata Tengah" onMouseDown={runToolbarAction(() => applyEditorCommand("justifyCenter"))}><FiAlignCenter size={14} /></button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Rata Kanan" onMouseDown={runToolbarAction(() => applyEditorCommand("justifyRight"))}><FiAlignRight size={14} /></button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Justify" onMouseDown={runToolbarAction(() => applyEditorCommand("justifyFull"))}><FiAlignJustify size={14} /></button>
-                                </div>
-                                <div className="h-5 w-px bg-slate-200" />
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mr-1">Media</p>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Rata kiri untuk media terpilih" onMouseDown={runToolbarAction(() => alignSelectedMedia("left"))}><FiAlignLeft size={14} /></button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Rata tengah untuk media terpilih" onMouseDown={runToolbarAction(() => alignSelectedMedia("center"))}><FiAlignCenter size={14} /></button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Rata kanan untuk media terpilih" onMouseDown={runToolbarAction(() => alignSelectedMedia("right"))}><FiAlignRight size={14} /></button>
-                                </div>
-                                <div className="h-5 w-px bg-slate-200" />
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Undo" onMouseDown={runToolbarAction(handleUndo)}><FiRotateCcw size={14} /></button>
-                                  <button type="button" className="sage-button-outline !px-2 !py-1 text-xs" title="Redo" onMouseDown={runToolbarAction(handleRedo)}><FiRotateCw size={14} /></button>
-                                </div>
-                                <div className="h-5 w-px bg-slate-200" />
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <button
-                                    type="button"
-                                    className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
-                                    title={isFocusMode ? "Keluar Full Screen Editor" : "Masuk Full Screen Editor"}
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      setIsFocusMode((prev) => !prev);
-                                    }}
-                                  >
-                                    {isFocusMode ? <FiMinimize2 size={14} /> : <FiMaximize2 size={14} />}
-                                  </button>
-                                </div>
-                            </div>
-                            <div
-                                ref={editorRef}
-                                contentEditable
-                                dir="ltr"
-                                suppressContentEditableWarning
-                                onMouseUp={updateSelectionRange}
-                                onKeyUp={updateSelectionRange}
-                                onFocus={updateSelectionRange}
-                                onKeyDown={(e) => {
-                                  if ((e.key === "Delete" || e.key === "Backspace") && selectedMediaRef.current) {
-                                    e.preventDefault();
-                                    removeSelectedMediaBlock();
-                                    return;
-                                  }
-                                }}
-                                onMouseMove={(e) => {
-                                  const target = e.target as HTMLElement;
-                                  const media = target.closest("[data-media-block='1']") as HTMLDivElement | null;
-                                  setHoveredMedia(media);
-                                }}
-                                onMouseLeave={() => {
-                                  if (hoveredMediaRef.current && hoveredMediaRef.current !== selectedMediaRef.current) {
-                                    showMediaDeleteButton(hoveredMediaRef.current, false);
-                                  }
-                                  hoveredMediaRef.current = null;
-                                }}
-                                onClick={(e) => {
-                                  const target = e.target as HTMLElement;
-                                  const editor = editorRef.current;
-                                  if (!editor) return;
-                                  const deleteBtn = target.closest("[data-media-delete='1']") as HTMLElement | null;
-                                  if (deleteBtn) {
-                                    const media = deleteBtn.closest("[data-media-block='1']") as HTMLDivElement | null;
-                                    if (media && editor.contains(media)) {
-                                      setSelectedMedia(media);
-                                      removeSelectedMediaBlock();
-                                    }
-                                    return;
-                                  }
-                                  const media = target.closest("[data-media-block='1']") as HTMLDivElement | null;
-                                  if (media && editor.contains(media)) {
-                                    setSelectedMedia(media);
-                                    return;
-                                  }
-                                  setSelectedMedia(null);
-                                }}
-                                onInput={(e) => {
-                                  const node = e.currentTarget as HTMLDivElement;
-                                  normalizeEditorNodeDirection(node);
-                                  ensureMediaBlocksEditableBehavior(node);
-                                  updateSelectionRange();
-                                  setEditorHtml(node.innerHTML);
-                                  pushHistorySnapshot(node.innerHTML);
-                                  redoRef.current = [];
-                                }}
-                                className="min-h-[380px] max-h-[58vh] overflow-y-auto p-4 outline-none leading-relaxed text-left"
-                                style={{ direction: "ltr", unicodeBidi: "normal", writingMode: "horizontal-tb", textAlign: "left" }}
-                            />
-                        </div>
+                <div className="flex-1 min-h-0 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="block text-sm font-medium">Isi Materi (Rich Text)</label>
+                      <button
+                        type="button"
+                        className="sage-button-outline !px-2 !py-1 text-xs inline-flex items-center gap-1"
+                        title={isFocusMode ? "Keluar Full Screen Editor" : "Masuk Full Screen Editor"}
+                        onClick={() => setIsFocusMode((prev) => !prev)}
+                      >
+                        {isFocusMode ? <FiMinimize2 size={14} /> : <FiMaximize2 size={14} />}
+                      </button>
                     </div>
-                    {!isFocusMode && <div className="hidden lg:block">
-                        <div className="sticky top-0 border rounded-lg p-3 bg-white max-h-[64vh] overflow-y-auto">
-                            <p className="text-sm font-medium text-slate-700 mb-2">Preview</p>
-                            <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: sanitizeEditorHtml(editorHtml) }} />
-                        </div>
-                    </div>}
+                    <RichContentEditor
+                      value={editorHtml}
+                      onChange={setEditorHtml}
+                      showPreview={!isFocusMode}
+                      imageMaxSizeMb={10}
+                      pdfMaxSizeMb={5}
+                      allowPdf
+                      allowTables
+                      editorClassName={isFocusMode ? "min-h-[68vh] max-h-[68vh]" : "min-h-[380px] max-h-[58vh]"}
+                    />
                 </div>
                 <div className="flex justify-end gap-3 pt-2 border-t border-slate-100 mt-auto">
                     <button type="button" onClick={onClose} className="py-2 px-4 bg-[color:var(--sand-100)] rounded-md">Batal</button>

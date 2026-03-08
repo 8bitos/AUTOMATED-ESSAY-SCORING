@@ -67,7 +67,9 @@ func (s *ClassService) CreateClass(req models.CreateClassRequest, userID string)
 // GetClasses mengambil semua kelas yang dibuat oleh guru tertentu.
 func (s *ClassService) GetClasses(teacherID string) ([]models.Class, error) {
 	query := `
-		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived, c.created_at, c.updated_at
+		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
+		       c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
+		       c.created_at, c.updated_at
 		FROM classes c
 		JOIN users u ON u.id = c.teacher_id
 		WHERE c.teacher_id = $1
@@ -83,7 +85,9 @@ func (s *ClassService) GetClasses(teacherID string) ([]models.Class, error) {
 	for rows.Next() {
 		var c models.Class
 		if err := rows.Scan(
-			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived, &c.CreatedAt, &c.UpdatedAt,
+			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
+			&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
+			&c.CreatedAt, &c.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning class row: %w", err)
 		}
@@ -104,7 +108,9 @@ func (s *ClassService) GetClasses(teacherID string) ([]models.Class, error) {
 // Ini adalah endpoint publik yang mungkin digunakan untuk development atau tampilan awal.
 func (s *ClassService) GetAllClasses() ([]models.Class, error) {
 	query := `
-		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived, c.created_at, c.updated_at
+		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
+		       c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
+		       c.created_at, c.updated_at
 		FROM classes c
 		JOIN users u ON u.id = c.teacher_id
 		ORDER BY created_at DESC
@@ -119,7 +125,9 @@ func (s *ClassService) GetAllClasses() ([]models.Class, error) {
 	for rows.Next() {
 		var c models.Class
 		if err := rows.Scan(
-			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived, &c.CreatedAt, &c.UpdatedAt,
+			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
+			&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
+			&c.CreatedAt, &c.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning class row: %w", err)
 		}
@@ -138,14 +146,18 @@ func (s *ClassService) GetAllClasses() ([]models.Class, error) {
 // GetClassByID retrieves a single class by its ID.
 func (s *ClassService) GetClassByID(classID string) (*models.Class, error) {
 	query := `
-		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived, c.created_at, c.updated_at
+		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
+		       c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
+		       c.created_at, c.updated_at
 		FROM classes c
 		JOIN users u ON u.id = c.teacher_id
 		WHERE c.id = $1
 	`
 	var c models.Class
 	err := s.db.QueryRowContext(context.Background(), query, classID).Scan(
-		&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived, &c.CreatedAt, &c.UpdatedAt,
+		&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
+		&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
+		&c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -335,6 +347,30 @@ func (s *ClassService) UpdateClass(classID, teacherID string, req *models.Update
 		args = append(args, *req.IsArchived)
 		argID++
 	}
+	if req.AnnouncementEnabled != nil {
+		updates = append(updates, fmt.Sprintf("announcement_enabled = $%d", argID))
+		args = append(args, *req.AnnouncementEnabled)
+		argID++
+	}
+	if req.AnnouncementTitle != nil {
+		updates = append(updates, fmt.Sprintf("announcement_title = $%d", argID))
+		args = append(args, strings.TrimSpace(*req.AnnouncementTitle))
+		argID++
+	}
+	if req.AnnouncementContent != nil {
+		updates = append(updates, fmt.Sprintf("announcement_content = $%d", argID))
+		args = append(args, strings.TrimSpace(*req.AnnouncementContent))
+		argID++
+	}
+	if req.AnnouncementTone != nil {
+		tone := strings.ToLower(strings.TrimSpace(*req.AnnouncementTone))
+		if tone != "success" && tone != "warning" && tone != "urgent" {
+			tone = "info"
+		}
+		updates = append(updates, fmt.Sprintf("announcement_tone = $%d", argID))
+		args = append(args, tone)
+		argID++
+	}
 	updates = append(updates, fmt.Sprintf("updated_at = $%d", argID))
 	args = append(args, time.Now())
 	argID++
@@ -344,12 +380,16 @@ func (s *ClassService) UpdateClass(classID, teacherID string, req *models.Update
 		UPDATE classes
 		SET %s
 		WHERE id = $%d AND teacher_id = $%d
-		RETURNING id, teacher_id, class_name, deskripsi, class_code, is_archived, created_at, updated_at
+		RETURNING id, teacher_id, class_name, deskripsi, class_code, is_archived,
+		          announcement_enabled, announcement_title, announcement_content, announcement_tone,
+		          created_at, updated_at
 	`, strings.Join(updates, ", "), argID, argID+1)
 
 	var c models.Class
 	if err := s.db.QueryRowContext(context.Background(), query, args...).Scan(
-		&c.ID, &c.TeacherID, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived, &c.CreatedAt, &c.UpdatedAt,
+		&c.ID, &c.TeacherID, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
+		&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
+		&c.CreatedAt, &c.UpdatedAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("class not found or unauthorized")
@@ -430,7 +470,9 @@ func (s *ClassService) JoinClass(classCode, studentID string) error {
 func (s *ClassService) GetStudentClasses(studentID string) ([]models.Class, error) {
 	query := `
 		SELECT
-			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived, c.created_at, c.updated_at
+			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
+			c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
+			c.created_at, c.updated_at
 		FROM classes c
 		JOIN users u ON u.id = c.teacher_id
 		JOIN class_members cm ON c.id = cm.class_id
@@ -447,7 +489,9 @@ func (s *ClassService) GetStudentClasses(studentID string) ([]models.Class, erro
 	for rows.Next() {
 		var c models.Class
 		if err := rows.Scan(
-			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived, &c.CreatedAt, &c.UpdatedAt,
+			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
+			&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
+			&c.CreatedAt, &c.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("error scanning class row for student classes: %w", err)
 		}
@@ -535,14 +579,18 @@ func (s *ClassService) GetStudentClassDetails(classID, studentID string) (*model
 	// 2. Ambil Detail Kelas.
 	query := `
 		SELECT
-			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived, c.created_at, c.updated_at
+			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
+			c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
+			c.created_at, c.updated_at
 		FROM classes c
 		JOIN users u ON u.id = c.teacher_id
 		WHERE c.id = $1 AND c.is_archived = FALSE
 	`
 	var cls models.Class
 	err = s.db.QueryRowContext(context.Background(), query, classID).Scan(
-		&cls.ID, &cls.TeacherID, &cls.TeacherName, &cls.ClassName, &cls.Description, &cls.ClassCode, &cls.IsArchived, &cls.CreatedAt, &cls.UpdatedAt,
+		&cls.ID, &cls.TeacherID, &cls.TeacherName, &cls.ClassName, &cls.Description, &cls.ClassCode, &cls.IsArchived,
+		&cls.AnnouncementEnabled, &cls.AnnouncementTitle, &cls.AnnouncementContent, &cls.AnnouncementTone,
+		&cls.CreatedAt, &cls.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

@@ -103,3 +103,9 @@ ALTER TABLE users ADD COLUMN username VARCHAR(50) UNIQUE;
 -- Migration 000004_add_class_code.up.sql
 ALTER TABLE classes ADD COLUMN class_code VARCHAR(10) UNIQUE;
 ALTER TABLE classes ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- Migration 000050_add_class_announcement_banner.up.sql
+ALTER TABLE classes ADD COLUMN announcement_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE classes ADD COLUMN announcement_title TEXT NOT NULL DEFAULT '';
+ALTER TABLE classes ADD COLUMN announcement_content TEXT NOT NULL DEFAULT '';
+ALTER TABLE classes ADD COLUMN announcement_tone TEXT NOT NULL DEFAULT 'info';

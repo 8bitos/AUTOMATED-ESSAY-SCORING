@@ -1,14 +1,41 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useParams } from "next/navigation";
+import { Extension, mergeAttributes, Node } from "@tiptap/core";
+import Color from "@tiptap/extension-color";
+import Highlight from "@tiptap/extension-highlight";
+import LinkExtension from "@tiptap/extension-link";
+import { Table } from "@tiptap/extension-table";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
+import TableRow from "@tiptap/extension-table-row";
+import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
+import Underline from "@tiptap/extension-underline";
+import StarterKit from "@tiptap/starter-kit";
+import {
+  EditorContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  useEditor,
+  type NodeViewProps,
+} from "@tiptap/react";
+import { sanitizeHtml } from "@/lib/sanitizeHtml";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
+import RichContentEditor from "@/components/editor/RichContentEditor";
 import { TeacherPenilaianView } from "@/app/dashboard/teacher/penilaian/TeacherPenilaianView";
 import {
+  FiAlignCenter,
+  FiAlignJustify,
+  FiAlignLeft,
+  FiAlignRight,
   FiArrowLeft,
   FiMail,
   FiBookOpen,
+  FiCode,
+  FiColumns,
   FiFileText,
   FiAlertCircle,
   FiUsers,
@@ -17,14 +44,22 @@ import {
   FiBarChart2,
   FiX,
   FiCheckCircle,
+  FiChevronsDown,
   FiCopy,
   FiClipboard,
+  FiImage,
   FiEdit2,
+  FiLink,
+  FiList,
+  FiMinus,
+  FiRotateCcw,
+  FiRotateCw,
   FiTrash2,
   FiClock,
   FiActivity,
   FiAward,
   FiLayers,
+  FiType,
   FiUploadCloud,
   FiChevronDown,
   FiChevronUp,
@@ -44,6 +79,50 @@ interface ClassDetail {
   class_name: string;
   class_code: string;
   deskripsi?: string;
+  announcement_enabled?: boolean;
+  announcement_title?: string;
+  announcement_content?: string;
+  announcement_tone?: "info" | "success" | "warning" | "urgent";
+}
+
+type AnnouncementTone = "info" | "success" | "warning" | "urgent";
+
+const getAnnouncementToneStyles = (tone?: AnnouncementTone) => {
+  if (tone === "success") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  }
+  if (tone === "warning") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+  if (tone === "urgent") {
+    return "border-rose-200 bg-rose-50 text-rose-900";
+  }
+  return "border-sky-200 bg-sky-50 text-sky-900";
+};
+
+function ClassAnnouncementBanner({
+  title,
+  content,
+  tone,
+  actions,
+}: {
+  title: string;
+  content: string;
+  tone?: AnnouncementTone;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className={`mt-4 rounded-2xl border px-4 py-4 shadow-sm ${getAnnouncementToneStyles(tone)}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] opacity-70">Banner Pengumuman</p>
+          <h2 className="mt-1 text-lg font-semibold leading-tight">{title}</h2>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed opacity-90">{content}</p>
+        </div>
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      </div>
+    </div>
+  );
 }
 
 interface ClassMember {
@@ -138,6 +217,14 @@ interface SectionContentCardData {
     ideal_answer?: string;
     weight?: number;
     round_score_to_5?: boolean;
+    media_items?: Array<{
+      url: string;
+      width_percent?: number;
+      name?: string;
+      kind?: "image" | "video" | "document";
+      align?: "left" | "center" | "right";
+      caption?: string;
+    }>;
   };
 }
 
@@ -171,6 +258,13 @@ export default function ClassDetailsPage() {
   const [isWorkspaceSidebarCollapsed, setIsWorkspaceSidebarCollapsed] = useState(false);
   const [isWorkspaceDrawerOpen, setIsWorkspaceDrawerOpen] = useState(false);
   const [showClassDescription, setShowClassDescription] = useState(false);
+  const [isAnnouncementModalOpen, setAnnouncementModalOpen] = useState(false);
+  const [announcementEnabled, setAnnouncementEnabled] = useState(false);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [announcementTone, setAnnouncementTone] = useState<AnnouncementTone>("info");
+  const [announcementError, setAnnouncementError] = useState<string | null>(null);
+  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
   const pageRootRef = useRef<HTMLDivElement | null>(null);
 
   const [isAddMaterialModalOpen, setAddMaterialModalOpen] = useState(false);
@@ -249,6 +343,14 @@ export default function ClassDetailsPage() {
   useEffect(() => {
     fetchClassData();
   }, [fetchClassData]);
+
+  useEffect(() => {
+    if (!classDetail) return;
+    setAnnouncementEnabled(!!classDetail.announcement_enabled);
+    setAnnouncementTitle(classDetail.announcement_title || "");
+    setAnnouncementContent(classDetail.announcement_content || "");
+    setAnnouncementTone(classDetail.announcement_tone || "info");
+  }, [classDetail]);
 
   const filteredMaterials = useMemo(() => {
     const q = materialQuery.trim().toLowerCase();
@@ -354,6 +456,105 @@ export default function ClassDetailsPage() {
     }
   };
 
+  const handleOpenAnnouncementModal = () => {
+    if (!classDetail) return;
+    setAnnouncementEnabled(!!classDetail.announcement_enabled);
+    setAnnouncementTitle(classDetail.announcement_title || "");
+    setAnnouncementContent(classDetail.announcement_content || "");
+    setAnnouncementTone(classDetail.announcement_tone || "info");
+    setAnnouncementError(null);
+    setAnnouncementModalOpen(true);
+  };
+
+  const handleSaveAnnouncement = async () => {
+    if (!classDetail) return;
+    const trimmedTitle = announcementTitle.trim();
+    const trimmedContent = announcementContent.trim();
+    if (announcementEnabled && !trimmedTitle) {
+      setAnnouncementError("Judul banner wajib diisi.");
+      return;
+    }
+    if (announcementEnabled && !trimmedContent) {
+      setAnnouncementError("Isi banner wajib diisi.");
+      return;
+    }
+
+    setAnnouncementError(null);
+    setIsSavingAnnouncement(true);
+    try {
+      const res = await fetch(`${API_URL}/classes/${classId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          announcement_enabled: announcementEnabled && !!trimmedTitle && !!trimmedContent,
+          announcement_title: trimmedTitle,
+          announcement_content: trimmedContent,
+          announcement_tone: announcementTone,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || "Gagal menyimpan banner pengumuman.");
+      setClassDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              announcement_enabled: announcementEnabled && !!trimmedTitle && !!trimmedContent,
+              announcement_title: trimmedTitle,
+              announcement_content: trimmedContent,
+              announcement_tone: announcementTone,
+            }
+          : prev
+      );
+      setAnnouncementModalOpen(false);
+    } catch (err: any) {
+      setAnnouncementError(err?.message || "Gagal menyimpan banner pengumuman.");
+    } finally {
+      setIsSavingAnnouncement(false);
+    }
+  };
+
+  const handleClearAnnouncement = async () => {
+    if (!classDetail) return;
+    setAnnouncementError(null);
+    setIsSavingAnnouncement(true);
+    try {
+      const res = await fetch(`${API_URL}/classes/${classId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          announcement_enabled: false,
+          announcement_title: "",
+          announcement_content: "",
+          announcement_tone: "info",
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || "Gagal menghapus banner pengumuman.");
+      setClassDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              announcement_enabled: false,
+              announcement_title: "",
+              announcement_content: "",
+              announcement_tone: "info",
+            }
+          : prev
+      );
+      setAnnouncementEnabled(false);
+      setAnnouncementTitle("");
+      setAnnouncementContent("");
+      setAnnouncementTone("info");
+      setAnnouncementModalOpen(false);
+    } catch (err: any) {
+      setAnnouncementError(err?.message || "Gagal menghapus banner pengumuman.");
+    } finally {
+      setIsSavingAnnouncement(false);
+    }
+  };
+
   return (
     <div ref={pageRootRef} className="teacher-class-view space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -383,6 +584,14 @@ export default function ClassDetailsPage() {
               >
                 <FiClipboard />
                 Buka Penilaian
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenAnnouncementModal}
+                className="sage-button-outline !px-3 !py-2 text-xs"
+              >
+                <FiAlertCircle />
+                {classDetail.announcement_enabled ? "Edit Banner" : "Tambah Banner"}
               </button>
             </div>
             {classDetail.deskripsi && (
@@ -418,6 +627,31 @@ export default function ClassDetailsPage() {
             <p className="mt-3 text-xs text-slate-500">Bagikan kode ini ke siswa untuk bergabung.</p>
           </div>
         </div>
+
+        {classDetail.announcement_enabled && classDetail.announcement_title && classDetail.announcement_content ? (
+          <ClassAnnouncementBanner
+            title={classDetail.announcement_title}
+            content={classDetail.announcement_content}
+            tone={classDetail.announcement_tone}
+            actions={
+              <>
+                <button type="button" onClick={handleOpenAnnouncementModal} className="sage-button-outline !px-3 !py-2 text-xs">
+                  <FiEdit2 />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAnnouncement}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/60 bg-white/60 px-3 py-2 text-xs font-medium text-current transition hover:bg-white"
+                  disabled={isSavingAnnouncement}
+                >
+                  <FiTrash2 />
+                  Hapus
+                </button>
+              </>
+            }
+          />
+        ) : null}
       </header>
 
       <div className="lg:hidden">
@@ -436,7 +670,7 @@ export default function ClassDetailsPage() {
           isWorkspaceSidebarCollapsed ? "lg:grid-cols-[52px_1fr]" : "lg:grid-cols-[220px_1fr]"
         }`}
       >
-        <div className="hidden lg:block">
+        <div className="hidden lg:self-start lg:sticky lg:top-20 lg:block">
           <WorkspaceSidebar
             collapsed={isWorkspaceSidebarCollapsed}
             tabs={workspaceTabs}
@@ -588,7 +822,7 @@ function SummaryCard({
 }: {
   title: string;
   value: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   compact?: boolean;
 }) {
   return (
@@ -673,6 +907,7 @@ function MaterialsPane({
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState<"" | "duplicate" | "delete">("");
   const [editingContentCard, setEditingContentCard] = useState<{ material: Material; card: SectionContentCardData } | null>(null);
+  const [confirmDeleteContentCard, setConfirmDeleteContentCard] = useState<{ material: Material; card: SectionContentCardData } | null>(null);
   const [collapsedContentCards, setCollapsedContentCards] = useState<Record<string, boolean>>({});
   const [materialContentById, setMaterialContentById] = useState<Record<string, string>>({});
   const dragPreviewRef = useRef<HTMLDivElement | null>(null);
@@ -1178,6 +1413,7 @@ function MaterialsPane({
       type: SectionContentType;
       title: string;
       body: string;
+      media_items?: SectionMediaItem[];
       materi_mode?: "singkat" | "lengkap";
       materi_description?: string;
       description?: string;
@@ -1261,7 +1497,10 @@ function MaterialsPane({
                 }
             : payload.type === "soal"
               ? undefined
-            : ((payload.description || "").trim() ? { description: (payload.description || "").trim() } : undefined),
+            : {
+                ...(((payload.description || "").trim() ? { description: (payload.description || "").trim() } : {})),
+                ...(Array.isArray(payload.media_items) && payload.media_items.length > 0 ? { media_items: payload.media_items } : {}),
+              },
       };
       nextCards.unshift(newCard);
 
@@ -1350,6 +1589,7 @@ function MaterialsPane({
     async (payload: {
       title: string;
       body: string;
+      media_items?: SectionMediaItem[];
       materi_mode?: "singkat" | "lengkap";
       materi_description?: string;
       description?: string;
@@ -1413,6 +1653,7 @@ function MaterialsPane({
                       : {
                           ...(x.meta || {}),
                           description: (payload.description || "").trim() || undefined,
+                          media_items: Array.isArray(payload.media_items) && payload.media_items.length > 0 ? payload.media_items : undefined,
                         },
               }
             : x
@@ -2273,7 +2514,7 @@ function MaterialsPane({
                                             type="button"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              void handleDeleteContentCard(material, card);
+                                              setConfirmDeleteContentCard({ material, card });
                                             }}
                                             className="rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700"
                                             title="Hapus konten"
@@ -2299,18 +2540,12 @@ function MaterialsPane({
                                             const desc =
                                               (card.meta?.materi_description || "").trim() ||
                                               (((card.body || "") && !containsHtmlTag(card.body)) ? (card.body || "").trim() : "");
-                                            const hasBodyHtml = containsHtmlTag(card.body || "");
                                             return (
                                               <div className="space-y-2">
                                                 {desc ? (
                                                   <p className="whitespace-pre-wrap text-sm text-slate-700">{desc}</p>
                                                 ) : (
                                                   <p className="text-sm text-slate-600">Konten materi ini dikelola di editor materi lengkap.</p>
-                                                )}
-                                                {hasBodyHtml && (
-                                                  <div className="rounded-md border border-slate-200 bg-white p-3">
-                                                    <SectionMaterialContentRenderer isiMateri={card.body} />
-                                                  </div>
                                                 )}
                                               </div>
                                             );
@@ -2378,14 +2613,33 @@ function MaterialsPane({
                                         </div>
                                       ) : card.type === "gambar" ? (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                                          {card.body ? (
+                                          {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
                                             <div className="space-y-2">
-                                              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20">
-                                                <img src={card.body} alt={card.title} className="h-auto w-full object-cover" />
-                                              </div>
-                                              <a href={card.body} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-slate-700 underline">
-                                                Buka gambar
-                                              </a>
+                                              {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
+                                                <div
+                                                  key={`${item.url}-${idx}`}
+                                                  className={`space-y-2 ${
+                                                    item.align === "left"
+                                                      ? "mr-auto"
+                                                      : item.align === "right"
+                                                        ? "ml-auto"
+                                                        : "mx-auto"
+                                                  }`}
+                                                  style={{ width: `${Math.max(25, Math.min(100, item.width_percent || 60))}%`, maxWidth: "100%" }}
+                                                >
+                                                  <div
+                                                    className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20"
+                                                  >
+                                                    <img src={item.url} alt={item.name || `${card.title}-${idx + 1}`} className="h-auto w-full object-cover" />
+                                                  </div>
+                                                  {item.caption?.trim() && (
+                                                    <p className="text-center text-xs italic text-slate-500">{item.caption.trim()}</p>
+                                                  )}
+                                                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-slate-700 underline">
+                                                    Buka gambar {idx + 1}
+                                                  </a>
+                                                </div>
+                                              ))}
                                             </div>
                                           ) : (
                                             <p className="text-sm text-slate-500">Gambar belum diisi.</p>
@@ -2393,16 +2647,35 @@ function MaterialsPane({
                                         </div>
                                       ) : card.type === "video" ? (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                                          {card.body ? (
-                                            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20">
-                                              <iframe
-                                                src={normalizeEmbedUrl(card.body)}
-                                                title={card.title}
-                                                className="h-64 w-full"
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                                referrerPolicy="strict-origin-when-cross-origin"
-                                                allowFullScreen
-                                              />
+                                          {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
+                                            <div className="space-y-3">
+                                              {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
+                                                <div
+                                                  key={`${item.url}-${idx}`}
+                                                  className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20 ${
+                                                    item.align === "left"
+                                                      ? "mr-auto"
+                                                      : item.align === "right"
+                                                        ? "ml-auto"
+                                                        : "mx-auto"
+                                                  }`}
+                                                  style={{ width: `${Math.max(25, Math.min(100, item.width_percent || 70))}%`, maxWidth: "100%" }}
+                                                >
+                                                  <iframe
+                                                    src={normalizeEmbedUrl(item.url)}
+                                                    title={`${card.title}-${idx + 1}`}
+                                                    className="h-64 w-full"
+                                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                    referrerPolicy="strict-origin-when-cross-origin"
+                                                    allowFullScreen
+                                                  />
+                                                  {item.caption?.trim() && (
+                                                    <div className="border-t border-slate-200 px-3 py-2 text-center text-xs italic text-slate-500 dark:border-slate-700">
+                                                      {item.caption.trim()}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              ))}
                                             </div>
                                           ) : (
                                             <p className="text-sm text-slate-500">Link video belum diisi.</p>
@@ -2410,23 +2683,40 @@ function MaterialsPane({
                                         </div>
                                       ) : card.type === "upload" ? (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                                          {card.body ? (
+                                          {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
                                             <div className="space-y-1">
-                                              {card.body
-                                                .split("\n")
-                                                .map((x) => x.trim())
-                                                .filter(Boolean)
-                                                .map((url, idx) => (
+                                              {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
+                                                /\.pdf(\?.*)?$/i.test(item.url) ? (
+                                                  <div
+                                                    key={`${item.url}-${idx}`}
+                                                    className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/20 ${
+                                                      item.align === "left"
+                                                        ? "mr-auto"
+                                                        : item.align === "right"
+                                                          ? "ml-auto"
+                                                          : "mx-auto"
+                                                    }`}
+                                                    style={{ width: `${Math.max(40, Math.min(100, item.width_percent || 100))}%`, maxWidth: "100%" }}
+                                                  >
+                                                    <iframe src={item.url} title={`${item.name || "Dokumen"}-${idx + 1}`} className="h-64 w-full" />
+                                                    {item.caption?.trim() && (
+                                                      <div className="border-t border-slate-200 px-3 py-2 text-center text-xs italic text-slate-500 dark:border-slate-700">
+                                                        {item.caption.trim()}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                ) : (
                                                   <a
-                                                    key={`${url}-${idx}`}
-                                                    href={url}
+                                                    key={`${item.url}-${idx}`}
+                                                    href={item.url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 underline"
                                                   >
-                                                    <FiFileText size={14} /> Buka Dokumen {idx + 1}
+                                                    <FiFileText size={14} /> {item.name || `Buka Dokumen ${idx + 1}`}
                                                   </a>
-                                                ))}
+                                                )
+                                              ))}
                                             </div>
                                           ) : (
                                             <p className="text-sm text-slate-500">Dokumen belum diupload.</p>
@@ -2536,6 +2826,29 @@ function MaterialsPane({
       {quickAddError && <p className="text-sm text-red-600">{quickAddError}</p>}
       {contentActionError && <p className="text-sm text-red-600">{contentActionError}</p>}
       {sectionCrudError && <p className="text-sm text-red-600">{sectionCrudError}</p>}
+
+      <ConfirmDialog
+        isOpen={!!confirmDeleteContentCard}
+        title="Hapus Konten"
+        message={
+          confirmDeleteContentCard
+            ? `Hapus konten "${confirmDeleteContentCard.card.title}" dari section "${confirmDeleteContentCard.material.judul}"?`
+            : ""
+        }
+        confirmLabel="Hapus"
+        danger
+        onCancel={() => setConfirmDeleteContentCard(null)}
+        onConfirm={async () => {
+          if (!confirmDeleteContentCard) return;
+          try {
+            setContentActionError("");
+            await handleDeleteContentCard(confirmDeleteContentCard.material, confirmDeleteContentCard.card);
+            setConfirmDeleteContentCard(null);
+          } catch (err: any) {
+            setContentActionError(err?.message || "Gagal menghapus konten.");
+          }
+        }}
+      />
 
       <ConfirmDialog
         isOpen={!!confirmDeleteSection}
@@ -2978,10 +3291,31 @@ function escapeHtml(value: string): string {
 }
 
 function sanitizeRichHtml(value: string): string {
-  return value
+  const sanitized = value
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .trim();
+
+  if (typeof document === "undefined") return sanitized;
+
+  const container = document.createElement("div");
+  container.innerHTML = sanitized;
+  container.querySelectorAll("[data-media-delete='1'], [data-media-hint='1']").forEach((node) => node.remove());
+  container.querySelectorAll<HTMLElement>("[data-media-block='1']").forEach((block) => {
+    block.removeAttribute("contenteditable");
+    block.style.outline = "none";
+    block.style.boxShadow = "none";
+    block.style.resize = "none";
+    block.style.overflow = "visible";
+    block.style.border = "0";
+    block.style.padding = "0";
+    block.style.background = "transparent";
+    block.style.minHeight = "";
+  });
+  container.querySelectorAll<HTMLElement>("iframe, video, embed, object, a").forEach((el) => {
+    el.style.pointerEvents = "";
+  });
+  return container.innerHTML.trim();
 }
 
 function normalizeEmbedUrl(url: string): string {
@@ -3163,11 +3497,7 @@ function SectionMaterialContentRenderer({
       // ignore non-JSON text
     }
     const html = containsHtmlTag(trimmed) ? trimmed : `<p>${escapeHtml(trimmed).replace(/\n/g, "<br/>")}</p>`;
-    return (
-      <div className="sage-quill-render ql-snow">
-        <div className="ql-editor" dangerouslySetInnerHTML={{ __html: html }} />
-      </div>
-    );
+    return <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(html) }} />;
   }
 
   if (fileUrl) {
@@ -3204,6 +3534,57 @@ function truncate100(value: string): string {
   return `${value.slice(0, 100)}...`;
 }
 
+type SectionMediaItem = {
+  url: string;
+  width_percent?: number;
+  name?: string;
+  kind?: "image" | "video" | "document";
+  align?: "left" | "center" | "right";
+  caption?: string;
+};
+
+function normalizeSectionMediaItems(
+  type: SectionContentType,
+  body?: string,
+  meta?: SectionContentCardData["meta"],
+): SectionMediaItem[] {
+  const items = Array.isArray(meta?.media_items)
+    ? meta.media_items
+        .filter((item): item is NonNullable<SectionContentCardData["meta"]>["media_items"][number] =>
+          !!item && typeof item.url === "string" && item.url.trim().length > 0
+        )
+        .map((item) => ({
+          url: item.url.trim(),
+          width_percent:
+            typeof item.width_percent === "number" && Number.isFinite(item.width_percent)
+              ? Math.max(25, Math.min(100, item.width_percent))
+              : type === "gambar"
+                ? 60
+                : type === "video"
+                  ? 70
+                  : 100,
+          name: item.name,
+          kind: item.kind,
+          align: item.align === "left" || item.align === "right" ? item.align : "center",
+          caption: typeof item.caption === "string" ? item.caption : "",
+        }))
+    : [];
+
+  if (items.length > 0) return items;
+
+  return (body || "")
+    .split("\n")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((url) => ({
+      url,
+      width_percent: type === "gambar" ? 60 : type === "video" ? 70 : 100,
+      kind: type === "gambar" ? "image" : type === "video" ? "video" : "document",
+      align: "center",
+      caption: "",
+    }));
+}
+
 function toAbsoluteUploadUrl(filePath: string): string {
   const trimmed = filePath.trim();
   if (!trimmed) return trimmed;
@@ -3220,6 +3601,379 @@ function toAbsoluteUploadUrl(filePath: string): string {
   return trimmed;
 }
 
+function SectionMediaPreviewPane({
+  type,
+  mediaItems,
+  onUpdate,
+  onRemove,
+}: {
+  type: "gambar" | "video" | "upload";
+  mediaItems: SectionMediaItem[];
+  onUpdate: (index: number, patch: Partial<SectionMediaItem>) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="xl:sticky xl:top-4 space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-sm backdrop-blur text-slate-100">
+      <div>
+        <p className="text-sm font-medium text-slate-100">Preview Konten</p>
+        <p className="text-xs text-slate-400">Atur ukuran, posisi, dan caption tiap item sebelum disimpan.</p>
+      </div>
+      {mediaItems.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950 px-3 py-6 text-center text-xs text-slate-400">
+          Belum ada file/link yang ditambahkan.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {mediaItems.map((item, idx) => {
+            const width = Math.max(25, Math.min(100, item.width_percent || (type === "gambar" ? 60 : type === "video" ? 70 : 100)));
+            const align = item.align === "left" || item.align === "right" ? item.align : "center";
+            const justifyClass = align === "left" ? "justify-start" : align === "right" ? "justify-end" : "justify-center";
+            return (
+              <div key={`${item.url}-${idx}`} className="rounded-xl border border-slate-700 bg-[#071a38] p-3 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-xs font-medium text-slate-100">{item.name || `Item ${idx + 1}`}</p>
+                  <button type="button" onClick={() => onRemove(idx)} className="text-xs text-red-600 hover:underline">
+                    Hapus
+                  </button>
+                </div>
+                <div className={`mt-3 flex min-h-40 items-start rounded-xl border border-dashed border-slate-700 bg-slate-900 p-3 ${justifyClass}`}>
+                  <div style={{ width: `${width}%` }} className="max-w-full overflow-hidden rounded-lg border border-slate-700 bg-white">
+                    {type === "gambar" ? (
+                      <img src={item.url} alt={item.name || `Preview ${idx + 1}`} className="block h-auto w-full object-contain" />
+                    ) : type === "video" ? (
+                      <iframe
+                        src={normalizeEmbedUrl(item.url)}
+                        title={item.name || `Preview video ${idx + 1}`}
+                        className="h-44 w-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        allowFullScreen
+                      />
+                    ) : /\.pdf(\?.*)?$/i.test(item.url) ? (
+                      <iframe src={item.url} title={item.name || `Preview dokumen ${idx + 1}`} className="h-44 w-full" />
+                    ) : (
+                      <div className="px-3 py-6 text-center text-xs text-slate-600">{item.name || item.url}</div>
+                    )}
+                    {item.caption?.trim() && (
+                      <div className="border-t border-slate-700 px-3 py-2 text-center text-xs text-slate-400 bg-slate-950">
+                        {item.caption.trim()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-3 space-y-3">
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Posisi</p>
+                    <div className="flex gap-2">
+                      {[
+                        { value: "left", label: "Kiri", icon: FiAlignLeft },
+                        { value: "center", label: "Tengah", icon: FiAlignCenter },
+                        { value: "right", label: "Kanan", icon: FiAlignRight },
+                      ].map((option) => {
+                        const Icon = option.icon;
+                        const active = align === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => onUpdate(idx, { align: option.value as SectionMediaItem["align"] })}
+                            className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition ${
+                              active
+                                ? "border-slate-200 bg-slate-100 text-slate-900"
+                                : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                            }`}
+                          >
+                            <Icon size={13} />
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Lebar preview</span>
+                    <span>{width}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={25}
+                    max={100}
+                    step={5}
+                    value={width}
+                    onChange={(e) => onUpdate(idx, { width_percent: Number(e.target.value) })}
+                    className="w-full"
+                  />
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Caption</label>
+                    <input
+                      type="text"
+                      value={item.caption || ""}
+                      onChange={(e) => onUpdate(idx, { caption: e.target.value })}
+                      placeholder="Tambahkan caption opsional..."
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 outline-none focus:border-slate-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function normalizeColorInput(value: string | null | undefined, fallback: string): string {
+  if (!value) return fallback;
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+const FONT_FAMILY_OPTIONS = [
+  { label: "Sans Serif", value: "" },
+  { label: "Serif", value: "Georgia, Times New Roman, serif" },
+  { label: "Monospace", value: "Menlo, Monaco, Consolas, monospace" },
+  { label: "Work Sans", value: "Work Sans, system-ui, sans-serif" },
+];
+
+const FONT_SIZE_OPTIONS = [
+  { label: "Normal", value: "" },
+  { label: "12", value: "12px" },
+  { label: "14", value: "14px" },
+  { label: "16", value: "16px" },
+  { label: "18", value: "18px" },
+  { label: "24", value: "24px" },
+  { label: "32", value: "32px" },
+];
+
+const FontFamily = Extension.create({
+  name: "fontFamily",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["textStyle"],
+        attributes: {
+          fontFamily: {
+            default: null,
+            parseHTML: (element) => element.style.fontFamily || null,
+            renderHTML: (attributes) =>
+              attributes.fontFamily
+                ? {
+                    style: `font-family: ${attributes.fontFamily}`,
+                  }
+                : {},
+          },
+        },
+      },
+    ];
+  },
+});
+
+const FontSize = Extension.create({
+  name: "fontSize",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["textStyle"],
+        attributes: {
+          fontSize: {
+            default: null,
+            parseHTML: (element) => element.style.fontSize || null,
+            renderHTML: (attributes) =>
+              attributes.fontSize
+                ? {
+                    style: `font-size: ${attributes.fontSize}`,
+                  }
+                : {},
+          },
+        },
+      },
+    ];
+  },
+});
+
+type ImageAlign = "left" | "center" | "right";
+
+function getImageAlignFromElement(element: HTMLElement): ImageAlign {
+  const dataAlign = element.getAttribute("data-align");
+  if (dataAlign === "left" || dataAlign === "center" || dataAlign === "right") {
+    return dataAlign;
+  }
+
+  const inlineFloat = (element.style.float || "").trim();
+  if (inlineFloat === "left" || inlineFloat === "right") {
+    return inlineFloat;
+  }
+
+  const marginLeft = (element.style.marginLeft || "").trim();
+  const marginRight = (element.style.marginRight || "").trim();
+  if (marginLeft === "auto" && marginRight === "auto") {
+    return "center";
+  }
+
+  return "center";
+}
+
+function getImageStyle(width: string, align: ImageAlign): string {
+  const safeWidth = width || "480px";
+  const responsiveWidth = /^\d+(\.\d+)?px$/i.test(safeWidth) ? `min(${safeWidth}, 100%)` : safeWidth;
+
+  if (align === "left") {
+    return `width: ${responsiveWidth}; height: auto; display: block; margin: 0.75rem auto 0.75rem 0;`;
+  }
+
+  if (align === "right") {
+    return `width: ${responsiveWidth}; height: auto; display: block; margin: 0.75rem 0 0.75rem auto;`;
+  }
+
+  return `width: ${responsiveWidth}; height: auto; display: block; margin: 0.75rem auto;`;
+}
+
+function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const align = (node.attrs.align || "center") as ImageAlign;
+
+  const startResize = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
+
+      const startX = event.clientX;
+      const startWidth = wrapper.getBoundingClientRect().width;
+      const parentWidth =
+        wrapper.closest(".sage-tiptap-content")?.getBoundingClientRect().width ||
+        wrapper.closest(".ProseMirror")?.getBoundingClientRect().width ||
+        window.innerWidth;
+
+      const handleMove = (moveEvent: MouseEvent) => {
+        const deltaX = moveEvent.clientX - startX;
+        const nextWidth = Math.max(120, Math.min(parentWidth, startWidth + deltaX));
+        updateAttributes({ width: `${Math.round(nextWidth)}px` });
+      };
+
+      const stopResize = () => {
+        window.removeEventListener("mousemove", handleMove);
+        window.removeEventListener("mouseup", stopResize);
+      };
+
+      window.addEventListener("mousemove", handleMove);
+      window.addEventListener("mouseup", stopResize);
+    },
+    [updateAttributes],
+  );
+
+  return (
+    <NodeViewWrapper
+      className={`sage-tiptap-image-node sage-tiptap-image-node-${align}${selected ? " is-selected" : ""}`}
+      data-align={align}
+    >
+      <div
+        ref={wrapperRef}
+        className={`sage-tiptap-image-frame${selected ? " is-selected" : ""}`}
+        style={{ width: node.attrs.width || "480px" }}
+      >
+        <img
+          src={String(node.attrs.src || "")}
+          alt={String(node.attrs.alt || "")}
+          title={String(node.attrs.title || "")}
+          className="sage-tiptap-image"
+        />
+        <button
+          type="button"
+          className="sage-tiptap-image-handle"
+          onMouseDown={startResize}
+          title="Resize gambar dari pojok"
+          aria-label="Resize gambar dari pojok"
+        >
+          ◢
+        </button>
+      </div>
+    </NodeViewWrapper>
+  );
+}
+
+const ResizableImage = Node.create({
+  name: "resizableImage",
+  group: "block",
+  draggable: true,
+  selectable: true,
+  atom: true,
+  addAttributes() {
+    return {
+      src: {
+        default: null,
+      },
+      alt: {
+        default: null,
+      },
+      title: {
+        default: null,
+      },
+      width: {
+        default: "480px",
+        parseHTML: (element) =>
+          element.getAttribute("data-width") || element.style.width || element.getAttribute("width") || "480px",
+        renderHTML: (attributes) => ({
+          "data-width": attributes.width || "480px",
+        }),
+      },
+      align: {
+        default: "center",
+        parseHTML: (element) => getImageAlignFromElement(element),
+        renderHTML: (attributes) => ({
+          "data-align": attributes.align || "center",
+        }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "img[src]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "img",
+      mergeAttributes(HTMLAttributes, {
+        style: getImageStyle(
+          String(HTMLAttributes.width || "480px"),
+          ((HTMLAttributes.align as ImageAlign | undefined) || "center"),
+        ),
+      }),
+    ];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageView);
+  },
+});
+
+function ToolbarButton({
+  active = false,
+  disabled = false,
+  title,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  disabled?: boolean;
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      className={`sage-tiptap-toolbar-button${active ? " is-active" : ""}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function RichTextEditorField({
   value,
   onChange,
@@ -3227,300 +3981,7 @@ function RichTextEditorField({
   value: string;
   onChange: (html: string) => void;
 }) {
-  const [editorBundle, setEditorBundle] = useState<{
-    CKEditor: any;
-    ClassicEditor: any;
-    plugins: Record<string, any>;
-  } | null>(null);
-  const [uploadingImages, setUploadingImages] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadEditor = async () => {
-      const [{ CKEditor }, ckeditor] = await Promise.all([
-        import("@ckeditor/ckeditor5-react"),
-        import("ckeditor5"),
-      ]);
-      if (!mounted) return;
-      setEditorBundle({
-        CKEditor,
-        ClassicEditor: ckeditor.ClassicEditor,
-        plugins: {
-          Alignment: ckeditor.Alignment,
-          Autoformat: ckeditor.Autoformat,
-          BlockQuote: ckeditor.BlockQuote,
-          Bold: ckeditor.Bold,
-          CodeBlock: ckeditor.CodeBlock,
-          Essentials: ckeditor.Essentials,
-          FontBackgroundColor: ckeditor.FontBackgroundColor,
-          FontColor: ckeditor.FontColor,
-          FontFamily: ckeditor.FontFamily,
-          FontSize: ckeditor.FontSize,
-          Heading: ckeditor.Heading,
-          Highlight: ckeditor.Highlight,
-          HorizontalLine: ckeditor.HorizontalLine,
-          Image: ckeditor.Image,
-          ImageCaption: ckeditor.ImageCaption,
-          ImageResize: ckeditor.ImageResize,
-          ImageStyle: ckeditor.ImageStyle,
-          ImageTextAlternative: ckeditor.ImageTextAlternative,
-          ImageToolbar: ckeditor.ImageToolbar,
-          ImageUpload: ckeditor.ImageUpload,
-          Indent: ckeditor.Indent,
-          Italic: ckeditor.Italic,
-          Link: ckeditor.Link,
-          List: ckeditor.List,
-          MediaEmbed: ckeditor.MediaEmbed,
-          PasteFromOffice: ckeditor.PasteFromOffice,
-          Paragraph: ckeditor.Paragraph,
-          RemoveFormat: ckeditor.RemoveFormat,
-          SourceEditing: ckeditor.SourceEditing,
-          Strikethrough: ckeditor.Strikethrough,
-          Table: ckeditor.Table,
-          TableCellProperties: ckeditor.TableCellProperties,
-          TableProperties: ckeditor.TableProperties,
-          TableToolbar: ckeditor.TableToolbar,
-          Underline: ckeditor.Underline,
-        },
-      });
-    };
-    void loadEditor();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const editorConfig = useMemo(
-    () => ({
-      licenseKey: "GPL",
-      placeholder: "Tulis materi singkat di sini...",
-      plugins: editorBundle
-        ? [
-            editorBundle.plugins.Essentials,
-            editorBundle.plugins.Paragraph,
-            editorBundle.plugins.Heading,
-            editorBundle.plugins.Bold,
-            editorBundle.plugins.Italic,
-            editorBundle.plugins.Underline,
-            editorBundle.plugins.Strikethrough,
-            editorBundle.plugins.Link,
-            editorBundle.plugins.List,
-            editorBundle.plugins.Indent,
-            editorBundle.plugins.Alignment,
-            editorBundle.plugins.Autoformat,
-            editorBundle.plugins.BlockQuote,
-            editorBundle.plugins.Image,
-            editorBundle.plugins.ImageToolbar,
-            editorBundle.plugins.ImageCaption,
-            editorBundle.plugins.ImageStyle,
-            editorBundle.plugins.ImageTextAlternative,
-            editorBundle.plugins.ImageResize,
-            editorBundle.plugins.ImageUpload,
-            editorBundle.plugins.CodeBlock,
-            editorBundle.plugins.FontBackgroundColor,
-            editorBundle.plugins.FontColor,
-            editorBundle.plugins.FontFamily,
-            editorBundle.plugins.FontSize,
-            editorBundle.plugins.Highlight,
-            editorBundle.plugins.HorizontalLine,
-            editorBundle.plugins.MediaEmbed,
-            editorBundle.plugins.PasteFromOffice,
-            editorBundle.plugins.RemoveFormat,
-            editorBundle.plugins.SourceEditing,
-            editorBundle.plugins.Table,
-            editorBundle.plugins.TableCellProperties,
-            editorBundle.plugins.TableProperties,
-            editorBundle.plugins.TableToolbar,
-          ]
-        : [],
-      toolbar: [
-        "heading",
-        "|",
-        "fontFamily",
-        "fontSize",
-        "|",
-        "bold",
-        "italic",
-        "underline",
-        "strikethrough",
-        "fontColor",
-        "fontBackgroundColor",
-        "highlight",
-        "|",
-        "link",
-        "bulletedList",
-        "numberedList",
-        "outdent",
-        "indent",
-        "|",
-        "alignment",
-        "blockQuote",
-        "codeBlock",
-        "horizontalLine",
-        "uploadImage",
-        "insertTable",
-        "mediaEmbed",
-        "sourceEditing",
-        "removeFormat",
-        "|",
-        "undo",
-        "redo",
-      ],
-      heading: {
-        options: [
-          {
-            model: "paragraph",
-            title: "Paragraph",
-            class: "ck-heading_paragraph",
-          },
-          {
-            model: "heading1",
-            view: "h1",
-            title: "Heading 1",
-            class: "ck-heading_heading1",
-          },
-          {
-            model: "heading2",
-            view: "h2",
-            title: "Heading 2",
-            class: "ck-heading_heading2",
-          },
-          {
-            model: "heading3",
-            view: "h3",
-            title: "Heading 3",
-            class: "ck-heading_heading3",
-          },
-        ],
-      },
-      image: {
-        toolbar: [
-          "imageTextAlternative",
-          "|",
-          "imageStyle:inline",
-          "imageStyle:block",
-          "imageStyle:side",
-          "|",
-          "resizeImage",
-        ],
-        resizeOptions: [
-          {
-            name: "resizeImage:original",
-            value: null,
-            label: "Original",
-          },
-          {
-            name: "resizeImage:50",
-            value: "50",
-            label: "50%",
-          },
-          {
-            name: "resizeImage:75",
-            value: "75",
-            label: "75%",
-          },
-        ],
-      },
-      table: {
-        contentToolbar: [
-          "tableColumn",
-          "tableRow",
-          "mergeTableCells",
-          "tableProperties",
-          "tableCellProperties",
-        ],
-      },
-      list: {
-        properties: {
-          styles: true,
-          startIndex: true,
-          reversed: true,
-        },
-      },
-      link: {
-        addTargetToExternalLinks: true,
-        defaultProtocol: "https://",
-      },
-    }),
-    [editorBundle],
-  );
-
-  const uploadAdapterPlugin = useCallback(
-    (editor: any) => {
-      const fileRepository = editor.plugins.get("FileRepository");
-      fileRepository.createUploadAdapter = (loader: any) => ({
-        upload: async () => {
-          const file = await loader.file;
-          if (!file) {
-            throw new Error("File gambar tidak ditemukan.");
-          }
-          const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
-          if (!mimeOk) {
-            throw new Error("Format gambar harus PNG/JPG.");
-          }
-          if (file.size > 10 * 1024 * 1024) {
-            throw new Error("Ukuran gambar maksimal 10MB.");
-          }
-          setUploadingImages(true);
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const res = await fetch("/api/upload", {
-              method: "POST",
-              credentials: "include",
-              body: formData,
-            });
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok || !body?.filePath) {
-              throw new Error(body?.message || `Gagal upload ${file.name}`);
-            }
-            return {
-              default: toAbsoluteUploadUrl(String(body.filePath || "")),
-            };
-          } finally {
-            setUploadingImages(false);
-          }
-        },
-        abort: () => {
-          setUploadingImages(false);
-        },
-      });
-    },
-    [],
-  );
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="sage-ckeditor-editor">
-        {!editorBundle ? (
-          <div className="p-3 text-xs text-slate-500">Menyiapkan editor...</div>
-        ) : (
-          <editorBundle.CKEditor
-            editor={editorBundle.ClassicEditor}
-            config={editorConfig}
-            data={value || ""}
-            onReady={(editor: any) => {
-              uploadAdapterPlugin(editor);
-            }}
-            onChange={(_: unknown, editor: any) => {
-              onChange(editor.getData());
-            }}
-          />
-        )}
-      </div>
-      {uploadingImages && (
-        <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500">
-          Uploading gambar...
-        </div>
-      )}
-      <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500">
-        Upload gambar: PNG/JPG/JPEG maksimal 10MB.
-      </div>
-      <div className="border-t border-slate-200 px-3 py-2 text-xs text-slate-500">
-        Klik gambar untuk menampilkan toolbar gambar.
-      </div>
-    </div>
-  );
+  return <RichContentEditor value={value} onChange={onChange} allowPdf allowTables imageMaxSizeMb={10} />;
 }
 
 function RenameSectionModal({
@@ -3620,6 +4081,7 @@ function QuickAddSectionContentModal({
     type: SectionContentType;
     title: string;
     body: string;
+    media_items?: SectionMediaItem[];
     materi_mode?: "singkat" | "lengkap";
     materi_description?: string;
     description?: string;
@@ -3641,6 +4103,7 @@ function QuickAddSectionContentModal({
     imageUrl: string;
     videoUrl: string;
     uploadedFileName: string;
+    mediaItems: SectionMediaItem[];
     taskInstruction: string;
     taskDueAt: string;
     taskSubmissionType: TaskSubmissionType;
@@ -3655,6 +4118,7 @@ function QuickAddSectionContentModal({
     imageUrl: "",
     videoUrl: "",
     uploadedFileName: "",
+    mediaItems: [],
     taskInstruction: "",
     taskDueAt: "",
     taskSubmissionType: "teks",
@@ -3674,6 +4138,7 @@ function QuickAddSectionContentModal({
   const [imageUrl, setImageUrl] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [mediaItems, setMediaItems] = useState<SectionMediaItem[]>([]);
   const [pendingImagePreviewUrl, setPendingImagePreviewUrl] = useState("");
   const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
   const [taskInstruction, setTaskInstruction] = useState("");
@@ -3688,6 +4153,14 @@ function QuickAddSectionContentModal({
   const documentFileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedContentTypeValue =
     type === "materi" ? (materiMode === "lengkap" ? "materi_lengkap" : "materi_singkat") : type;
+  const mediaPreviewEnabled = type === "gambar" || type === "video" || type === "upload";
+  const updateMediaItem = useCallback((index: number, patch: Partial<SectionMediaItem>) => {
+    setMediaItems((prev) => prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
+  }, []);
+  const renderMediaPreviewPane = () => {
+    if (!mediaPreviewEnabled) return null;
+    return <SectionMediaPreviewPane type={type as "gambar" | "video" | "upload"} mediaItems={mediaItems} onUpdate={updateMediaItem} onRemove={(idx) => setMediaItems((prev) => prev.filter((_, i) => i !== idx))} />;
+  };
 
   const applyDraft = useCallback((draft: QuickAddDraft) => {
     setTitle(draft.title);
@@ -3697,12 +4170,26 @@ function QuickAddSectionContentModal({
     setImageUrl(draft.imageUrl);
     setVideoUrl(draft.videoUrl);
     setUploadedFileName(draft.uploadedFileName);
+    setMediaItems(draft.mediaItems || []);
     setTaskInstruction(draft.taskInstruction);
     setTaskDueAt(draft.taskDueAt);
     setTaskSubmissionType(draft.taskSubmissionType);
     setTaskAllowedFormats(draft.taskAllowedFormats);
     setTaskMaxFileMb(draft.taskMaxFileMb);
   }, []);
+
+  const resetQuickAddDraft = useCallback((key: string) => {
+    if (pendingImagePreviewUrl) {
+      URL.revokeObjectURL(pendingImagePreviewUrl);
+    }
+    const nextDraft = createDefaultDraft(key);
+    draftStoreRef.current[key] = nextDraft;
+    applyDraft(nextDraft);
+    setPendingDocumentFiles([]);
+    setPendingImagePreviewUrl("");
+    setError("");
+    onError("");
+  }, [applyDraft, onError, pendingImagePreviewUrl]);
 
   const persistCurrentDraft = useCallback(
     (key: string) => {
@@ -3714,6 +4201,7 @@ function QuickAddSectionContentModal({
         imageUrl,
         videoUrl,
         uploadedFileName,
+        mediaItems,
         taskInstruction,
         taskDueAt,
         taskSubmissionType,
@@ -3729,6 +4217,7 @@ function QuickAddSectionContentModal({
       imageUrl,
       videoUrl,
       uploadedFileName,
+      mediaItems,
       taskInstruction,
       taskDueAt,
       taskSubmissionType,
@@ -3769,6 +4258,12 @@ function QuickAddSectionContentModal({
     };
   }, [pendingImagePreviewUrl]);
 
+  useEffect(() => {
+    if (type === "gambar" || type === "video" || type === "upload") {
+      setBody(mediaItems.map((item) => item.url).join("\n"));
+    }
+  }, [mediaItems, type]);
+
   const isAllowedImageExtension = (urlOrName: string): boolean => /\.(png|jpe?g)(\?.*)?$/i.test(urlOrName || "");
 
   const validateImageLink = async (url: string): Promise<boolean> => {
@@ -3802,7 +4297,7 @@ function QuickAddSectionContentModal({
       if (!ok) {
         throw new Error("Link gambar tidak valid. Gunakan URL PNG/JPG/JPEG yang bisa diakses.");
       }
-      setBody(raw);
+      setMediaItems((prev) => [...prev, { url: raw, width_percent: 60, kind: "image", align: "center", caption: "" }]);
       setImageUrl("");
     } catch (err: any) {
       setError(err?.message || "Gagal menambahkan gambar dari link.");
@@ -3811,27 +4306,31 @@ function QuickAddSectionContentModal({
     }
   };
 
-  const uploadImageFile = async (file: File, previewUrlToRevoke?: string) => {
+  const uploadImageFiles = async (files: File[], previewUrlToRevoke?: string) => {
     setError("");
     setIsUploadingAsset(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      const uploadBody = await uploadRes.json().catch(() => ({}));
-      if (!uploadRes.ok) {
-        throw new Error(uploadBody?.message || "Gagal upload gambar.");
+      const nextItems: SectionMediaItem[] = [];
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const uploadBody = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok) {
+          throw new Error(uploadBody?.message || `Gagal upload gambar: ${file.name}`);
+        }
+        const uploadedPath = typeof uploadBody?.filePath === "string" ? uploadBody.filePath : "";
+        if (!uploadedPath) {
+          throw new Error(`Respons upload gambar tidak valid: ${file.name}`);
+        }
+        nextItems.push({ url: uploadedPath, width_percent: 60, name: file.name, kind: "image", align: "center", caption: "" });
       }
-      const uploadedPath = typeof uploadBody?.filePath === "string" ? uploadBody.filePath : "";
-      if (!uploadedPath) {
-        throw new Error("Respons upload gambar tidak valid.");
-      }
-      setBody(uploadedPath);
-      setUploadedFileName(file.name);
+      setMediaItems((prev) => [...prev, ...nextItems]);
+      setUploadedFileName(nextItems.map((item) => item.name).filter(Boolean).join(", "));
       if (previewUrlToRevoke) {
         URL.revokeObjectURL(previewUrlToRevoke);
       }
@@ -3844,25 +4343,29 @@ function QuickAddSectionContentModal({
     }
   };
 
-  const handlePickImageFile = async (file: File | null) => {
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      setError("Ukuran gambar maksimal 10MB.");
-      return;
-    }
-    const extOk = isAllowedImageExtension(file.name);
-    const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
-    if (!extOk && !mimeOk) {
-      setError("Format gambar harus PNG, JPG, atau JPEG.");
-      return;
+  const handlePickImageFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const accepted: File[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        setError(`Ukuran gambar maksimal 10MB: ${file.name}`);
+        return;
+      }
+      const extOk = isAllowedImageExtension(file.name);
+      const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
+      if (!extOk && !mimeOk) {
+        setError(`Format gambar harus PNG, JPG, atau JPEG: ${file.name}`);
+        return;
+      }
+      accepted.push(file);
     }
     if (pendingImagePreviewUrl) {
       URL.revokeObjectURL(pendingImagePreviewUrl);
     }
-    const nextPreviewUrl = URL.createObjectURL(file);
+    const nextPreviewUrl = URL.createObjectURL(accepted[0]);
     setError("");
     setPendingImagePreviewUrl(nextPreviewUrl);
-    await uploadImageFile(file, nextPreviewUrl);
+    await uploadImageFiles(accepted, nextPreviewUrl);
   };
 
   const handleAddVideoEmbed = () => {
@@ -3877,7 +4380,7 @@ function QuickAddSectionContentModal({
       return;
     }
     setError("");
-    setBody(embedUrl);
+    setMediaItems((prev) => [...prev, { url: embedUrl, width_percent: 70, kind: "video", align: "center", caption: "" }]);
     setVideoUrl("");
   };
 
@@ -3935,7 +4438,17 @@ function QuickAddSectionContentModal({
         uploadedPaths.push(uploadedPath);
         uploadedNames.push(pendingDocumentFile.name);
       }
-      setBody(uploadedPaths.join("\n"));
+      setMediaItems((prev) => [
+        ...prev,
+        ...uploadedPaths.map((url, idx) => ({
+          url,
+          name: uploadedNames[idx] || `Dokumen ${idx + 1}`,
+          width_percent: 100,
+          kind: "document" as const,
+          align: "center" as const,
+          caption: "",
+        })),
+      ]);
       setUploadedFileName(uploadedNames.join(", "));
       setPendingDocumentFiles([]);
     } catch (err: any) {
@@ -3977,6 +4490,7 @@ function QuickAddSectionContentModal({
       await onSubmit({
         type,
         title: title.trim(),
+        media_items: type === "gambar" || type === "video" || type === "upload" ? mediaItems : undefined,
         body:
           type === "materi"
             ? (materiMode === "singkat" ? safeMateriHtml : body.trim())
@@ -3999,6 +4513,7 @@ function QuickAddSectionContentModal({
               }
             : undefined,
       });
+      resetQuickAddDraft(selectedContentTypeValue);
     } catch (err: any) {
       const message = err?.message || "Gagal menambah konten.";
       setError(message);
@@ -4012,11 +4527,11 @@ function QuickAddSectionContentModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/45 p-4 flex items-center justify-center">
-      <div className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+      <div className="relative w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-950">
         <button
           type="button"
           onClick={() => {
-            persistCurrentDraft(selectedContentTypeValue);
+            resetQuickAddDraft(selectedContentTypeValue);
             onClose();
           }}
           className="absolute right-3 top-3 rounded-md p-1 text-slate-500 hover:bg-slate-100"
@@ -4024,8 +4539,8 @@ function QuickAddSectionContentModal({
         >
           <FiX />
         </button>
-        <h3 className="text-lg font-semibold text-slate-900">{lockType ? "Isi Materi" : "Tambah Konten"}</h3>
-        <p className="mt-1 text-sm text-slate-500">Section: {materialTitle}</p>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{lockType ? "Isi Materi" : "Tambah Konten"}</h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Section: {materialTitle}</p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {lockType ? (
             <div>
@@ -4068,28 +4583,30 @@ function QuickAddSectionContentModal({
               </select>
             </div>
           )}
-          <div>
-            <label className="text-sm font-medium text-slate-700">Judul Konten</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Contoh: Latihan Bab 1"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-              autoFocus
-            />
-          </div>
-          {type !== "materi" && type !== "tugas" && (
+          <div className={mediaPreviewEnabled ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-start" : "space-y-4"}>
+          <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-slate-700">Deskripsi</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                placeholder="Tambahkan deskripsi singkat konten..."
+              <label className="text-sm font-medium text-slate-700">Judul Konten</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Contoh: Latihan Bab 1"
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                autoFocus
               />
             </div>
-          )}
+            {type !== "materi" && type !== "tugas" && (
+              <div>
+                <label className="text-sm font-medium text-slate-700">Deskripsi</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Tambahkan deskripsi singkat konten..."
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                />
+              </div>
+            )}
           <div>
             {type !== "tugas" && type !== "soal" && (
               <label className="text-sm font-medium text-slate-700">
@@ -4227,9 +4744,10 @@ function QuickAddSectionContentModal({
                     ref={imageFileInputRef}
                     type="file"
                     accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                    multiple
                     className="hidden"
                     onChange={(e) => {
-                      void handlePickImageFile(e.target.files?.[0] || null);
+                      void handlePickImageFiles(e.target.files);
                     }}
                   />
                   <button
@@ -4241,12 +4759,8 @@ function QuickAddSectionContentModal({
                     Pilih Gambar (max 10MB, auto upload)
                   </button>
                 </div>
-                {pendingImagePreviewUrl && (
-                  <div className="inline-block max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5">
-                    <img src={pendingImagePreviewUrl} alt="Preview gambar" className="block max-h-56 w-auto max-w-full rounded object-contain" />
-                  </div>
-                )}
-                {body && <p className="text-xs text-slate-500 break-all">Tersimpan: {body}</p>}
+                {pendingImagePreviewUrl && <p className="text-xs text-slate-500">Preview upload sedang disiapkan...</p>}
+                {body && <p className="text-xs text-slate-500 break-all">Tersimpan: {mediaItems.length} file/link</p>}
               </div>
             ) : type === "video" ? (
               <div className="mt-1 space-y-3">
@@ -4273,7 +4787,7 @@ function QuickAddSectionContentModal({
                     />
                   </div>
                 )}
-                {body && <p className="text-xs text-slate-500 break-all">Embed: {body}</p>}
+                {body && <p className="text-xs text-slate-500 break-all">Tersimpan: {mediaItems.length} video</p>}
               </div>
             ) : type === "upload" ? (
               <div className="mt-1 space-y-3">
@@ -4329,7 +4843,7 @@ function QuickAddSectionContentModal({
                   </div>
                 )}
                 {uploadedFileName && <p className="text-xs text-slate-500 truncate">File: {uploadedFileName}</p>}
-                {body && <p className="text-xs text-slate-500 break-all">URL: {body}</p>}
+                {body && <p className="text-xs text-slate-500 break-all">Tersimpan: {mediaItems.length} dokumen</p>}
               </div>
             ) : type === "soal" ? null : (
               <textarea
@@ -4341,12 +4855,15 @@ function QuickAddSectionContentModal({
               />
             )}
           </div>
+          </div>
+          {mediaPreviewEnabled && <div>{renderMediaPreviewPane()}</div>}
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2">
             <button
               type="button"
               onClick={() => {
-                persistCurrentDraft(selectedContentTypeValue);
+                resetQuickAddDraft(selectedContentTypeValue);
                 onClose();
               }}
               className="sage-button-outline"
@@ -4380,6 +4897,7 @@ function QuickEditSectionContentModal({
   onSubmit: (payload: {
     title: string;
     body: string;
+    media_items?: SectionMediaItem[];
     materi_mode?: "singkat" | "lengkap";
     materi_description?: string;
     description?: string;
@@ -4394,6 +4912,7 @@ function QuickEditSectionContentModal({
   onRefresh?: () => Promise<void> | void;
 }) {
   const initializedCardIdRef = useRef<string | null>(null);
+  const initialMateriModeRef = useRef<"singkat" | "lengkap">("singkat");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [body, setBody] = useState("");
@@ -4401,14 +4920,42 @@ function QuickEditSectionContentModal({
   const [isDetailMateriEditorOpen, setIsDetailMateriEditorOpen] = useState(false);
   const [isDetailMateriIframeLoading, setIsDetailMateriIframeLoading] = useState(false);
   const [materiMode, setMateriMode] = useState<"singkat" | "lengkap">("singkat");
-  const [isMateriLengkapLocked, setIsMateriLengkapLocked] = useState(false);
+  const [isMateriModeLocked, setIsMateriModeLocked] = useState(false);
   const [taskInstruction, setTaskInstruction] = useState("");
   const [taskDueAt, setTaskDueAt] = useState("");
   const [taskSubmissionType, setTaskSubmissionType] = useState<TaskSubmissionType>("teks");
   const [taskAllowedFormats, setTaskAllowedFormats] = useState<string[]>(["pdf", "docx", "pptx"]);
   const [taskMaxFileMb, setTaskMaxFileMb] = useState("5");
+  const [imageUrl, setImageUrl] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
+  const [pendingImagePreviewUrl, setPendingImagePreviewUrl] = useState("");
+  const [mediaItems, setMediaItems] = useState<SectionMediaItem[]>([]);
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const documentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingSubmitPayload, setPendingSubmitPayload] = useState<{
+    title: string;
+    body: string;
+    media_items?: SectionMediaItem[];
+    materi_mode?: "singkat" | "lengkap";
+    materi_description?: string;
+    description?: string;
+    tugas?: {
+      instruction: string;
+      due_at?: string;
+      submission_type: TaskSubmissionType;
+      allowed_formats: string[];
+      max_file_mb?: number;
+    };
+  } | null>(null);
+  const mediaPreviewEnabled = card?.type === "gambar" || card?.type === "video" || card?.type === "upload";
+  const updateMediaItem = useCallback((index: number, patch: Partial<SectionMediaItem>) => {
+    setMediaItems((prev) => prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -4426,17 +4973,40 @@ function QuickEditSectionContentModal({
     setMateriHtml(card.body || "<p></p>");
     setIsDetailMateriEditorOpen(false);
     const initialMateriMode = card.meta?.materi_mode || "singkat";
+    initialMateriModeRef.current = initialMateriMode;
     setMateriMode(initialMateriMode);
-    setIsMateriLengkapLocked(card.type === "materi" && initialMateriMode === "lengkap");
+    setIsMateriModeLocked(card.type === "materi");
     setTaskInstruction(card.meta?.tugas_instruction || card.body || "");
     setTaskDueAt(card.meta?.tugas_due_at || "");
     setTaskSubmissionType(card.meta?.tugas_submission_type || "teks");
     setTaskAllowedFormats(Array.isArray(card.meta?.tugas_allowed_formats) ? card.meta.tugas_allowed_formats : ["pdf", "docx", "pptx"]);
     setTaskMaxFileMb(typeof card.meta?.tugas_max_file_mb === "number" ? String(card.meta?.tugas_max_file_mb) : "5");
+    setImageUrl("");
+    setVideoUrl("");
+    setUploadedFileName("");
+    setPendingDocumentFiles([]);
+    setPendingImagePreviewUrl("");
+    setMediaItems(normalizeSectionMediaItems(card.type, card.body, card.meta));
+    setIsUploadingAsset(false);
     setError("");
     setIsSubmitting(false);
+    setPendingSubmitPayload(null);
     setIsDetailMateriIframeLoading(false);
   }, [isOpen, card]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingImagePreviewUrl) {
+        URL.revokeObjectURL(pendingImagePreviewUrl);
+      }
+    };
+  }, [pendingImagePreviewUrl]);
+
+  useEffect(() => {
+    if (card?.type === "gambar" || card?.type === "video" || card?.type === "upload") {
+      setBody(mediaItems.map((item) => item.url).join("\n"));
+    }
+  }, [card?.type, mediaItems]);
 
   useEffect(() => {
     if (!isDetailMateriEditorOpen) return;
@@ -4459,66 +5029,281 @@ function QuickEditSectionContentModal({
     return () => window.removeEventListener("message", handleMessage);
   }, [isDetailMateriEditorOpen, onRefresh]);
 
-  if (!isOpen || !card) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const buildSubmitPayload = useCallback(() => {
+    if (!card) return null;
     if (!title.trim()) {
       setError("Judul konten wajib diisi.");
-      return;
+      return null;
     }
     const safeMateriHtml = sanitizeRichHtml(materiHtml || "");
     const materiPlainText = safeMateriHtml.replace(/<[^>]+>/g, "").trim();
     if (card.type === "materi" && materiMode === "singkat" && !materiPlainText) {
       setError("Isi materi wajib diisi.");
-      return;
+      return null;
     }
     if (card.type === "soal" && !description.trim()) {
       setError("Deskripsi wajib diisi.");
-      return;
+      return null;
     }
     if (card.type === "tugas" && !taskInstruction.trim()) {
       setError("Instruksi tugas wajib diisi.");
-      return;
+      return null;
+    }
+    if ((card.type === "gambar" || card.type === "video" || card.type === "upload") && mediaItems.length === 0) {
+      setError("Konten belum diisi.");
+      return null;
     }
     setError("");
+    return {
+      title: title.trim(),
+      body:
+        card.type === "materi"
+          ? (materiMode === "singkat" ? safeMateriHtml : body.trim())
+        : card.type === "tugas"
+          ? taskInstruction.trim()
+        : card.type === "soal"
+          ? description.trim()
+          : card.type === "gambar" || card.type === "video" || card.type === "upload"
+            ? mediaItems.map((item) => item.url).join("\n")
+            : body.trim(),
+      media_items: card.type === "gambar" || card.type === "video" || card.type === "upload" ? mediaItems : undefined,
+      materi_mode: card.type === "materi" ? (isMateriModeLocked ? initialMateriModeRef.current || materiMode : materiMode) : undefined,
+      materi_description:
+        card.type === "materi" && ((isMateriModeLocked ? initialMateriModeRef.current : materiMode) === "lengkap") ? body.trim() : undefined,
+      description: card.type !== "materi" && card.type !== "tugas" && card.type !== "soal" ? description.trim() : undefined,
+      tugas:
+        card.type === "tugas"
+          ? {
+              instruction: taskInstruction.trim(),
+              due_at: taskDueAt || undefined,
+              submission_type: taskSubmissionType,
+              allowed_formats: taskAllowedFormats,
+              max_file_mb: taskMaxFileMb.trim() ? Number(taskMaxFileMb.trim()) : undefined,
+            }
+          : undefined,
+    };
+  }, [
+    body,
+    card,
+    card?.type,
+    description,
+    isMateriModeLocked,
+    mediaItems,
+    materiHtml,
+    materiMode,
+    taskAllowedFormats,
+    taskDueAt,
+    taskInstruction,
+    taskMaxFileMb,
+    taskSubmissionType,
+    title,
+  ]);
+
+  const submitPayload = useCallback(async (payload: NonNullable<typeof pendingSubmitPayload>) => {
     setIsSubmitting(true);
     try {
-      await onSubmit({
-        title: title.trim(),
-        body:
-          card.type === "materi"
-            ? (materiMode === "singkat" ? safeMateriHtml : body.trim())
-            : card.type === "tugas"
-              ? taskInstruction.trim()
-            : card.type === "soal"
-              ? description.trim()
-            : body.trim(),
-        materi_mode: card.type === "materi" ? (isMateriLengkapLocked ? "lengkap" : materiMode) : undefined,
-        materi_description:
-          card.type === "materi" && (isMateriLengkapLocked || materiMode === "lengkap") ? body.trim() : undefined,
-        description: card.type !== "materi" && card.type !== "tugas" && card.type !== "soal" ? description.trim() : undefined,
-        tugas:
-          card.type === "tugas"
-            ? {
-                instruction: taskInstruction.trim(),
-                due_at: taskDueAt || undefined,
-                submission_type: taskSubmissionType,
-                allowed_formats: taskAllowedFormats,
-                max_file_mb: taskMaxFileMb.trim() ? Number(taskMaxFileMb.trim()) : undefined,
-              }
-            : undefined,
-      });
+      await onSubmit(payload);
+      setPendingSubmitPayload(null);
     } catch (err: any) {
       setError(err?.message || "Gagal menyimpan perubahan.");
     } finally {
       setIsSubmitting(false);
     }
+  }, [onSubmit]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = buildSubmitPayload();
+    if (!payload) return;
+    setPendingSubmitPayload(payload);
   };
+
+  const isAllowedImageExtension = (urlOrName: string): boolean => /\.(png|jpe?g)(\?.*)?$/i.test(urlOrName || "");
+
+  const validateImageLink = async (url: string): Promise<boolean> => {
+    if (!/^https?:\/\//i.test(url)) return false;
+    if (!isAllowedImageExtension(url)) return false;
+    return new Promise((resolve) => {
+      const img = new Image();
+      const timeoutId = window.setTimeout(() => resolve(false), 8000);
+      img.onload = () => {
+        window.clearTimeout(timeoutId);
+        resolve(true);
+      };
+      img.onerror = () => {
+        window.clearTimeout(timeoutId);
+        resolve(false);
+      };
+      img.src = url;
+    });
+  };
+
+  const handleAddImageFromLink = async () => {
+    const raw = imageUrl.trim();
+    if (!raw) {
+      setError("Link gambar wajib diisi.");
+      return;
+    }
+    setError("");
+    setIsUploadingAsset(true);
+    try {
+      const ok = await validateImageLink(raw);
+      if (!ok) throw new Error("Link gambar tidak valid. Gunakan URL PNG/JPG/JPEG yang bisa diakses.");
+      setMediaItems((prev) => [...prev, { url: raw, width_percent: 60, kind: "image", align: "center", caption: "" }]);
+      setImageUrl("");
+    } catch (err: any) {
+      setError(err?.message || "Gagal menambahkan gambar dari link.");
+    } finally {
+      setIsUploadingAsset(false);
+    }
+  };
+
+  const uploadImageFiles = async (files: File[], previewUrlToRevoke?: string) => {
+    setError("");
+    setIsUploadingAsset(true);
+    try {
+      const nextItems: SectionMediaItem[] = [];
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const uploadBody = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok) throw new Error(uploadBody?.message || `Gagal upload gambar: ${file.name}`);
+        const uploadedPath = typeof uploadBody?.filePath === "string" ? uploadBody.filePath : "";
+        if (!uploadedPath) throw new Error(`Respons upload gambar tidak valid: ${file.name}`);
+        nextItems.push({ url: uploadedPath, width_percent: 60, name: file.name, kind: "image", align: "center", caption: "" });
+      }
+      setMediaItems((prev) => [...prev, ...nextItems]);
+      setUploadedFileName(nextItems.map((item) => item.name).filter(Boolean).join(", "));
+      if (previewUrlToRevoke) URL.revokeObjectURL(previewUrlToRevoke);
+      setPendingImagePreviewUrl("");
+    } catch (err: any) {
+      setError(err?.message || "Gagal upload gambar.");
+    } finally {
+      setIsUploadingAsset(false);
+      if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+    }
+  };
+
+  const handlePickImageFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const accepted: File[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        setError(`Ukuran gambar maksimal 10MB: ${file.name}`);
+        return;
+      }
+      const extOk = isAllowedImageExtension(file.name);
+      const mimeOk = file.type === "image/png" || file.type === "image/jpeg";
+      if (!extOk && !mimeOk) {
+        setError(`Format gambar harus PNG, JPG, atau JPEG: ${file.name}`);
+        return;
+      }
+      accepted.push(file);
+    }
+    if (pendingImagePreviewUrl) URL.revokeObjectURL(pendingImagePreviewUrl);
+    const nextPreviewUrl = URL.createObjectURL(accepted[0]);
+    setPendingImagePreviewUrl(nextPreviewUrl);
+    setError("");
+    await uploadImageFiles(accepted, nextPreviewUrl);
+  };
+
+  const handleAddVideoEmbed = () => {
+    const raw = videoUrl.trim();
+    if (!raw) {
+      setError("Link video wajib diisi.");
+      return;
+    }
+    const embedUrl = normalizeEmbedUrl(raw);
+    if (!/^https?:\/\//i.test(embedUrl)) {
+      setError("Link video tidak valid.");
+      return;
+    }
+    setError("");
+    setMediaItems((prev) => [...prev, { url: embedUrl, width_percent: 70, kind: "video", align: "center", caption: "" }]);
+    setVideoUrl("");
+  };
+
+  const handlePickDocumentFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const allowedMime = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ];
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    Array.from(files).forEach((file) => {
+      const lower = (file.name || "").toLowerCase();
+      const hasAllowedExt = /\.(pdf|docx|ppt|pptx)$/.test(lower);
+      if (!hasAllowedExt && !allowedMime.includes(file.type)) {
+        rejected.push(file.name);
+        return;
+      }
+      accepted.push(file);
+    });
+    if (rejected.length > 0) {
+      setError(`Sebagian file ditolak (format): ${rejected.join(", ")}`);
+    } else {
+      setError("");
+    }
+    if (accepted.length === 0) return;
+    setPendingDocumentFiles((prev) => [...prev, ...accepted]);
+  };
+
+  const handleUploadDocument = async () => {
+    if (pendingDocumentFiles.length === 0) return;
+    setError("");
+    setIsUploadingAsset(true);
+    try {
+      const uploadedPaths: string[] = [];
+      const uploadedNames: string[] = [];
+      for (const pendingDocumentFile of pendingDocumentFiles) {
+        const formData = new FormData();
+        formData.append("file", pendingDocumentFile);
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const uploadBody = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok) throw new Error(uploadBody?.message || `Gagal upload dokumen: ${pendingDocumentFile.name}`);
+        const uploadedPath = typeof uploadBody?.filePath === "string" ? uploadBody.filePath : "";
+        if (!uploadedPath) throw new Error(`Respons upload dokumen tidak valid: ${pendingDocumentFile.name}`);
+        uploadedPaths.push(uploadedPath);
+        uploadedNames.push(pendingDocumentFile.name);
+      }
+      setMediaItems((prev) => [
+        ...prev,
+        ...uploadedPaths.map((url, idx) => ({
+          url,
+          name: uploadedNames[idx] || `Dokumen ${idx + 1}`,
+          width_percent: 100,
+          kind: "document" as const,
+          align: "center" as const,
+          caption: "",
+        })),
+      ]);
+      setUploadedFileName(uploadedNames.join(", "));
+      setPendingDocumentFiles([]);
+    } catch (err: any) {
+      setError(err?.message || "Gagal upload dokumen.");
+    } finally {
+      setIsUploadingAsset(false);
+      if (documentFileInputRef.current) documentFileInputRef.current.value = "";
+    }
+  };
+
+  if (!isOpen || !card) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/45 p-4 flex items-center justify-center">
-      <div className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+      <div className="relative w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-950">
         <button
           type="button"
           onClick={onClose}
@@ -4527,29 +5312,31 @@ function QuickEditSectionContentModal({
         >
           <FiX />
         </button>
-        <h3 className="text-lg font-semibold text-slate-900">Edit Konten</h3>
-        <p className="mt-1 text-sm text-slate-500">Tipe: {getSectionContentTypeLabel(card.type)}</p>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Edit Konten</h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Tipe: {getSectionContentTypeLabel(card.type)}</p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          <div>
-            <label className="text-sm font-medium text-slate-700">Judul Konten</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-              autoFocus
-            />
-          </div>
-          {card.type !== "materi" && card.type !== "tugas" && (
+          <div className={mediaPreviewEnabled ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-start" : "space-y-4"}>
+          <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-slate-700">Deskripsi</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
+              <label className="text-sm font-medium text-slate-700">Judul Konten</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                autoFocus
               />
             </div>
-          )}
+            {card.type !== "materi" && card.type !== "tugas" && (
+              <div>
+                <label className="text-sm font-medium text-slate-700">Deskripsi</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                />
+              </div>
+            )}
           <div>
             {card.type === "materi" ? (
               <div className="mt-1 space-y-3">
@@ -4557,24 +5344,25 @@ function QuickEditSectionContentModal({
                   <button
                     type="button"
                     onClick={() => setMateriMode("singkat")}
-                    disabled={isMateriLengkapLocked}
+                    disabled={isMateriModeLocked}
                     className={`rounded-md border px-3 py-1.5 text-xs font-medium ${
                       materiMode === "singkat" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"
-                    } ${isMateriLengkapLocked ? "cursor-not-allowed opacity-50" : ""}`}
+                    } ${isMateriModeLocked ? "cursor-not-allowed opacity-50" : ""}`}
                   >
                     Materi Singkat
                   </button>
                   <button
                     type="button"
                     onClick={() => setMateriMode("lengkap")}
-                    className={`rounded-md border px-3 py-1.5 text-xs font-medium ${materiMode === "lengkap" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"}`}
+                    disabled={isMateriModeLocked}
+                    className={`rounded-md border px-3 py-1.5 text-xs font-medium ${materiMode === "lengkap" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"} ${isMateriModeLocked ? "cursor-not-allowed opacity-50" : ""}`}
                   >
                     Materi Lengkap
                   </button>
                 </div>
-                {isMateriLengkapLocked && (
+                {isMateriModeLocked && (
                   <p className="text-xs text-slate-500">
-                    Materi lengkap dikunci. Tidak bisa diubah ke materi singkat dari menu edit konten.
+                    Mode materi dikunci di menu edit. Materi singkat tidak bisa diubah ke materi lengkap, dan sebaliknya.
                   </p>
                 )}
                 {materiMode === "singkat" ? (
@@ -4687,6 +5475,98 @@ function QuickEditSectionContentModal({
                   </div>
                 )}
               </div>
+            ) : card.type === "gambar" ? (
+              <div className="mt-1 space-y-3">
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="Link gambar PNG/JPG/JPEG"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                  <button type="button" onClick={() => void handleAddImageFromLink()} className="sage-button-outline !py-2 !px-3 text-xs" disabled={isUploadingAsset}>
+                    Pakai Link
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      void handlePickImageFiles(e.target.files);
+                    }}
+                  />
+                  <button type="button" onClick={() => imageFileInputRef.current?.click()} className="sage-button-outline !py-2 !px-3 text-xs" disabled={isUploadingAsset}>
+                    Pilih Gambar (max 10MB, auto upload)
+                  </button>
+                </div>
+                {pendingImagePreviewUrl && <p className="text-xs text-slate-500 dark:text-slate-400">Preview upload sedang disiapkan...</p>}
+                {body && <p className="text-xs text-slate-500 break-all dark:text-slate-400">Tersimpan: {mediaItems.length} file/link</p>}
+              </div>
+            ) : card.type === "video" ? (
+              <div className="mt-1 space-y-3">
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    placeholder="Link video (YouTube/link embed)"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                  <button type="button" onClick={handleAddVideoEmbed} className="sage-button-outline !py-2 !px-3 text-xs">
+                    Simpan Link
+                  </button>
+                </div>
+                {body && <p className="text-xs text-slate-500 break-all dark:text-slate-400">Tersimpan: {mediaItems.length} video</p>}
+              </div>
+            ) : card.type === "upload" ? (
+              <div className="mt-1 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={documentFileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.ppt,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => handlePickDocumentFiles(e.target.files)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => documentFileInputRef.current?.click()}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                    disabled={isUploadingAsset}
+                  >
+                    <FiPlus />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleUploadDocument()}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                    disabled={pendingDocumentFiles.length === 0 || isUploadingAsset}
+                  >
+                    <FiUploadCloud />
+                  </button>
+                </div>
+                {pendingDocumentFiles.length > 0 && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                    <p className="mb-2 font-medium text-slate-700 dark:text-slate-200">Preview dokumen terpilih ({pendingDocumentFiles.length})</p>
+                    <div className="space-y-1">
+                      {pendingDocumentFiles.map((file, idx) => (
+                        <div key={`${file.name}-${idx}`} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1 dark:border-slate-800">
+                          <span className="truncate">{file.name}</span>
+                          <button type="button" className="text-red-600 hover:underline" onClick={() => setPendingDocumentFiles((prev) => prev.filter((_, i) => i !== idx))}>
+                            Hapus
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {uploadedFileName && <p className="text-xs text-slate-500 truncate dark:text-slate-400">File: {uploadedFileName}</p>}
+                {body && <p className="text-xs text-slate-500 break-all dark:text-slate-400">Tersimpan: {mediaItems.length} dokumen</p>}
+              </div>
             ) : card.type === "soal" ? null : (
               <textarea
                 value={body}
@@ -4696,6 +5576,18 @@ function QuickEditSectionContentModal({
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
               />
             )}
+          </div>
+          </div>
+          {mediaPreviewEnabled && (
+            <div>
+              <SectionMediaPreviewPane
+                type={card.type as "gambar" | "video" | "upload"}
+                mediaItems={mediaItems}
+                onUpdate={updateMediaItem}
+                onRemove={(idx) => setMediaItems((prev) => prev.filter((_, i) => i !== idx))}
+              />
+            </div>
+          )}
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex justify-end gap-2">
@@ -4737,6 +5629,18 @@ function QuickEditSectionContentModal({
         </div>
       )}
       <LoadingDialog isOpen={isSubmitting} message="Menyimpan perubahan konten..." />
+      <ConfirmDialog
+        isOpen={!!pendingSubmitPayload}
+        title="Simpan Perubahan"
+        message={`Simpan perubahan untuk konten "${title.trim() || card.title}"?`}
+        confirmLabel="Simpan"
+        loading={isSubmitting}
+        onCancel={() => setPendingSubmitPayload(null)}
+        onConfirm={() => {
+          if (!pendingSubmitPayload) return;
+          void submitPayload(pendingSubmitPayload);
+        }}
+      />
     </div>
   );
 }
@@ -5031,6 +5935,122 @@ function StudentsPane({
         onInvite={handleInviteByStudentId}
       />
 
+      {isAnnouncementModalOpen ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Kelas</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">Banner Pengumuman</h3>
+                <p className="mt-1 text-sm text-slate-600">Banner ini akan tampil di halaman kelas guru dan siswa.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAnnouncementModalOpen(false)}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Tampilkan banner pengumuman</p>
+                  <p className="text-xs text-slate-500">Nonaktifkan jika pengumuman ingin disembunyikan sementara.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={announcementEnabled}
+                  onChange={(e) => setAnnouncementEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                />
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-[1fr_180px]">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Judul Banner</label>
+                  <input
+                    type="text"
+                    value={announcementTitle}
+                    onChange={(e) => setAnnouncementTitle(e.target.value)}
+                    placeholder="Contoh: Ujian dimulai Senin pukul 08.00"
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Tipe Banner</label>
+                  <select
+                    value={announcementTone}
+                    onChange={(e) => setAnnouncementTone(e.target.value as AnnouncementTone)}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                  >
+                    <option value="info">Info</option>
+                    <option value="success">Berhasil</option>
+                    <option value="warning">Perhatian</option>
+                    <option value="urgent">Mendesak</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Isi Pengumuman</label>
+                <textarea
+                  value={announcementContent}
+                  onChange={(e) => setAnnouncementContent(e.target.value)}
+                  rows={5}
+                  placeholder="Tulis pengumuman penting untuk siswa di kelas ini."
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                />
+              </div>
+
+              {(announcementTitle.trim() || announcementContent.trim()) && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Preview</p>
+                  <ClassAnnouncementBanner
+                    title={announcementTitle.trim() || "Judul banner"}
+                    content={announcementContent.trim() || "Isi pengumuman akan tampil di sini."}
+                    tone={announcementTone}
+                  />
+                </div>
+              )}
+
+              {announcementError ? <p className="text-sm text-red-600">{announcementError}</p> : null}
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleClearAnnouncement}
+                className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                disabled={isSavingAnnouncement}
+              >
+                <FiTrash2 />
+                Hapus Banner
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementModalOpen(false)}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  disabled={isSavingAnnouncement}
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAnnouncement}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isSavingAnnouncement}
+                >
+                  {isSavingAnnouncement ? "Menyimpan..." : "Simpan Banner"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ConfirmDialog
         isOpen={!!confirmRemoveStudent}
         title="Hapus Siswa"
@@ -5072,7 +6092,7 @@ function EmptyState({
   title,
   desc,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   desc: string;
 }) {

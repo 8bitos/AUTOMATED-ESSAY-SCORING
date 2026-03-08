@@ -480,6 +480,9 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     { href: '/dashboard/superadmin/users', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H7m4-8a4 4 0 100-8 4 4 0 000 8z"></path></svg>
     ), label: 'Manajemen User' },
+    { href: '/dashboard/superadmin/database', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3zm0 5c0 1.657 3.582 3 8 3s8-1.343 8-3m-16 5c0 1.657 3.582 3 8 3s8-1.343 8-3"></path></svg>
+    ), label: 'Manajemen Database' },
     { href: '/dashboard/superadmin/help', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9a3.5 3.5 0 116.544 1.667c-.538.917-1.607 1.5-2.272 2.333-.39.488-.5 1-.5 1.5m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
     ), label: 'Bantuan' },
@@ -522,6 +525,19 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
 
   const isSettingsActive = pathname === settingsLink || pathname.startsWith(`${settingsLink}/`);
   const userInitial = (user?.nama_lengkap || "?").trim().charAt(0).toUpperCase() || "?";
+  const handleOpenMyProfile = () => {
+    setMobileProfileOpen(false);
+    setSidebarOpen(false);
+    if (userRole === "student") {
+      router.push("/dashboard/student/profile");
+      return;
+    }
+    if (userRole === "teacher") {
+      router.push("/dashboard/teacher/profile");
+      return;
+    }
+    router.push("/dashboard/superadmin/settings");
+  };
   const handleLogout = async () => {
     await logout();
     setMobileProfileOpen(false);
@@ -591,6 +607,13 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
         </div>
         {mobileProfileOpen && (
           <div className="mb-5 -mt-5 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70 md:hidden">
+            <button
+              type="button"
+              onClick={handleOpenMyProfile}
+              className="w-full rounded-md px-2 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              My Profile
+            </button>
             <button
               type="button"
               onClick={handleLogout}

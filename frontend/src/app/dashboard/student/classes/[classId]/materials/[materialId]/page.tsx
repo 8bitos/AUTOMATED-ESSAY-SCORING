@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 import {
   RadarChart,
   PolarGrid,
@@ -682,6 +683,8 @@ export default function StudentMaterialDetailPage() {
     return nowMs >= scheduleEndDate.getTime();
   })();
   const canOpenResultsTab = canShowResults && isResultReleased && !hideResultsForStudent;
+  const [isMobileTopPanelOpen, setIsMobileTopPanelOpen] = useState(false);
+  const [showMobileQuestionMeta, setShowMobileQuestionMeta] = useState(false);
   const [quizQuestionIndex, setQuizQuestionIndex] = useState(0);
   const [currentTickSec, setCurrentTickSec] = useState(() => Math.floor(Date.now() / 1000));
   const [attemptStartSec, setAttemptStartSec] = useState<number | null>(null);
@@ -1395,7 +1398,7 @@ export default function StudentMaterialDetailPage() {
   if (!material || !cls) return null;
 
   return (
-    <div className={`student-material-view space-y-6 ${shouldForceFullscreen ? "min-h-screen bg-slate-950 p-4 md:p-6" : ""}`}>
+    <div className={`student-material-view space-y-4 md:space-y-6 ${shouldForceFullscreen ? "min-h-screen bg-slate-950 p-4 md:p-6" : ""}`}>
       {shouldForceFullscreen && (
         <style jsx global>{`
           body.sage-quiz-fullscreen #sidebar { display: none !important; }
@@ -1426,7 +1429,7 @@ export default function StudentMaterialDetailPage() {
           </div>
         </div>
       )}
-              {retryConfirmQuestionId && (
+      {retryConfirmQuestionId && (
         <div className="fixed inset-0 z-[81] flex items-center justify-center bg-slate-950/70 p-4">
           <div className="w-full max-w-md rounded-2xl border border-sky-200 bg-white p-5 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Konfirmasi Coba Ulang</p>
@@ -1452,16 +1455,155 @@ export default function StudentMaterialDetailPage() {
           </div>
         </div>
       )}
+      {!shouldForceFullscreen && (isSoalContext || isTugasContext) && (
+        <>
+          <button
+            type="button"
+            onClick={() => setIsMobileTopPanelOpen(true)}
+            className="md:hidden fixed bottom-4 right-4 z-30 inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/95 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur"
+          >
+            Panel Soal
+            <FiChevronUp size={14} />
+          </button>
+          {isMobileTopPanelOpen && (
+            <div className="md:hidden fixed inset-0 z-40 bg-slate-950/55" onClick={() => setIsMobileTopPanelOpen(false)}>
+              <div
+                className="absolute inset-x-0 bottom-0 rounded-t-3xl border border-slate-700 bg-slate-950 p-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mx-auto mb-4 h-1.5 w-16 rounded-full bg-slate-700" />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] uppercase tracking-wide text-slate-400">{cls.class_name}</p>
+                    <p className="truncate text-lg font-semibold text-slate-100">{material.judul}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileTopPanelOpen(false)}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200"
+                  >
+                    Tutup
+                    <FiChevronDown size={14} />
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className={`sage-pill ${isSoalContext ? "bg-blue-100 text-blue-700" : isTugasContext ? "bg-purple-100 text-purple-700" : ""}`}>
+                    Tipe: {isSoalContext ? "Soal" : isTugasContext ? "Tugas" : "Materi"}
+                  </span>
+                  <span className="sage-pill">{isTugasContext ? "1 Form Submisi" : `${displayQuestions.length} Soal`}</span>
+                  <span className="sage-pill">{submittedCount} Submit</span>
+                  <span className="sage-pill">{reviewedCount} Direview</span>
+                </div>
+                <div className="mt-4 grid gap-2 grid-cols-1">
+                  {(isSoalContext || isTugasContext) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSection("questions");
+                        setIsMobileTopPanelOpen(false);
+                      }}
+                      className={`rounded-xl px-4 py-2 text-sm text-left ${activeSection === "questions" ? "bg-[color:var(--sage-700)] text-white" : "bg-slate-900 text-slate-200 border border-slate-700"}`}
+                    >
+                      {isTugasContext ? "Submisi" : "Soal"}
+                    </button>
+                  )}
+                  {canOpenResultsTab && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSection("results");
+                        setIsMobileTopPanelOpen(false);
+                      }}
+                      className={`rounded-xl px-4 py-2 text-sm text-left ${activeSection === "results" ? "bg-[color:var(--sage-700)] text-white" : "bg-slate-900 text-slate-200 border border-slate-700"}`}
+                    >
+                      Hasil Penilaian
+                    </button>
+                  )}
+                </div>
+                {!isTugasContext && isSoalContext && (
+                  <div className="mt-4 space-y-3 rounded-2xl border border-slate-700 bg-[#071a38] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">Fokus Jawaban</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-100">
+                          Soal {cardModeQuestions.length === 0 ? 0 : quizQuestionIndex + 1} dari {cardModeQuestions.length}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                        <span className="sage-pill">{submittedCount} Submit</span>
+                        {sectionQuizSettings.timer_mode !== "none" && typeof activeTimerRemainingSec === "number" && (
+                          <span className={`sage-pill ${isActiveTimerExpired ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>
+                            {Math.floor(activeTimerRemainingSec / 60)}:{String(activeTimerRemainingSec % 60).padStart(2, "0")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isCardAnswerMode && (
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="h-full rounded-full bg-[color:var(--sage-600)] transition-all"
+                          style={{
+                            width: `${cardModeQuestions.length === 0 ? 0 : ((quizQuestionIndex + 1) / cardModeQuestions.length) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowMobileQuestionMeta((prev) => !prev)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200"
+                    >
+                      {showMobileQuestionMeta ? "Sembunyikan Detail Sesi" : "Tampilkan Detail Sesi"}
+                      {showMobileQuestionMeta ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+                    </button>
+                    {showMobileQuestionMeta && (
+                      <div className="space-y-2">
+                        {isBeforeSchedule && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            Kuis belum dibuka. Mulai pada {sectionQuizSettings.schedule_start_at || "-"}.
+                          </div>
+                        )}
+                        {isAfterSchedule && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            Waktu pengerjaan sudah ditutup.
+                          </div>
+                        )}
+                        {sectionQuizSettings.warn_on_tab_switch && (
+                          <div className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                            Pindah tab terdeteksi: {tabSwitchCount}
+                            {sectionQuizSettings.max_tab_switch > 0 ? ` / ${sectionQuizSettings.max_tab_switch}` : ""}
+                            {tabLocked && " (attempt dikunci)"}
+                          </div>
+                        )}
+                        {hideResultsForStudent && (
+                          <div className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                            Tab hasil penilaian disembunyikan oleh guru untuk sesi ini.
+                          </div>
+                        )}
+                        {!hideResultsForStudent && !canOpenResultsTab && (
+                          <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                            Hasil penilaian belum dirilis guru.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
       {!shouldForceFullscreen && (
-      <section className="sage-panel p-6">
+      <section className={`${isSoalContext || isTugasContext ? "hidden md:block" : "block"} sage-panel p-4 md:p-6`}>
         <Link
           href={`/dashboard/student/classes/${classId}`}
           className="text-sm font-medium text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
         >
           ← Kembali ke daftar materi
         </Link>
-        <p className="mt-2 text-xs uppercase tracking-wide text-[color:var(--ink-500)]">{cls.class_name}</p>
-        <h1 className="mt-1 text-3xl text-[color:var(--ink-900)]">{material.judul}</h1>
+        <p className="mt-2 text-[11px] uppercase tracking-wide text-[color:var(--ink-500)]">{cls.class_name}</p>
+        <h1 className="mt-1 text-2xl md:text-3xl text-[color:var(--ink-900)]">{material.judul}</h1>
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-[color:var(--ink-600)]">
           <span
             className={`sage-pill ${
@@ -1478,7 +1620,7 @@ export default function StudentMaterialDetailPage() {
       </section>
       )}
 
-      <section className="sage-panel p-3">
+      <section className={`${isSoalContext || isTugasContext ? "hidden md:block" : "block"} sage-panel p-2 md:p-3`}>
         <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
           {!isSoalContext && !isTugasContext && (
             <button
@@ -1527,7 +1669,7 @@ export default function StudentMaterialDetailPage() {
                     {preferred.title && <h3 className="text-xl font-semibold text-[color:var(--ink-900)]">{preferred.title}</h3>}
                     {containsHtmlTag(content) ? (
                       <SafeHtml
-                        className="prose prose-slate max-w-none text-[color:var(--ink-700)]"
+                        className="sage-tiptap-content max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
                         html={content}
                       />
                     ) : (
@@ -1642,7 +1784,7 @@ export default function StudentMaterialDetailPage() {
             }
             if (material.isi_materi) {
               if (containsHtmlTag(material.isi_materi)) {
-                return <SafeHtml className="prose prose-slate max-w-none text-[color:var(--ink-700)]" html={material.isi_materi} />;
+                return <SafeHtml className="sage-tiptap-content max-w-none text-[color:var(--ink-700)] dark:text-slate-200" html={material.isi_materi} />;
               }
               return <p className="leading-relaxed text-[color:var(--ink-700)] whitespace-pre-line">{material.isi_materi}</p>;
             }
@@ -1711,7 +1853,7 @@ export default function StudentMaterialDetailPage() {
             </div>
           )}
           {!isTugasContext && isCardAnswerMode && (
-            <div className="sage-panel p-4">
+            <div className="hidden md:block sage-panel p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-[color:var(--ink-700)]">
@@ -1745,29 +1887,29 @@ export default function StudentMaterialDetailPage() {
           {!isTugasContext && isSoalContext && (
             <>
               {isBeforeSchedule && (
-                <div className="sage-panel p-3 border border-amber-200 bg-amber-50 text-sm text-amber-800">
+                <div className={`${showMobileQuestionMeta || !isCardAnswerMode ? "block" : "hidden"} md:block sage-panel p-3 border border-amber-200 bg-amber-50 text-sm text-amber-800`}>
                   Kuis belum dibuka. Mulai pada {sectionQuizSettings.schedule_start_at || "-"}.
                 </div>
               )}
               {isAfterSchedule && (
-                <div className="sage-panel p-3 border border-red-200 bg-red-50 text-sm text-red-700">
+                <div className={`${showMobileQuestionMeta || !isCardAnswerMode ? "block" : "hidden"} md:block sage-panel p-3 border border-red-200 bg-red-50 text-sm text-red-700`}>
                   Waktu pengerjaan sudah ditutup.
                 </div>
               )}
               {sectionQuizSettings.warn_on_tab_switch && (
-                <div className="sage-panel p-3 border border-slate-200 bg-slate-50 text-sm text-slate-700">
+                <div className="hidden md:block sage-panel p-3 border border-slate-200 bg-slate-50 text-sm text-slate-700">
                   Pindah tab terdeteksi: {tabSwitchCount}
                   {sectionQuizSettings.max_tab_switch > 0 ? ` / ${sectionQuizSettings.max_tab_switch}` : ""}
                   {tabLocked && " (attempt dikunci)"}
                 </div>
               )}
               {hideResultsForStudent && (
-                <div className="sage-panel p-3 border border-slate-300 bg-slate-50 text-sm text-slate-700">
+                <div className="hidden md:block sage-panel p-3 border border-slate-300 bg-slate-50 text-sm text-slate-700">
                   Tab hasil penilaian disembunyikan oleh guru untuk sesi ini.
                 </div>
               )}
               {!hideResultsForStudent && !canOpenResultsTab && (
-                <div className="sage-panel p-3 border border-blue-200 bg-blue-50 text-sm text-blue-700">
+                <div className="hidden md:block sage-panel p-3 border border-blue-200 bg-blue-50 text-sm text-blue-700">
                   Hasil penilaian belum dirilis guru.
                 </div>
               )}

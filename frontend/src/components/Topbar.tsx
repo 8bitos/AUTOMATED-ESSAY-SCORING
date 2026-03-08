@@ -1058,6 +1058,19 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     router.push('/login');
   };
 
+  const handleOpenMyProfile = () => {
+    setDropdownOpen(false);
+    if (user.peran === 'student') {
+      router.push('/dashboard/student/profile');
+      return;
+    }
+    if (user.peran === 'teacher') {
+      router.push('/dashboard/teacher/profile');
+      return;
+    }
+    router.push('/dashboard/superadmin/settings');
+  };
+
   return (
     <header className="topbar-shell sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-700 dark:bg-slate-950/90">
       {impersonationActive && (
@@ -1226,6 +1239,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                       tabIndex={-1}
                     >
                       <div className="py-1" role="none">
+                        <button onClick={handleOpenMyProfile} className="text-slate-700 block w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800" role="menuitem" tabIndex={-1}>
+                          My Profile
+                        </button>
                         <button onClick={handleLogout} className="text-slate-700 block w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800" role="menuitem" tabIndex={-1} id="menu-item-0">
                           Logout
                         </button>

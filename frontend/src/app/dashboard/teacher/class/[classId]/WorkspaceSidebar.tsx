@@ -27,7 +27,7 @@ export default function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   return (
     <aside
-      className={`rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-20 transition-all duration-300 dark:border-slate-700 dark:bg-slate-900 ${
+      className={`h-fit rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 dark:border-slate-700 dark:bg-slate-900 ${
         collapsed ? "p-2" : "p-3"
       }`}
     >
