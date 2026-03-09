@@ -31,7 +31,7 @@ type QueueList = {
 export default function SuperadminQueueMonitorPage() {
   const [summary, setSummary] = useState<QueueSummary | null>(null);
   const [list, setList] = useState<QueueList | null>(null);
-  const [status, setStatus] = useState("failed");
+  const [status, setStatus] = useState("queued");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -126,9 +126,10 @@ export default function SuperadminQueueMonitorPage() {
           onChange={(e) => setStatus(e.target.value)}
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
         >
-          <option value="failed">failed</option>
+          <option value="">all</option>
           <option value="queued">queued</option>
           <option value="processing">processing</option>
+          <option value="failed">failed</option>
           <option value="completed">completed</option>
         </select>
       </div>

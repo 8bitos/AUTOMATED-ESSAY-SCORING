@@ -536,6 +536,11 @@ export default function StudentMaterialDetailPage() {
   const [retryPopupMessage, setRetryPopupMessage] = useState("");
   const [liveTickMs, setLiveTickMs] = useState(Date.now());
   const tabChangePendingRef = useRef(false);
+  const materialRef = useRef<Material | null>(null);
+
+  useEffect(() => {
+    materialRef.current = material;
+  }, [material]);
 
   const fetchData = useCallback(async (showLoader = true): Promise<Material | null> => {
     if (!classId || !materialId) return null;
@@ -546,6 +551,7 @@ export default function StudentMaterialDetailPage() {
       const res = await fetch(`/api/student/classes/${classId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Gagal memuat data materi.");
       const data = await res.json();
+      setError(null);
       setCls(data);
       const selected = data?.materials?.find((m: Material) => m.id === materialId) ?? null;
       setMaterial(selected);
@@ -562,8 +568,12 @@ export default function StudentMaterialDetailPage() {
       });
       return selected;
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Terjadi kesalahan."));
-      return null;
+      if (showLoader || !materialRef.current) {
+        setError(getErrorMessage(err, "Terjadi kesalahan."));
+        return null;
+      }
+      console.warn("Background material refresh failed", err);
+      return materialRef.current;
     } finally {
       if (showLoader) setLoading(false);
       if (!showLoader) setBackgroundSyncing(false);
