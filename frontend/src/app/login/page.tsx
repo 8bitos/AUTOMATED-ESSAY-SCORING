@@ -145,11 +145,11 @@ export default function LoginPage() {
               {loading ? "Loading..." : "Login"}
             </button>
           </form>
-          <p className="mt-6 text-center text-sm text-[color:var(--ink-500)]">
+          <p className="auth-alt-copy mt-6 text-center text-sm text-[color:var(--ink-500)]">
             Belum punya akun?{" "}
             <Link
               href="/register"
-              className="font-semibold text-[color:var(--sage-700)] hover:underline dark:text-[color:var(--sage-300)] dark:hover:text-[color:var(--sage-200)]"
+              className="auth-alt-link font-semibold text-[color:var(--sage-700)] hover:underline"
             >
               Daftar di sini
             </Link>

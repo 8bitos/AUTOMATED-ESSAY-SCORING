@@ -59,6 +59,32 @@
 }
 
 @layer components {
+  .auth-alt-copy {
+    color: var(--ink-500);
+  }
+
+  .auth-alt-link {
+    color: var(--sage-700);
+  }
+
+  .auth-alt-link:hover {
+    text-decoration: underline;
+  }
+
+  html[data-theme='dark'] .auth-alt-copy {
+    color: #94a3b8;
+  }
+
+  html[data-theme='dark'] .auth-alt-link {
+    color: #bae6fd;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  html[data-theme='dark'] .auth-alt-link:hover {
+    color: #e0f2fe;
+  }
+
   .sage-tiptap-editor {
     @apply overflow-hidden rounded-lg border border-slate-200;
   }
