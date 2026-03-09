@@ -195,14 +195,11 @@ type AIResponse struct {
 }
 
 type gradeEssayCacheKey struct {
-	Question         string                `json:"question"`
-	Keywords         string                `json:"keywords"`
-	IdealAnswer      string                `json:"ideal_answer"`
-	Essay            string                `json:"essay"`
-	RubricMode       string                `json:"rubric_mode"`
-	GroundingContext string                `json:"grounding_context"`
-	GroundingSource  string                `json:"grounding_source"`
-	Rubric           []models.RubricAspect `json:"rubric"`
+	Question    string                `json:"question"`
+	Keywords    string                `json:"keywords"`
+	IdealAnswer string                `json:"ideal_answer"`
+	Essay       string                `json:"essay"`
+	Rubric      []models.RubricAspect `json:"rubric"`
 }
 
 // formatRubricForPrompt mengubah struktur rubrik menjadi format string yang mudah dibaca
@@ -236,14 +233,11 @@ func buildGradeEssayRequestHash(req models.GradeEssayRequest, rubric []models.Ru
 	}
 
 	key := gradeEssayCacheKey{
-		Question:         strings.TrimSpace(req.Question),
-		Keywords:         strings.TrimSpace(req.Keywords),
-		IdealAnswer:      strings.TrimSpace(req.IdealAnswer),
-		Essay:            strings.TrimSpace(req.Essay),
-		RubricMode:       strings.TrimSpace(req.RubricMode),
-		GroundingContext: strings.TrimSpace(req.GroundingContext),
-		GroundingSource:  strings.TrimSpace(req.GroundingSource),
-		Rubric:           normalized,
+		Question:    strings.TrimSpace(req.Question),
+		Keywords:    strings.TrimSpace(req.Keywords),
+		IdealAnswer: strings.TrimSpace(req.IdealAnswer),
+		Essay:       strings.TrimSpace(req.Essay),
+		Rubric:      normalized,
 	}
 
 	payload, err := json.Marshal(key)
@@ -440,33 +434,16 @@ func buildPrompt(req models.GradeEssayRequest, formattedRubric string) string {
 
 	// Prompt deterministik + evidence-based untuk mengurangi variasi skor antarsesi.
 	promptBuilder.WriteString("You are a strict, deterministic academic grader.\n")
-	promptBuilder.WriteString("Grade ONLY using the effective rubric for this question and the student's essay text.\n")
+	promptBuilder.WriteString("Grade ONLY using the provided rubric and the student's essay text.\n")
 	promptBuilder.WriteString("Do not infer facts that are not explicitly present in the student's essay.\n")
 	promptBuilder.WriteString("If evidence is insufficient for an aspect, assign the lower score.\n\n")
-	promptBuilder.WriteString("SOURCE PRIORITY:\n")
-	promptBuilder.WriteString("1. EFFECTIVE RUBRIC FOR THIS QUESTION is the highest-priority scoring authority.\n")
-	promptBuilder.WriteString("2. IDEAL ANSWER is reference only; it must not override the rubric.\n")
-	promptBuilder.WriteString("3. GROUNDING CONTEXT is for topic/fact validation only; it must not override the rubric.\n")
-	promptBuilder.WriteString("4. KEYWORDS are for concept validation only and must not directly change score.\n\n")
 
 	promptBuilder.WriteString(fmt.Sprintf("ESSAY QUESTION:\n\"%s\"\n\n", req.Question))
-
-	if strings.TrimSpace(req.RubricMode) != "" {
-		promptBuilder.WriteString(fmt.Sprintf("RUBRIC MODE METADATA:\n%s\n\n", req.RubricMode))
-	}
 
 	promptBuilder.WriteString(fmt.Sprintf("GRADING RUBRIC:\n%s\n", formattedRubric))
 
 	if req.IdealAnswer != "" {
 		promptBuilder.WriteString(fmt.Sprintf("IDEAL ANSWER (Reference for reasoning):\n\"%s\"\n\n", req.IdealAnswer))
-	}
-
-	if strings.TrimSpace(req.GroundingContext) != "" {
-		source := strings.TrimSpace(req.GroundingSource)
-		if source == "" {
-			source = "grounding_context"
-		}
-		promptBuilder.WriteString(fmt.Sprintf("GROUNDING CONTEXT (%s):\n%s\n\n", source, req.GroundingContext))
 	}
 
 	promptBuilder.WriteString(fmt.Sprintf("STUDENT'S ESSAY TO GRADE:\n\"%s\"\n\n", req.Essay))
@@ -483,10 +460,7 @@ func buildPrompt(req models.GradeEssayRequest, formattedRubric string) string {
 	promptBuilder.WriteString("4. Score must be evidence-based from the student's essay text; if unclear, choose the lower plausible score.\n")
 	promptBuilder.WriteString("5. Keep grading conservative and stable. For identical input, produce identical scores.\n")
 	promptBuilder.WriteString("6. KEYWORDS are for validation only and MUST NOT directly increase/decrease score.\n")
-	promptBuilder.WriteString("7. If the ideal answer or grounding context conflicts with the rubric, follow the rubric.\n")
-	promptBuilder.WriteString("8. Give full score on an aspect only when the student's essay contains clear supporting evidence for that aspect.\n")
-	promptBuilder.WriteString("9. Do not punish harmless wording variation or small typos if the intended concept is correct.\n")
-	promptBuilder.WriteString("10. Feedback must be concise, specific, and tied to rubric weaknesses/strengths.\n\n")
+	promptBuilder.WriteString("7. Feedback must be concise, specific, and tied to rubric weaknesses/strengths.\n\n")
 
 	promptBuilder.WriteString("OUTPUT RULES:\n")
 	promptBuilder.WriteString("1. Return ONLY one valid JSON object, no markdown, no extra text.\n")

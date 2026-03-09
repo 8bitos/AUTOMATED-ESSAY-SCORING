@@ -147,7 +147,10 @@ export default function LoginPage() {
           </form>
           <p className="mt-6 text-center text-sm text-[color:var(--ink-500)]">
             Belum punya akun?{" "}
-            <Link href="/register" className="font-semibold text-[color:var(--sage-700)] hover:underline">
+            <Link
+              href="/register"
+              className="font-semibold text-[color:var(--sage-700)] hover:underline dark:text-[color:var(--sage-300)] dark:hover:text-[color:var(--sage-200)]"
+            >
               Daftar di sini
             </Link>
           </p>

@@ -5,11 +5,14 @@ import "encoding/json" // Mengimpor package encoding/json untuk bekerja dengan J
 // GradeEssayRequest mendefinisikan struktur data untuk permintaan penilaian esai.
 // Struktur ini kemungkinan besar digunakan untuk mengirimkan data esai ke model AI untuk dinilai.
 type GradeEssayRequest struct {
-	Question    string          `json:"question"`          // Pertanyaan esai yang diberikan.
-	Keywords    string          `json:"keywords,omitempty"`// Kata kunci yang relevan untuk penilaian (opsional).
-	IdealAnswer string          `json:"ideal_answer,omitempty"`// Jawaban ideal atau contoh (opsional).
-	Rubric      json.RawMessage `json:"rubric"`            // Rubrik penilaian dalam format JSON mentah.
-	Essay       string          `json:"essay"`             // Teks esai yang akan dinilai.
+	Question          string          `json:"question"`                     // Pertanyaan esai yang diberikan.
+	Keywords          string          `json:"keywords,omitempty"`           // Kata kunci yang relevan untuk penilaian (opsional).
+	IdealAnswer       string          `json:"ideal_answer,omitempty"`       // Jawaban ideal atau contoh (opsional).
+	Rubric            json.RawMessage `json:"rubric"`                       // Rubrik penilaian dalam format JSON mentah.
+	Essay             string          `json:"essay"`                        // Teks esai yang akan dinilai.
+	RubricMode        string          `json:"rubric_mode,omitempty"`        // Metadata sumber rubrik efektif (mis. effective_question_rubric).
+	GroundingContext  string          `json:"grounding_context,omitempty"`  // Konteks materi/RAG yang relevan untuk validasi konsep.
+	GroundingSource   string          `json:"grounding_source,omitempty"`   // Deskripsi singkat sumber konteks.
 }
 
 // GradeEssayResponse mendefinisikan struktur data untuk respons dari proses penilaian esai.

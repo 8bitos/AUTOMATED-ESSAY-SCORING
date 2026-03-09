@@ -38,6 +38,7 @@ type NavItem = {
   includeChildren?: boolean;
   badgeKey?: string;
   variant?: "default" | "updates";
+  children?: NavItem[];
 };
 
 type TeacherClassItem = {
@@ -87,14 +88,27 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
   const [studentClasses, setStudentClasses] = useState<StudentClassItem[]>([]);
   const [isStudentClassesLoading, setStudentClassesLoading] = useState(false);
   const [isStudentClassSubmenuOpen, setStudentClassSubmenuOpen] = useState(false);
+  const [openSuperadminGroups, setOpenSuperadminGroups] = useState<Record<string, boolean>>({
+    Operasional: false,
+    Pengguna: false,
+    "Tools & Data": false,
+    Bantuan: false,
+  });
   const [openClassGroups, setOpenClassGroups] = useState<Record<string, boolean>>({
     "Kelas 10": false,
     "Kelas 11": false,
     "Kelas 12": false,
     Lainnya: false,
   });
-  const isPathActive = (href: string, includeChildren?: boolean) =>
-    includeChildren ? pathname === href || pathname.startsWith(`${href}/`) : pathname === href;
+  const isPathActive = useCallback(
+    (href: string, includeChildren?: boolean) =>
+      includeChildren ? pathname === href || pathname.startsWith(`${href}/`) : pathname === href,
+    [pathname]
+  );
+  const hasActiveChild = useCallback(
+    (item: NavItem) => Boolean(item.children?.some((child) => isPathActive(child.href, child.includeChildren) || hasActiveChild(child))),
+    [isPathActive]
+  );
   const currentTeacherClassId = pathname.match(/^\/dashboard\/teacher\/class\/([^/]+)/)?.[1] ?? "";
   const currentStudentClassId = pathname.match(/^\/dashboard\/student\/classes\/([^/]+)/)?.[1] ?? "";
   const isTeacherClassArea = pathname === "/dashboard/teacher/classes" || pathname.startsWith("/dashboard/teacher/class/");
@@ -262,7 +276,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     return () => {
       active = false;
     };
-  }, []);
+  }, [userRole]);
 
   useEffect(() => {
     refreshBadges();
@@ -345,7 +359,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
       active = false;
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [userRole]);
 
   // Define navigation items for Teacher
   const teacherNavItems: NavItem[] = [
@@ -394,44 +408,59 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     ), label: 'Bantuan', includeChildren: false },
   ];
 
-  const superadminNavItems: NavItem[] = [
+  const superadminNavItems = useMemo<NavItem[]>(() => [
     { href: '/dashboard/superadmin', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
     ), label: 'Dashboard' },
     { href: '/dashboard/superadmin/monitoring', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h18M3 12h18M3 19h18"></path></svg>
+    ), label: 'Operasional', includeChildren: true, children: [
+      { href: '/dashboard/superadmin/monitoring', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m2-4h.01M4 6h16M4 12h8m-8 6h16"></path></svg>
     ), label: 'Monitoring' },
-    { href: '/dashboard/superadmin/impersonate', icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.121 17.804A9 9 0 1112 21a8.964 8.964 0 01-6.879-3.196zM15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-    ), label: 'Impersonate' },
-    { href: '/dashboard/superadmin/report-builder', icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-6m3 6V7m3 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-    ), label: 'Report Builder' },
-    { href: '/dashboard/superadmin/pengumuman', icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5l6 3v8l-6 3-6-3V8l6-3zm0 0v14"></path></svg>
-    ), label: 'Pengumuman' },
-    { href: '/dashboard/superadmin/ai-ops', icon: (
+      { href: '/dashboard/superadmin/ai-ops', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-6m3 6V7m3 10v-3m-9 7h12a2 2 0 002-2V5a2 2 0 00-2-2H6a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
     ), label: 'AI Ops' },
-    { href: '/dashboard/superadmin/queue-monitor', icon: (
+      { href: '/dashboard/superadmin/queue-monitor', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h8m-8 4h8m-8 4h5M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"></path></svg>
     ), label: 'Queue Monitor' },
-    { href: '/dashboard/superadmin/audit-log', icon: (
+      { href: '/dashboard/superadmin/grading-calibration', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    ), label: 'Grading Calibration' },
+      { href: '/dashboard/superadmin/audit-log', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m-7-8h8m3 10H5a2 2 0 01-2-2V6a2 2 0 012-2h9l5 5v9a2 2 0 01-2 2z"></path></svg>
     ), label: 'Audit Log' },
+    ] },
     { href: '/dashboard/superadmin/profile-requests', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H7m4-8a4 4 0 100-8 4 4 0 000 8z"></path></svg>
+    ), label: 'Pengguna', includeChildren: true, badgeKey: 'superadmin_approval', children: [
+      { href: '/dashboard/superadmin/profile-requests', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m-6-8h6m-8 12h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
     ), label: 'Approval', badgeKey: 'superadmin_approval' },
-    { href: '/dashboard/superadmin/users', icon: (
+      { href: '/dashboard/superadmin/users', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-8 0v2m8 0H7m4-8a4 4 0 100-8 4 4 0 000 8z"></path></svg>
     ), label: 'Manajemen User' },
-    { href: '/dashboard/superadmin/database', icon: (
+      { href: '/dashboard/superadmin/impersonate', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.121 17.804A9 9 0 1112 21a8.964 8.964 0 01-6.879-3.196zM15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+    ), label: 'Impersonate' },
+      { href: '/dashboard/superadmin/pengumuman', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5l6 3v8l-6 3-6-3V8l6-3zm0 0v14"></path></svg>
+    ), label: 'Pengumuman' },
+    ] },
+    { href: '/dashboard/superadmin/report-builder', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7h16M4 17h16M7 12h10"></path></svg>
+    ), label: 'Tools & Data', includeChildren: true, children: [
+      { href: '/dashboard/superadmin/report-builder', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-6m3 6V7m3 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+    ), label: 'Report Builder' },
+      { href: '/dashboard/superadmin/database', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3zm0 5c0 1.657 3.582 3 8 3s8-1.343 8-3m-16 5c0 1.657 3.582 3 8 3s8-1.343 8-3"></path></svg>
     ), label: 'Manajemen Database' },
+    ] },
     { href: '/dashboard/superadmin/help', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9a3.5 3.5 0 116.544 1.667c-.538.917-1.607 1.5-2.272 2.333-.39.488-.5 1-.5 1.5m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
     ), label: 'Bantuan' },
-  ];
+  ], []);
 
   const updatesLink =
     userRole === 'student'
@@ -440,7 +469,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
       ? '/dashboard/superadmin/updates'
       : '/dashboard/teacher/updates';
 
-  const updatesNavItem: NavItem = {
+  const updatesNavItem = useMemo<NavItem>(() => ({
     href: updatesLink,
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -449,7 +478,7 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     ),
     label: 'Update Sistem/Revisi',
     variant: 'updates',
-  };
+  }), [updatesLink]);
 
   const navItems =
     userRole === 'student'
@@ -459,7 +488,27 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
       : teacherNavItems;
   // Single source of truth for sidebar list:
   // this keeps future formatting changes localized in one place.
-  const navItemsWithUpdates = showUpdatesMenu ? [...navItems, updatesNavItem] : navItems;
+  const navItemsWithUpdates = useMemo(() => {
+    if (!showUpdatesMenu) return navItems;
+    return [...navItems, updatesNavItem];
+  }, [navItems, showUpdatesMenu, updatesNavItem]);
+
+  useEffect(() => {
+    if (userRole !== "superadmin") return;
+    setOpenSuperadminGroups((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      superadminNavItems.forEach((item) => {
+        if (!item.children?.length) return;
+        const shouldOpen = hasActiveChild(item);
+        if (shouldOpen && !prev[item.label]) {
+          next[item.label] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [hasActiveChild, superadminNavItems, userRole]);
 
   const settingsLink =
     userRole === 'student'
@@ -578,18 +627,22 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
             </h3>
             <ul className="mt-3">
               {navItemsWithUpdates.map((item) => {
-                const active = isPathActive(item.href, item.includeChildren);
+                const hasNestedChildren = Boolean(item.children?.length);
+                const active = isPathActive(item.href, item.includeChildren) || hasActiveChild(item);
                 const isTeacherClassesMenu = userRole === "teacher" && item.href === "/dashboard/teacher/classes";
                 const isStudentClassesMenu = userRole === "student" && item.href === "/dashboard/student/my-classes";
                 const hasClassSubmenu = isTeacherClassesMenu || isStudentClassesMenu;
+                const hasGenericSubmenu = hasNestedChildren && !hasClassSubmenu;
+                const hasSubmenu = hasClassSubmenu || hasGenericSubmenu;
                 const isUpdatesItem = item.variant === "updates";
                 const classSubmenuOpen = isTeacherClassesMenu ? isClassSubmenuOpen : isStudentClassSubmenuOpen;
+                const genericSubmenuOpen = openSuperadminGroups[item.label];
                 const classSections = isTeacherClassesMenu ? teacherClassSections : studentClassSections;
                 const classesLoading = isTeacherClassesMenu ? isTeacherClassesLoading : isStudentClassesLoading;
                 const totalClasses = isTeacherClassesMenu ? teacherClasses.length : studentClasses.length;
                 const currentClassId = isTeacherClassesMenu ? currentTeacherClassId : currentStudentClassId;
                 const classHrefBase = isTeacherClassesMenu ? "/dashboard/teacher/class" : "/dashboard/student/classes";
-                const itemContainerClass = hasClassSubmenu
+                const itemContainerClass = hasSubmenu
                   ? ""
                   : isUpdatesItem
                   ? active
@@ -598,8 +651,8 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                   : active
                   ? "bg-slate-100 dark:bg-slate-800/80"
                   : "hover:bg-slate-50 dark:hover:bg-slate-800/70";
-                const itemSpacingClass = hasClassSubmenu ? "px-0 py-0" : "pl-4 pr-3 py-2.5";
-                const rowContainerClass = hasClassSubmenu
+                const itemSpacingClass = hasSubmenu ? "px-0 py-0" : "pl-4 pr-3 py-2.5";
+                const rowContainerClass = hasSubmenu
                   ? active
                     ? "relative w-full pl-4 pr-1 py-2.5 bg-slate-100 rounded-xl transition dark:bg-slate-800/80"
                     : "relative w-full pl-4 pr-1 py-2.5 hover:bg-slate-50 rounded-xl transition dark:hover:bg-slate-800/70"
@@ -611,12 +664,12 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                 return (
                 <li
                   key={item.href}
-                  className={`sidebar-nav-item ${hasClassSubmenu ? 'sidebar-nav-item-has-submenu' : ''} ${itemSpacingClass} rounded-xl mb-1 last:mb-0 transition ${itemContainerClass}`}
+                  className={`sidebar-nav-item ${hasSubmenu ? 'sidebar-nav-item-has-submenu' : ''} ${itemSpacingClass} rounded-xl mb-1 last:mb-0 transition ${itemContainerClass}`}
                 >
                   <div className={`sidebar-nav-row flex items-center ${rowContainerClass}`}>
                     <Link
                       href={item.href}
-                      className={`sidebar-nav-link flex w-full items-center text-slate-600 dark:text-slate-300 ${hasClassSubmenu ? 'flex-1 min-w-0 pr-12' : ''} ${active && 'text-slate-900 font-semibold dark:text-slate-100'} ${isUpdatesItem && active ? 'text-sky-800 dark:text-sky-200' : ''}`}
+                      className={`sidebar-nav-link flex w-full items-center text-slate-600 dark:text-slate-300 ${hasSubmenu ? 'flex-1 min-w-0 pr-12' : ''} ${active && 'text-slate-900 font-semibold dark:text-slate-100'} ${isUpdatesItem && active ? 'text-sky-800 dark:text-sky-200' : ''}`}
                       onClick={() => setSidebarOpen(false)} // Close sidebar on mobile
                     >
                       <span className={`sidebar-nav-icon ${iconClass}`}>{item.icon}</span>
@@ -629,26 +682,28 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                         </span>
                       )}
                     </Link>
-                    {(item.badgeKey && badgeMap[item.badgeKey]) || hasClassSubmenu ? (
-                      <div className={hasClassSubmenu ? "absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2" : "ml-auto flex items-center gap-2"}>
+                    {(item.badgeKey && badgeMap[item.badgeKey]) || hasSubmenu ? (
+                      <div className={hasSubmenu ? "absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2" : "ml-auto flex items-center gap-2"}>
                         {item.badgeKey && badgeMap[item.badgeKey] && (
                           <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Ada update penting" />
                         )}
-                        {hasClassSubmenu && (
+                        {hasSubmenu && (
                           <button
                             type="button"
                             onClick={() => {
                               if (isTeacherClassesMenu) {
                                 setClassSubmenuOpen((prev) => !prev);
-                              } else {
+                              } else if (isStudentClassesMenu) {
                                 setStudentClassSubmenuOpen((prev) => !prev);
+                              } else {
+                                setOpenSuperadminGroups((prev) => ({ ...prev, [item.label]: !prev[item.label] }));
                               }
                             }}
                             className="rounded-md p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                            aria-label="Toggle submenu manajemen kelas"
-                            aria-expanded={classSubmenuOpen}
+                            aria-label={`Toggle submenu ${item.label}`}
+                            aria-expanded={hasClassSubmenu ? classSubmenuOpen : genericSubmenuOpen}
                           >
-                            <svg className={`h-4 w-4 transition-transform ${classSubmenuOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className={`h-4 w-4 transition-transform ${(hasClassSubmenu ? classSubmenuOpen : genericSubmenuOpen) ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                             </svg>
                           </button>
@@ -711,6 +766,42 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
                             </div>
                           ) : null
                         ))}
+                    </div>
+                  )}
+
+                  {hasGenericSubmenu && genericSubmenuOpen && (
+                    <div className="mt-2 ml-9 border-l border-slate-200 pl-3 space-y-1 dark:border-slate-700">
+                      {item.children?.map((child) => {
+                        const childActive = isPathActive(child.href, child.includeChildren);
+                        const isChildUpdatesItem = child.variant === "updates";
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`sidebar-class-subitem flex items-center gap-2 rounded-md px-3 py-2 text-xs transition ${
+                              childActive
+                                ? "bg-slate-200 text-slate-900 font-medium dark:bg-slate-700 dark:text-slate-100"
+                                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                            }`}
+                          >
+                            <span className="shrink-0 text-slate-400 dark:text-slate-500">{child.icon}</span>
+                            <span className="truncate">{child.label}</span>
+                            {isChildUpdatesItem && (
+                              <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                                childActive
+                                  ? "bg-sky-600 text-white dark:bg-sky-400 dark:text-slate-900"
+                                  : "border border-slate-300 bg-slate-200 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                              }`}>
+                                Info
+                              </span>
+                            )}
+                            {child.badgeKey && badgeMap[child.badgeKey] && (
+                              <span className="ml-auto inline-flex h-2.5 w-2.5 rounded-full bg-red-500" aria-label="Ada update penting" />
+                            )}
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
                 </li>
