@@ -435,20 +435,19 @@ func (s *EssaySubmissionService) buildQuestionGroundingContext(question *models.
 	}
 
 	var (
-		classID   string
-		title     string
-		body      sql.NullString
-		outcomes  sql.NullString
-		fileURL   sql.NullString
-		keywords  []string
+		classID  string
+		title    string
+		body     sql.NullString
+		outcomes sql.NullString
+		keywords []string
 	)
 	if err := s.db.QueryRowContext(
 		context.Background(),
-		`SELECT class_id, judul, isi_materi, capaian_pembelajaran, file_url, kata_kunci
+		`SELECT class_id, judul, isi_materi, capaian_pembelajaran, kata_kunci
 		 FROM materials
 		 WHERE id = $1`,
 		question.MaterialID,
-	).Scan(&classID, &title, &body, &outcomes, &fileURL, pq.Array(&keywords)); err != nil {
+	).Scan(&classID, &title, &body, &outcomes, pq.Array(&keywords)); err != nil {
 		if err == sql.ErrNoRows {
 			return "", "", nil
 		}
@@ -503,53 +502,7 @@ func (s *EssaySubmissionService) buildQuestionGroundingContext(question *models.
 		})
 	}
 
-	if fileURL.Valid && strings.TrimSpace(fileURL.String) != "" {
-		if extracted, err := ExtractTextFromUploadedPDF(fileURL.String); err == nil {
-			for idx, chunk := range splitGroundingChunks(extracted, 700, 2) {
-				candidates = append(candidates, groundingCandidate{
-					Label: fmt.Sprintf("material_file_%d", idx+1),
-					Text:  fmt.Sprintf("Lampiran materi: %s", chunk),
-					Score: scoreGroundingCandidate(queryText, chunk),
-				})
-			}
-		}
-	}
-
-	if strings.TrimSpace(classID) != "" {
-		rows, err := s.db.QueryContext(
-			context.Background(),
-			`SELECT nama_modul, file_url
-			 FROM class_teaching_modules
-			 WHERE class_id = $1
-			 ORDER BY updated_at DESC, created_at DESC
-			 LIMIT 2`,
-			classID,
-		)
-		if err != nil {
-			return "", "", err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var moduleName, moduleFileURL string
-			if err := rows.Scan(&moduleName, &moduleFileURL); err != nil {
-				return "", "", err
-			}
-			if extracted, err := ExtractTextFromUploadedPDF(moduleFileURL); err == nil {
-				for idx, chunk := range splitGroundingChunks(extracted, 700, 2) {
-					label := fmt.Sprintf("teaching_module_%s_%d", strings.TrimSpace(moduleName), idx+1)
-					text := fmt.Sprintf("Modul ajar %s: %s", strings.TrimSpace(moduleName), chunk)
-					candidates = append(candidates, groundingCandidate{
-						Label: label,
-						Text:  text,
-						Score: scoreGroundingCandidate(queryText, text),
-					})
-				}
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return "", "", err
-		}
-	}
+	_ = classID
 
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].Score == candidates[j].Score {
