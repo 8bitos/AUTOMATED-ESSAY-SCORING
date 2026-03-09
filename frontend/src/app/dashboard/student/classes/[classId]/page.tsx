@@ -476,6 +476,7 @@ export default function StudentClassMaterialsPage() {
     customReason: string;
     loading: boolean;
   } | null>(null);
+  const tabParam = (searchParams.get("tab") || "").toLowerCase();
 
   const fetchClassDetails = useCallback(async () => {
     if (!classId) return;
@@ -510,9 +511,9 @@ export default function StudentClassMaterialsPage() {
   }, [classId]);
 
   useEffect(() => {
-    const tab = (searchParams.get("tab") || "").toLowerCase();
-    setActiveTab(tab === "nilai" ? "nilai" : "materi");
-  }, [searchParams]);
+    const nextTab: ClassTab = tabParam === "nilai" ? "nilai" : "materi";
+    setActiveTab((prev) => (prev === nextTab ? prev : nextTab));
+  }, [tabParam]);
 
   const loadMyAppeals = useCallback(async () => {
     if (!classId) return;
@@ -803,6 +804,14 @@ export default function StudentClassMaterialsPage() {
       filteredMaterials.forEach((material, idx) => {
         next[material.id] = typeof prev[material.id] === "boolean" ? prev[material.id] : idx === 0;
       });
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev;
+      }
       return next;
     });
   }, [filteredMaterials]);
@@ -951,6 +960,14 @@ export default function StudentClassMaterialsPage() {
       gradeOverview.rows.forEach((row) => {
         next[row.id] = typeof prev[row.id] === "boolean" ? prev[row.id] : false;
       });
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev;
+      }
       return next;
     });
     setCollapsedGradeContents((prev) => {
@@ -961,6 +978,14 @@ export default function StudentClassMaterialsPage() {
           next[key] = typeof prev[key] === "boolean" ? prev[key] : false;
         });
       });
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev;
+      }
       return next;
     });
     setCollapsedGradeQuestions((prev) => {
@@ -973,6 +998,14 @@ export default function StudentClassMaterialsPage() {
           });
         });
       });
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => prev[key] === next[key])
+      ) {
+        return prev;
+      }
       return next;
     });
   }, [gradeOverview.rows]);

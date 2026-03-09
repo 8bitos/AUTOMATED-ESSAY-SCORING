@@ -718,6 +718,7 @@ func (s *ClassService) GetStudentClassDetails(classID, studentID string) (*model
 		SELECT
 			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.join_policy, c.is_archived,
 			c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
+			c.announcement_starts_at, c.announcement_ends_at,
 			c.created_at, c.updated_at
 		FROM classes c
 		JOIN users u ON u.id = c.teacher_id

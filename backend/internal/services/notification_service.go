@@ -500,14 +500,14 @@ func (s *NotificationService) buildStudentSeeds(userID string) ([]notificationSe
 	}
 
 	submissionRows, err := s.db.QueryContext(context.Background(),
-		`SELECT es.id, es.submitted_at, es.ai_grading_status, es.ai_graded_at, es.revised_score, es.teacher_feedback,
+		`SELECT es.id, es.submitted_at, es.ai_grading_status, es.ai_graded_at, tr.revised_score, tr.teacher_feedback,
 		        m.judul, c.class_name, tr.updated_at
 		 FROM essay_submissions es
-		 JOIN essay_questions eq ON eq.id = es.question_id
+		 JOIN essay_questions eq ON eq.id = es.soal_id
 		 JOIN materials m ON m.id = eq.material_id
 		 JOIN classes c ON c.id = m.class_id
 		 LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
-		 WHERE es.student_id = $1`,
+		 WHERE es.siswa_id = $1`,
 		userID,
 	)
 	if err != nil {
@@ -634,14 +634,13 @@ func (s *NotificationService) buildTeacherSeeds(userID string) ([]notificationSe
 	assessmentRows, err := s.db.QueryContext(context.Background(),
 		`SELECT es.id, es.submitted_at, u.nama_lengkap, m.judul, c.class_name
 		 FROM essay_submissions es
-		 JOIN users u ON u.id = es.student_id
-		 JOIN essay_questions eq ON eq.id = es.question_id
+		 JOIN users u ON u.id = es.siswa_id
+		 JOIN essay_questions eq ON eq.id = es.soal_id
 		 JOIN materials m ON m.id = eq.material_id
 		 JOIN classes c ON c.id = m.class_id
 		 LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
 		 WHERE c.teacher_id = $1
 		   AND c.is_archived = FALSE
-		   AND (es.revised_score IS NULL AND COALESCE(es.teacher_feedback, '') = '')
 		   AND tr.id IS NULL`,
 		userID,
 	)
