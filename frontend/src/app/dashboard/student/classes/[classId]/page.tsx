@@ -1333,7 +1333,7 @@ export default function StudentClassMaterialsPage() {
                                     <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
                                       {containsHtmlTag(fullContent) ? (
                                         <SafeHtml
-                                          className="sage-tiptap-content max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
+                                          className="sage-tiptap-render max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
                                           html={fullContent}
                                         />
                                       ) : (

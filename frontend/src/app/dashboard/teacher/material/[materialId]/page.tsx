@@ -718,7 +718,12 @@ const resolveQuestionIdsForSectionCard = (
     validIds.forEach((id) => usedIds.add(id));
   });
 
-  const fallbackQueue = questions.filter((q) => !usedIds.has(q.id));
+  const fallbackQueue = questions.filter((q) => {
+    if (usedIds.has(q.id)) return false;
+    const rawKeywords = typeof q.keywords === "string" ? q.keywords : "";
+    const keywords = rawKeywords.split(",").map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+    return !keywords.includes("tugas_submission");
+  });
   soalCards.forEach((card) => {
     if (resolvedByCardId.has(card.id)) return;
     const fallback = fallbackQueue.shift();

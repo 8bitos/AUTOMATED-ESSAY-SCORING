@@ -291,6 +291,31 @@ func compactSpaces(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
 }
 
+func normalizeQuestionKeywords(raw *string) []string {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return nil
+	}
+	parts := strings.Split(*raw, ",")
+	keywords := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.ToLower(strings.TrimSpace(part))
+		if trimmed == "" {
+			continue
+		}
+		keywords = append(keywords, trimmed)
+	}
+	return keywords
+}
+
+func isTaskSupportQuestion(q models.EssayQuestion) bool {
+	for _, keyword := range normalizeQuestionKeywords(q.Keywords) {
+		if keyword == "tugas_submission" {
+			return true
+		}
+	}
+	return false
+}
+
 func buildTeachingModuleContext(modules []models.ClassTeachingModule) string {
 	if len(modules) == 0 {
 		return ""
@@ -463,7 +488,25 @@ func (h *EssayQuestionHandlers) AutoGenerateEssayQuestionHandler(w http.Response
 		return
 	}
 
-	draft, err := h.AIService.GenerateEssayQuestionFromMaterial(materialTitle, plainContent, rubricType, targetLevel, teachingModuleContext)
+	existingQuestions, err := h.Service.GetEssayQuestionsByMaterialID(materialID)
+	if err != nil {
+		log.Printf("ERROR: Failed to load existing essay questions for material %s: %v", materialID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve existing essay questions")
+		return
+	}
+	existingQuestionTexts := make([]string, 0, len(existingQuestions))
+	for _, q := range existingQuestions {
+		if isTaskSupportQuestion(q) {
+			continue
+		}
+		text := strings.TrimSpace(q.TeksSoal)
+		if text == "" {
+			continue
+		}
+		existingQuestionTexts = append(existingQuestionTexts, text)
+	}
+
+	draft, err := h.AIService.GenerateEssayQuestionFromMaterial(materialTitle, plainContent, rubricType, targetLevel, teachingModuleContext, existingQuestionTexts)
 	if err != nil {
 		log.Printf("ERROR: Failed generating essay question draft for material %s: %v", materialID, err)
 		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to auto-generate question: %v", err))

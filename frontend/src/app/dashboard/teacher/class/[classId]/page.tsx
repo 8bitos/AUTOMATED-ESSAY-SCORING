@@ -592,6 +592,7 @@ interface MaterialQuestionPreview {
   teks_soal?: string;
   level_kognitif?: string;
   weight?: number;
+  keywords?: string[];
 }
 
 type MaterialBlockType = "heading" | "paragraph" | "video" | "image" | "link" | "pdf" | "ppt" | "bullet_list" | "number_list";
@@ -2354,6 +2355,11 @@ function MaterialsPane({
                   teks_soal: typeof q?.teks_soal === "string" ? q.teks_soal : "",
                   level_kognitif: typeof q?.level_kognitif === "string" ? q.level_kognitif : "",
                   weight: typeof q?.weight === "number" ? q.weight : undefined,
+                  keywords: Array.isArray(q?.keywords)
+                    ? q.keywords.filter((keyword: unknown): keyword is string => typeof keyword === "string").map((keyword: string) => keyword.trim().toLowerCase()).filter(Boolean)
+                    : typeof q?.keywords === "string"
+                      ? q.keywords.split(",").map((keyword: string) => keyword.trim().toLowerCase()).filter(Boolean)
+                      : [],
                 }))
                 .filter((q) => q.id)
             : [];
@@ -2720,7 +2726,7 @@ function MaterialsPane({
               });
 
               // Fallback untuk data lama tanpa relasi: pasangkan 1 soal sisa berdasarkan urutan card.
-              const fallbackQuestions = sectionQuestions.filter((q) => !usedQuestionIds.has(q.id));
+              const fallbackQuestions = sectionQuestions.filter((q) => !usedQuestionIds.has(q.id) && !isTaskSupportQuestion(q));
               soalCards.forEach((card) => {
                 if (resolvedQuestionByCardId.has(card.id)) return;
                 const candidate = fallbackQuestions.shift();
@@ -3811,6 +3817,10 @@ function getSectionContentTypeTone(type: SectionContentType): { badge: string; a
   return { badge: "bg-slate-100 text-slate-700", accent: "border-slate-200" };
 }
 
+function isTaskSupportQuestion(question?: MaterialQuestionPreview | null): boolean {
+  return Array.isArray(question?.keywords) && question.keywords.some((keyword) => keyword === "tugas_submission");
+}
+
 function getMateriModeLabel(mode?: "singkat" | "lengkap"): string {
   if (mode === "lengkap") return "Materi Lengkap";
   return "Materi Singkat";
@@ -4065,7 +4075,12 @@ function SectionMaterialContentRenderer({
       // ignore non-JSON text
     }
     const html = containsHtmlTag(trimmed) ? trimmed : `<p>${escapeHtml(trimmed).replace(/\n/g, "<br/>")}</p>`;
-    return <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(html) }} />;
+    return (
+      <div
+        className="sage-tiptap-render max-w-none text-sm text-[color:var(--ink-700)] dark:text-slate-200"
+        dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(html) }}
+      />
+    );
   }
 
   if (fileUrl) {

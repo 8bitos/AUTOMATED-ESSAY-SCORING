@@ -1669,7 +1669,7 @@ export default function StudentMaterialDetailPage() {
                     {preferred.title && <h3 className="text-xl font-semibold text-[color:var(--ink-900)]">{preferred.title}</h3>}
                     {containsHtmlTag(content) ? (
                       <SafeHtml
-                        className="sage-tiptap-content max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
+                        className="sage-tiptap-render max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
                         html={content}
                       />
                     ) : (
@@ -1784,7 +1784,7 @@ export default function StudentMaterialDetailPage() {
             }
             if (material.isi_materi) {
               if (containsHtmlTag(material.isi_materi)) {
-                return <SafeHtml className="sage-tiptap-content max-w-none text-[color:var(--ink-700)] dark:text-slate-200" html={material.isi_materi} />;
+                return <SafeHtml className="sage-tiptap-render max-w-none text-[color:var(--ink-700)] dark:text-slate-200" html={material.isi_materi} />;
               }
               return <p className="leading-relaxed text-[color:var(--ink-700)] whitespace-pre-line">{material.isi_materi}</p>;
             }
