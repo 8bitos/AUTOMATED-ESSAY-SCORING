@@ -72,32 +72,8 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen">
-      <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 gap-6 px-4 py-8 sm:px-6 sm:py-10 md:grid-cols-[1fr_1fr] md:items-center md:gap-10 md:py-12">
-        <section className="order-2 space-y-4 md:order-1 md:space-y-6">
-          <details className="group rounded-2xl border border-slate-200/80 bg-white/70 p-4 md:hidden">
-            <summary className="cursor-pointer list-none text-sm font-semibold text-[color:var(--ink-900)]">
-              Lihat info SAGE
-            </summary>
-            <div className="mt-3 space-y-3">
-              <p className="text-base text-[color:var(--ink-900)]">
-                Masuk ke ruang kerja akademik SAGE.
-              </p>
-              <p className="text-sm text-[color:var(--ink-500)]">
-                Lanjutkan pengelolaan kelas, rubrik, dan umpan balik esai dengan standar akademik
-                yang konsisten.
-              </p>
-              <div className="rounded-xl border border-slate-200 bg-white/80 p-4">
-                <p className="text-sm font-semibold text-[color:var(--ink-900)]">Yang bisa kamu lakukan</p>
-                <div className="mt-3 space-y-2 text-sm text-[color:var(--ink-500)]">
-                  <p>• Menilai esai secara otomatis dan transparan</p>
-                  <p>• Mengelola materi, modul, dan pertanyaan</p>
-                  <p>• Memberi review guru untuk validasi nilai</p>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <div className="hidden space-y-6 md:block">
+      <div className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center justify-items-center gap-6 px-4 py-8 sm:px-6 sm:py-10 md:grid-cols-[1fr_1fr] md:justify-items-stretch md:gap-10 md:py-12">
+        <section className="hidden space-y-6 md:block">
           <span className="sage-pill">Portal Akademik</span>
           <h1 className="text-4xl text-[color:var(--ink-900)] md:text-5xl">
             Masuk ke ruang kerja akademik SAGE.
@@ -114,10 +90,9 @@ export default function LoginPage() {
               <p>• Memberi review guru untuk validasi nilai</p>
             </div>
           </div>
-          </div>
         </section>
 
-        <section className="order-1 sage-panel p-5 sm:p-8 md:order-2 md:p-10">
+        <section className="mx-auto w-full max-w-md sage-panel p-5 sm:p-8 md:mx-0 md:max-w-none md:p-10">
           <div className="mb-6">
             <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--sage-700)] text-white">
               <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 0 0-7.07 17.07A10 10 0 1 0 12 2m0 18a8 8 0 1 1 0-16a8 8 0 0 1 0 16Zm-1-7.5h2v2h-2Zm0-6h2v4h-2Z"/></svg>

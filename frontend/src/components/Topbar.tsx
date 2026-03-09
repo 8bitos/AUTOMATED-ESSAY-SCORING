@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'; // Import useRouter
 import { useTheme } from '@/context/ThemeContext';
 import {
   fetchStudentNotifications,
+  hydrateStudentNotificationPrefs,
   loadStudentNotificationPrefs,
   STUDENT_NOTIFICATION_PREFS_KEY,
   StudentNotificationPrefs,
@@ -11,31 +12,29 @@ import {
 import {
   DEFAULT_NOTIFICATION_POLL_INTERVAL_MS,
   loadNotificationPollIntervalMs,
+  subscribeNotificationStream,
 } from '@/lib/notificationRealtime';
+import {
+  fetchTeacherNotifications,
+  hydrateTeacherNotificationPrefs,
+  loadTeacherNotificationPrefs,
+  TEACHER_NOTIFICATION_PREFS_KEY,
+  TeacherNotificationPrefs,
+} from '@/lib/teacherNotifications';
+import {
+  fetchSuperadminNotifications,
+  hydrateSuperadminNotificationPrefs,
+  loadSuperadminNotificationPrefs,
+  SUPERADMIN_NOTIFICATION_PREFS_KEY,
+  SuperadminNotificationPrefs,
+} from '@/lib/superadminNotifications';
+import { markAllNotificationCenterItemsRead, markNotificationCenterItemsRead } from '@/lib/notificationCenter';
 
 interface TopbarProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }
 
-type TeacherNotificationPrefs = {
-  classRequests: boolean;
-  assessmentUpdates: boolean;
-  systemAnnouncements: boolean;
-};
-type SuperadminNotificationPrefs = {
-  approvalRequests: boolean;
-};
-
-type AdminProfileRequestItem = {
-  id: string;
-  user_name?: string;
-  request_type?: string;
-  created_at?: string;
-};
-
-const TEACHER_NOTIFICATION_PREFS_KEY = 'teacher_notification_preferences';
-const SUPERADMIN_NOTIFICATION_PREFS_KEY = 'superadmin_notification_preferences';
 const NOTIF_READ_STORAGE_PREFIX = 'read_notifications_';
 const SEARCH_RECENT_PREFIX = 'topbar_command_recent_';
 
@@ -236,23 +235,35 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     message: string;
     createdAt: string;
     href?: string;
+    isRead?: boolean;
   }>>([]);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [teacherNotifPrefs, setTeacherNotifPrefs] = useState<TeacherNotificationPrefs>({
     classRequests: true,
     assessmentUpdates: true,
+    appealRequests: true,
+    profileApprovals: true,
     systemAnnouncements: true,
+    classAnnouncements: true,
+    sidebarIndicators: true,
   });
   const [superadminNotifPrefs, setSuperadminNotifPrefs] = useState<SuperadminNotificationPrefs>({
     approvalRequests: true,
+    anomalyAlerts: true,
+    sidebarIndicators: true,
   });
   const [studentNotifPrefs, setStudentNotifPrefs] = useState<StudentNotificationPrefs>({
     profileApprovals: true,
     classApproved: true,
     classInvited: true,
+    classAnnouncements: true,
+    systemAnnouncements: true,
     newMaterials: true,
+    deadlineReminders: true,
+    aiGradingComplete: true,
     reviewedScores: true,
     newQuestions: true,
+    appealUpdates: true,
     sidebarIndicators: true,
   });
   const [impersonationActive, setImpersonationActive] = useState(false);
@@ -328,53 +339,19 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     setRecentCommands(items.slice(0, 8));
   }, [getRecentCommandStorageKey]);
 
-  const loadTeacherNotifPrefs = () => {
-    if (typeof window === 'undefined') return;
-    const raw = window.localStorage.getItem(TEACHER_NOTIFICATION_PREFS_KEY);
-    if (!raw) {
-      setTeacherNotifPrefs({
-        classRequests: true,
-        assessmentUpdates: true,
-        systemAnnouncements: true,
-      });
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(raw) as Partial<TeacherNotificationPrefs>;
-      setTeacherNotifPrefs({
-        classRequests: parsed.classRequests ?? true,
-        assessmentUpdates: parsed.assessmentUpdates ?? true,
-        systemAnnouncements: parsed.systemAnnouncements ?? true,
-      });
-    } catch {
-      setTeacherNotifPrefs({
-        classRequests: true,
-        assessmentUpdates: true,
-        systemAnnouncements: true,
-      });
-    }
+  const loadTeacherNotifPrefs = async () => {
+    setTeacherNotifPrefs(loadTeacherNotificationPrefs());
+    setTeacherNotifPrefs(await hydrateTeacherNotificationPrefs());
   };
 
-  const loadSuperadminNotifPrefs = () => {
-    if (typeof window === 'undefined') return;
-    const raw = window.localStorage.getItem(SUPERADMIN_NOTIFICATION_PREFS_KEY);
-    if (!raw) {
-      setSuperadminNotifPrefs({ approvalRequests: true });
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw) as Partial<SuperadminNotificationPrefs>;
-      setSuperadminNotifPrefs({
-        approvalRequests: parsed.approvalRequests ?? true,
-      });
-    } catch {
-      setSuperadminNotifPrefs({ approvalRequests: true });
-    }
+  const loadSuperadminNotifPrefs = async () => {
+    setSuperadminNotifPrefs(loadSuperadminNotificationPrefs());
+    setSuperadminNotifPrefs(await hydrateSuperadminNotificationPrefs());
   };
 
-  const hydrateStudentNotifPrefs = () => {
+  const hydrateStudentNotifPrefs = async () => {
     setStudentNotifPrefs(loadStudentNotificationPrefs());
+    setStudentNotifPrefs(await hydrateStudentNotificationPrefs());
   };
 
   const { theme, toggleTheme } = useTheme();
@@ -431,105 +408,40 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     setNotifLoading(true);
     try {
       if (user.peran === 'teacher') {
-        const allItems: Array<{ id: string; title: string; message: string; createdAt: string; href?: string }> = [];
-        const classRes = await fetch('/api/classes', { credentials: 'include' });
-        if (!classRes.ok) throw new Error('Failed to fetch classes');
-        const classes = await classRes.json();
-
-        if (teacherNotifPrefs.classRequests) {
-          for (const cls of Array.isArray(classes) ? classes : []) {
-            const pendingRes = await fetch(`/api/classes/${cls.id}/join-requests`, { credentials: 'include' });
-            if (pendingRes.ok) {
-              const pendingItems = await pendingRes.json();
-              for (const req of Array.isArray(pendingItems) ? pendingItems : []) {
-                allItems.push({
-                  id: `join-${req.member_id || req.id}`,
-                  title: 'Join Request Baru',
-                  message: `${req.student_name || 'Siswa'} meminta bergabung ke ${cls.class_name || 'kelas Anda'}.`,
-                  createdAt: req.requested_at || new Date().toISOString(),
-                  href: '/dashboard/teacher/classes',
-                });
-              }
-            }
-          }
-        }
-
-        if (teacherNotifPrefs.assessmentUpdates) {
-          for (const cls of Array.isArray(classes) ? classes : []) {
-            const materialsRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: 'include' });
-            const materials = materialsRes.ok ? await materialsRes.json() : [];
-
-            for (const material of Array.isArray(materials) ? materials : []) {
-              const questionRes = await fetch(`/api/materials/${material.id}/essay-questions`, { credentials: 'include' });
-              const questions = questionRes.ok ? await questionRes.json() : [];
-
-              for (const question of Array.isArray(questions) ? questions : []) {
-                const submissionRes = await fetch(`/api/essay-questions/${question.id}/submissions`, { credentials: 'include' });
-                const submissions = submissionRes.ok ? await submissionRes.json() : [];
-
-                for (const submission of Array.isArray(submissions) ? submissions : []) {
-                  const reviewed =
-                    submission?.revised_score != null ||
-                    String(submission?.teacher_feedback || '').trim().length > 0;
-                  if (reviewed) continue;
-
-                  allItems.push({
-                    id: `assessment-${submission.id}`,
-                    title: 'Submission Perlu Review',
-                    message: `${submission.student_name || 'Siswa'} mengirim jawaban di ${material.judul || 'materi'} (${cls.class_name || 'kelas'}).`,
-                    createdAt: submission.submitted_at || new Date().toISOString(),
-                    href: '/dashboard/teacher/penilaian',
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        allItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const allItems = await fetchTeacherNotifications(teacherNotifPrefs);
         setNotifications(allItems.slice(0, 12));
+        setReadNotificationIds(allItems.filter((item) => item.isRead).map((item) => item.id));
         return;
       }
 
       if (user.peran === 'superadmin') {
-        if (!superadminNotifPrefs.approvalRequests) {
-          setNotifications([]);
-          return;
-        }
-        const pendingRes = await fetch('/api/admin/profile-requests?status=pending', { credentials: 'include' });
-        if (pendingRes.ok) {
-          const items = await pendingRes.json();
-          const mapped = (Array.isArray(items) ? (items as AdminProfileRequestItem[]) : []).map((item) => ({
-            id: `profile-${item.id}`,
-            title: 'Approval Pending',
-            message: `${item.user_name || 'User'} menunggu approval (${item.request_type || 'profile_change'}).`,
-            createdAt: item.created_at || new Date().toISOString(),
-            href: '/dashboard/superadmin/profile-requests?status=pending',
-          }));
-          mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setNotifications(mapped.slice(0, 12));
-          return;
-        }
+        const items = await fetchSuperadminNotifications(superadminNotifPrefs);
+        setNotifications(items.slice(0, 12));
+        setReadNotificationIds(items.filter((item) => item.isRead).map((item) => item.id));
+        return;
       }
 
       if (user.peran === 'student') {
         const studentItems = await fetchStudentNotifications(studentNotifPrefs);
         setNotifications(studentItems.slice(0, 12));
+        setReadNotificationIds(studentItems.filter((item) => item.isRead).map((item) => item.id));
         return;
       }
 
       setNotifications([]);
+      setReadNotificationIds([]);
     } catch {
       setNotifications([]);
+      setReadNotificationIds([]);
     } finally {
       setNotifLoading(false);
     }
   };
 
   useEffect(() => {
-    if (user?.peran === 'teacher') loadTeacherNotifPrefs();
-    if (user?.peran === 'superadmin') loadSuperadminNotifPrefs();
-    if (user?.peran === 'student') hydrateStudentNotifPrefs();
+    if (user?.peran === 'teacher') void loadTeacherNotifPrefs();
+    if (user?.peran === 'superadmin') void loadSuperadminNotifPrefs();
+    if (user?.peran === 'student') void hydrateStudentNotifPrefs();
     if (user) loadReadNotifications();
     if (user) loadRecentCommands();
   }, [user?.peran, user?.id, user?.nama_lengkap]);
@@ -549,9 +461,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   useEffect(() => {
     if (user?.peran !== 'teacher') return;
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === TEACHER_NOTIFICATION_PREFS_KEY) loadTeacherNotifPrefs();
+      if (e.key === TEACHER_NOTIFICATION_PREFS_KEY) void loadTeacherNotifPrefs();
     };
-    const handleFocus = () => loadTeacherNotifPrefs();
+    const handleFocus = () => void loadTeacherNotifPrefs();
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleFocus);
     return () => {
@@ -563,9 +475,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   useEffect(() => {
     if (user?.peran !== 'superadmin') return;
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === SUPERADMIN_NOTIFICATION_PREFS_KEY) loadSuperadminNotifPrefs();
+      if (e.key === SUPERADMIN_NOTIFICATION_PREFS_KEY) void loadSuperadminNotifPrefs();
     };
-    const handleFocus = () => loadSuperadminNotifPrefs();
+    const handleFocus = () => void loadSuperadminNotifPrefs();
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleFocus);
     return () => {
@@ -577,9 +489,9 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
   useEffect(() => {
     if (user?.peran !== 'student') return;
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === STUDENT_NOTIFICATION_PREFS_KEY) hydrateStudentNotifPrefs();
+      if (e.key === STUDENT_NOTIFICATION_PREFS_KEY) void hydrateStudentNotifPrefs();
     };
-    const handleFocus = () => hydrateStudentNotifPrefs();
+    const handleFocus = () => void hydrateStudentNotifPrefs();
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleFocus);
     return () => {
@@ -594,14 +506,23 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     user,
     teacherNotifPrefs.classRequests,
     teacherNotifPrefs.assessmentUpdates,
+    teacherNotifPrefs.appealRequests,
+    teacherNotifPrefs.profileApprovals,
     teacherNotifPrefs.systemAnnouncements,
+    teacherNotifPrefs.classAnnouncements,
     superadminNotifPrefs.approvalRequests,
+    superadminNotifPrefs.anomalyAlerts,
     studentNotifPrefs.profileApprovals,
     studentNotifPrefs.classApproved,
     studentNotifPrefs.classInvited,
+    studentNotifPrefs.classAnnouncements,
+    studentNotifPrefs.systemAnnouncements,
     studentNotifPrefs.newMaterials,
+    studentNotifPrefs.deadlineReminders,
+    studentNotifPrefs.aiGradingComplete,
     studentNotifPrefs.reviewedScores,
     studentNotifPrefs.newQuestions,
+    studentNotifPrefs.appealUpdates,
   ]);
 
   useEffect(() => {
@@ -615,31 +536,50 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
     pollIntervalMs,
     teacherNotifPrefs.classRequests,
     teacherNotifPrefs.assessmentUpdates,
+    teacherNotifPrefs.appealRequests,
+    teacherNotifPrefs.profileApprovals,
     teacherNotifPrefs.systemAnnouncements,
+    teacherNotifPrefs.classAnnouncements,
     superadminNotifPrefs.approvalRequests,
+    superadminNotifPrefs.anomalyAlerts,
     studentNotifPrefs.profileApprovals,
     studentNotifPrefs.classApproved,
     studentNotifPrefs.classInvited,
+    studentNotifPrefs.classAnnouncements,
+    studentNotifPrefs.systemAnnouncements,
     studentNotifPrefs.newMaterials,
+    studentNotifPrefs.deadlineReminders,
+    studentNotifPrefs.aiGradingComplete,
     studentNotifPrefs.reviewedScores,
     studentNotifPrefs.newQuestions,
+    studentNotifPrefs.appealUpdates,
   ]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeNotificationStream(() => {
+      void loadNotifications();
+    });
+  }, [user?.id, user?.peran, teacherNotifPrefs, superadminNotifPrefs, studentNotifPrefs]);
 
   useEffect(() => {
     loadImpersonationStatus();
   }, [user?.id, user?.peran]);
 
-  const unreadCount = notifications.filter((item) => !readNotificationIds.includes(item.id)).length;
+  const isNotificationRead = (item: { id: string; isRead?: boolean }) => item.isRead ?? readNotificationIds.includes(item.id);
+  const unreadCount = notifications.filter((item) => !isNotificationRead(item)).length;
   const hasNotifications = notifications.length > 0;
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
     if (!notifications.length) return;
     const merged = Array.from(new Set([...readNotificationIds, ...notifications.map((n) => n.id)]));
+    await markAllNotificationCenterItemsRead().catch(() => undefined);
     persistReadNotifications(merged);
   };
 
-  const openNotification = (item: { id: string; href?: string }) => {
+  const openNotification = async (item: { id: string; href?: string }) => {
     const nextRead = Array.from(new Set([...readNotificationIds, item.id]));
+    await markNotificationCenterItemsRead([item.id]).catch(() => undefined);
     persistReadNotifications(nextRead);
     setNotifOpen(false);
     router.push(item.href || notificationPageByRole(user?.peran));
@@ -1060,6 +1000,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
 
   const handleOpenMyProfile = () => {
     setDropdownOpen(false);
+    if (!user) return;
     if (user.peran === 'student') {
       router.push('/dashboard/student/profile');
       return;
@@ -1191,7 +1132,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
                           <p className="px-2 py-3 text-xs text-slate-500 dark:text-slate-400">Belum ada notifikasi.</p>
                         ) : (
                           notifications.slice(0, 3).map((item) => {
-                            const isRead = readNotificationIds.includes(item.id);
+                            const isRead = isNotificationRead(item);
                             return (
                             <button
                               key={item.id}

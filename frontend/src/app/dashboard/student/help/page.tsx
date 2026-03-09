@@ -32,6 +32,17 @@ const FAQ_ITEMS: FAQItem[] = [
     keywords: ["role", "student", "teacher", "superadmin", "akses"],
   },
   {
+    id: "akun-peta-fitur-student",
+    category: "Akun & Akses",
+    question: "Sebagai student, bagaimana cara cepat memahami semua fitur yang tersedia?",
+    answer: [
+      "Mulai dari sidebar: My Classes untuk kelas aktif, Assignments untuk tugas, Grades untuk nilai, Announcements untuk pengumuman, Calendar untuk agenda, Notifikasi untuk event akun, dan Setting untuk profil/keamanan/preferensi.",
+      "Gunakan menu Bantuan ini sebagai peta fitur, lalu buka Update Sistem/Revisi untuk melihat fitur baru atau perubahan alur terbaru.",
+      "Kalau ingin lompat cepat ke halaman tertentu, gunakan Command Search (Ctrl/Cmd+K) bila tersedia di topbar.",
+    ],
+    keywords: ["peta fitur", "semua fitur", "sidebar", "student", "menu"],
+  },
+  {
     id: "akun-settings",
     category: "Akun & Akses",
     question: "Bagaimana cara ubah profil dan password?",
@@ -203,6 +214,28 @@ const FAQ_ITEMS: FAQItem[] = [
       "Pengumuman berisi feed informasi lebih umum seperti update sistem, update materi, approval, dan feedback terbaru.",
     ],
     keywords: ["pengumuman", "notifikasi", "beda"],
+  },
+  {
+    id: "fitur-update-sistem-student",
+    category: "Fitur Student",
+    question: "Di mana saya bisa melihat update sistem atau revisi fitur terbaru?",
+    answer: [
+      "Gunakan menu Update Sistem/Revisi jika menu itu sedang ditampilkan di sidebar akunmu.",
+      "Halaman tersebut berisi ringkasan perubahan versi, termasuk major update dan penyempurnaan kecil yang memengaruhi alur belajar.",
+      "Jika menu tidak terlihat, berarti visibilitasnya sedang diatur oleh superadmin melalui feature flag sistem.",
+    ],
+    keywords: ["update sistem", "revisi", "changelog", "sidebar", "fitur baru"],
+  },
+  {
+    id: "fitur-cara-menemukan-fitur-student",
+    category: "Fitur Student",
+    question: "Kalau saya lupa letak fitur tertentu, cara menemukannya bagaimana?",
+    answer: [
+      "Cek dulu kategori di sidebar karena fitur student dikelompokkan berdasarkan alur belajar: kelas, tugas, nilai, pengumuman, kalender, dan notifikasi.",
+      "Gunakan kolom pencarian di halaman Bantuan untuk mencari kata kunci seperti nilai, banding, rubrik, submit, atau notifikasi.",
+      "Untuk fitur yang baru dirilis atau berubah posisi, lihat halaman Update Sistem/Revisi agar tidak ketinggalan perubahan navigasi.",
+    ],
+    keywords: ["mencari fitur", "letak fitur", "sidebar", "bantuan", "search"],
   },
   {
     id: "materi-soal-compact-expand",

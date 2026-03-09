@@ -5,9 +5,9 @@ import (
 	"api-backend/internal/services"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
 	"log"
 	"net/http"
-	"github.com/gorilla/mux"
 )
 
 // AIResultHandlers holds dependencies for AI result-related handlers.
@@ -30,8 +30,8 @@ func (h *AIResultHandlers) CreateAIResultHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if req.SubmissionID == "" || req.SkorAI == 0 { // SkorAI cannot be 0 for creation
-		respondWithError(w, http.StatusBadRequest, "Submission ID and Skor AI cannot be empty")
+	if req.SubmissionID == "" {
+		respondWithError(w, http.StatusBadRequest, "Submission ID cannot be empty")
 		return
 	}
 
@@ -44,6 +44,7 @@ func (h *AIResultHandlers) CreateAIResultHandler(w http.ResponseWriter, r *http.
 
 	log.Println("DEBUG: Successfully created AI result, responding with JSON.")
 	respondWithJSON(w, http.StatusCreated, newResult)
+	services.PublishNotificationInvalidation("ai_result_created", []string{"student"}, nil)
 }
 
 // GetAIResultByIDHandler handles fetching a single AI result by its ID.
@@ -131,6 +132,7 @@ func (h *AIResultHandlers) UpdateAIResultHandler(w http.ResponseWriter, r *http.
 
 	log.Printf("DEBUG: Successfully updated AI result %s.", resultID)
 	respondWithJSON(w, http.StatusOK, updatedResult)
+	services.PublishNotificationInvalidation("ai_result_updated", []string{"student"}, nil)
 }
 
 // DeleteAIResultHandler handles deleting an AI result by its ID.
@@ -147,7 +149,7 @@ func (h *AIResultHandlers) DeleteAIResultHandler(w http.ResponseWriter, r *http.
 	err := h.Service.DeleteAIResult(resultID)
 	if err != nil {
 		log.Printf("ERROR: Failed to delete AI result %s: %v", resultID, err)
-		if err.Error() == "AI result not found with ID " + resultID {
+		if err.Error() == "AI result not found with ID "+resultID {
 			respondWithError(w, http.StatusNotFound, "AI result not found")
 			return
 		}

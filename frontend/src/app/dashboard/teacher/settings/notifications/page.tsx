@@ -3,47 +3,48 @@
 import { useEffect, useState } from "react";
 import { FiBell } from "react-icons/fi";
 import ToggleSwitch from "@/components/ToggleSwitch";
-
-type NotificationPrefs = {
-  classRequests: boolean;
-  assessmentUpdates: boolean;
-  systemAnnouncements: boolean;
-  sidebarIndicators: boolean;
-};
-
-const STORAGE_KEY = "teacher_notification_preferences";
+import {
+  hydrateTeacherNotificationPrefs,
+  saveTeacherNotificationPrefs,
+  TeacherNotificationPrefs,
+} from "@/lib/teacherNotifications";
 
 export default function TeacherNotificationSettingsPage() {
-  const [prefs, setPrefs] = useState<NotificationPrefs>({
+  const [prefs, setPrefs] = useState<TeacherNotificationPrefs>({
     classRequests: true,
     assessmentUpdates: true,
+    appealRequests: true,
+    profileApprovals: true,
     systemAnnouncements: true,
+    classAnnouncements: true,
     sidebarIndicators: true,
   });
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as Partial<NotificationPrefs>;
-      setPrefs((prev) => ({
-        ...prev,
-        ...parsed,
-      }));
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    let active = true;
+    void (async () => {
+      const next = await hydrateTeacherNotificationPrefs();
+      if (active) setPrefs(next);
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const updatePref = (key: keyof NotificationPrefs, value: boolean) => {
+  const updatePref = (key: keyof TeacherNotificationPrefs, value: boolean) => {
     setPrefs((prev) => ({ ...prev, [key]: value }));
     setMessage(null);
   };
 
-  const savePreferences = (e: React.FormEvent) => {
+  const savePreferences = async (e: React.FormEvent) => {
     e.preventDefault();
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    setSaving(true);
+    setMessage(null);
+    const saved = await saveTeacherNotificationPrefs(prefs);
+    setPrefs(saved);
+    setSaving(false);
     setMessage("Preferensi notifikasi berhasil disimpan.");
   };
 
@@ -86,6 +87,18 @@ export default function TeacherNotificationSettingsPage() {
 
         <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
           <div>
+            <p className="text-sm font-medium text-slate-900">Approval profil guru</p>
+            <p className="text-xs text-slate-500">Notifikasi saat permintaan verifikasi atau perubahan profilmu diproses admin.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle notifikasi approval profil guru"
+            checked={prefs.profileApprovals}
+            onChange={(value) => updatePref("profileApprovals", value)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
             <p className="text-sm font-medium text-slate-900">Pengumuman sistem</p>
             <p className="text-xs text-slate-500">Notifikasi terkait update fitur dan informasi penting dari sistem.</p>
           </div>
@@ -93,6 +106,30 @@ export default function TeacherNotificationSettingsPage() {
             label="Toggle notifikasi pengumuman sistem"
             checked={prefs.systemAnnouncements}
             onChange={(value) => updatePref("systemAnnouncements", value)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Banding nilai siswa</p>
+            <p className="text-xs text-slate-500">Notifikasi saat ada siswa mengajukan banding nilai yang harus direview.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle notifikasi banding nilai guru"
+            checked={prefs.appealRequests}
+            onChange={(value) => updatePref("appealRequests", value)}
+          />
+        </label>
+
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Pengumuman kelas aktif</p>
+            <p className="text-xs text-slate-500">Tampilkan pengumuman aktif dari kelas yang kamu ampu di feed notifikasi.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle notifikasi pengumuman kelas guru"
+            checked={prefs.classAnnouncements}
+            onChange={(value) => updatePref("classAnnouncements", value)}
           />
         </label>
 
@@ -111,8 +148,8 @@ export default function TeacherNotificationSettingsPage() {
         {message && <p className="text-sm text-emerald-700">{message}</p>}
 
         <div className="flex justify-end">
-          <button type="submit" className="sage-button">
-            Simpan Preferensi
+          <button type="submit" className="sage-button" disabled={saving}>
+            {saving ? "Menyimpan..." : "Simpan Preferensi"}
           </button>
         </div>
       </form>

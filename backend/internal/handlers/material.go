@@ -110,6 +110,7 @@ func (h *MaterialHandlers) CreateMaterialWithQuestionsHandler(w http.ResponseWri
 	}
 
 	respondWithJSON(w, http.StatusCreated, newMaterial)
+	services.PublishNotificationInvalidation("material_created", []string{"teacher", "student"}, nil)
 }
 
 // CreateMaterialHandler handles the creation of a new material.
@@ -413,6 +414,7 @@ func (h *MaterialHandlers) UpdateMaterialHandler(w http.ResponseWriter, r *http.
 	}
 
 	respondWithJSON(w, http.StatusOK, updatedMaterial)
+	services.PublishNotificationInvalidation("material_updated", []string{"teacher", "student"}, nil)
 }
 
 // DeleteMaterialHandler handles deleting a material by its ID.

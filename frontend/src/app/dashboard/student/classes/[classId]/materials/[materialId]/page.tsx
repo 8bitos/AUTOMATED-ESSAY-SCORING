@@ -1598,7 +1598,7 @@ export default function StudentMaterialDetailPage() {
       <section className={`${isSoalContext || isTugasContext ? "hidden md:block" : "block"} sage-panel p-4 md:p-6`}>
         <Link
           href={`/dashboard/student/classes/${classId}`}
-          className="text-sm font-medium text-[color:var(--sage-700)] hover:underline dark:text-sky-300 dark:hover:text-sky-200"
+          className="student-material-backlink text-sm font-medium text-[color:var(--sage-700)] transition hover:underline"
         >
           ← Kembali ke daftar materi
         </Link>

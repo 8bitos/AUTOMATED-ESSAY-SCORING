@@ -1,356 +1,267 @@
 "use client";
 
+import { fetchNotificationCenter } from "@/lib/notificationCenter";
+
 export type StudentNotificationPrefs = {
   profileApprovals: boolean;
   classApproved: boolean;
   classInvited: boolean;
+  classAnnouncements: boolean;
+  systemAnnouncements: boolean;
   newMaterials: boolean;
+  deadlineReminders: boolean;
+  aiGradingComplete: boolean;
   reviewedScores: boolean;
   newQuestions: boolean;
+  appealUpdates: boolean;
   sidebarIndicators: boolean;
 };
 
 export type StudentNotificationItem = {
   id: string;
+  category?:
+    | "profile_approval"
+    | "class_approval"
+    | "class_invite"
+    | "class_announcement"
+    | "system_announcement"
+    | "material_update"
+    | "task_due_soon"
+    | "task_overdue"
+    | "question_new"
+    | "ai_graded"
+    | "teacher_review"
+    | "appeal_update";
   title: string;
   message: string;
   createdAt: string;
+  href?: string;
+  isRead?: boolean;
+  isActive?: boolean;
 };
 
 export const STUDENT_NOTIFICATION_PREFS_KEY = "student_notification_preferences";
-const SEEN_QUESTION_COUNT_KEY = "student_seen_question_counts";
-const SEEN_PENDING_CLASS_IDS_KEY = "student_seen_pending_class_ids";
-const SEEN_APPROVED_CLASS_IDS_KEY = "student_seen_approved_class_ids";
-const SEEN_AI_GRADED_SUBMISSION_IDS_KEY = "student_seen_ai_graded_submission_ids";
+const STUDENT_NOTIFICATION_STATE_KEY = "student_notification_state";
+const STUDENT_NOTIFICATION_PREFS_PATH = ["notifications", "student"] as const;
 
-interface ProfileChangeRequest {
-  id: string;
-  request_type?: string;
-  status?: string;
-  reason?: string | null;
-  created_at?: string;
-  reviewed_at?: string | null;
-}
-
-interface StudentClass {
-  id: string;
-  class_name: string;
-  teacher_name?: string;
-}
-
-interface PendingClassJoin {
-  class_id: string;
-  class_name: string;
-  teacher_name?: string;
-}
-
-interface ClassQuestion {
-  id: string;
-  submission_id?: string;
-  skor_ai?: number;
-  umpan_balik_ai?: string;
-  revised_score?: number;
-  teacher_feedback?: string;
-}
-
-interface ClassMaterial {
-  id: string;
-  judul?: string;
-  created_at?: string;
-  updated_at?: string;
-  essay_questions?: ClassQuestion[];
-}
-
-interface StudentClassDetail {
-  id: string;
-  class_name: string;
-  materials?: ClassMaterial[];
-}
-
-const requestTypeLabel = (value?: string) => {
-  if (value === "teacher_verification") return "verifikasi akun guru";
-  if (value === "profile_change") return "perubahan profil";
-  return "approval";
+type StudentNotificationState = {
+  materialSeenByClass?: Record<string, Record<string, string>>;
 };
 
-const nowIso = () => new Date().toISOString();
+const getStudentDefaultPrefs = (): StudentNotificationPrefs => ({
+  profileApprovals: true,
+  classApproved: true,
+  classInvited: true,
+  classAnnouncements: true,
+  systemAnnouncements: true,
+  newMaterials: true,
+  deadlineReminders: true,
+  aiGradingComplete: true,
+  reviewedScores: true,
+  newQuestions: true,
+  appealUpdates: true,
+  sidebarIndicators: true,
+});
 
-const readSeenQuestionCounts = (): Record<string, number> => {
-  if (typeof window === "undefined") return {};
+const mergeStudentPrefs = (parsed?: Partial<StudentNotificationPrefs> | null): StudentNotificationPrefs => ({
+  ...getStudentDefaultPrefs(),
+  ...(parsed || {}),
+});
+
+const normalizeMaterialSeenByClass = (value: unknown): Record<string, Record<string, string>> => {
+  if (!value || typeof value !== "object") return {};
+  const next: Record<string, Record<string, string>> = {};
+  for (const [classID, rawMaterials] of Object.entries(value as Record<string, unknown>)) {
+    if (!rawMaterials || typeof rawMaterials !== "object") continue;
+    const materialMap: Record<string, string> = {};
+    for (const [materialID, signature] of Object.entries(rawMaterials as Record<string, unknown>)) {
+      if (typeof signature === "string" && signature.trim()) {
+        materialMap[materialID] = signature;
+      }
+    }
+    if (Object.keys(materialMap).length > 0) {
+      next[classID] = materialMap;
+    }
+  }
+  return next;
+};
+
+const getStudentDefaultState = (): StudentNotificationState => ({
+  materialSeenByClass: {},
+});
+
+const mergeStudentNotificationState = (parsed?: Partial<StudentNotificationState> | null): StudentNotificationState => ({
+  ...getStudentDefaultState(),
+  ...(parsed || {}),
+  materialSeenByClass: normalizeMaterialSeenByClass(parsed?.materialSeenByClass),
+});
+
+let cachedStudentNotificationState: StudentNotificationState | null = null;
+
+const loadStudentNotificationState = (): StudentNotificationState => {
+  if (cachedStudentNotificationState) return cachedStudentNotificationState;
+  if (typeof window === "undefined") return getStudentDefaultState();
   try {
-    const raw = window.localStorage.getItem(SEEN_QUESTION_COUNT_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, number>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const raw = window.localStorage.getItem(STUDENT_NOTIFICATION_STATE_KEY);
+    if (!raw) {
+      cachedStudentNotificationState = getStudentDefaultState();
+      return cachedStudentNotificationState;
+    }
+    cachedStudentNotificationState = mergeStudentNotificationState(JSON.parse(raw) as Partial<StudentNotificationState>);
+    return cachedStudentNotificationState;
   } catch {
-    return {};
+    cachedStudentNotificationState = getStudentDefaultState();
+    return cachedStudentNotificationState;
   }
 };
 
-const readSeenMaterialUpdates = (classID: string): Record<string, string> => {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(`student_material_seen_updates_${classID}`);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const persistSeenQuestionCounts = (next: Record<string, number>) => {
+const persistStudentNotificationState = (state: StudentNotificationState) => {
+  cachedStudentNotificationState = state;
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(SEEN_QUESTION_COUNT_KEY, JSON.stringify(next));
+  window.localStorage.setItem(STUDENT_NOTIFICATION_STATE_KEY, JSON.stringify(state));
 };
 
-const readStringSet = (key: string): Set<string> => {
-  if (typeof window === "undefined") return new Set<string>();
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return new Set<string>();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set<string>();
-    return new Set(parsed.filter((v) => typeof v === "string"));
-  } catch {
-    return new Set<string>();
+const readNestedPrefs = (value: unknown, path: readonly string[]): Partial<StudentNotificationPrefs> | null => {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || !(key in (current as Record<string, unknown>))) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
   }
+  return current && typeof current === "object" ? (current as Partial<StudentNotificationPrefs>) : null;
 };
 
-const persistStringSet = (key: string, value: Set<string>) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(Array.from(value)));
+const readStudentNotificationState = (value: unknown): Partial<StudentNotificationState> | null => {
+  if (!value || typeof value !== "object") return null;
+  const state = (value as Record<string, unknown>).student_notification_state;
+  return state && typeof state === "object" ? (state as Partial<StudentNotificationState>) : null;
 };
 
 export const loadStudentNotificationPrefs = (): StudentNotificationPrefs => {
-  if (typeof window === "undefined") {
-    return {
-      profileApprovals: true,
-      classApproved: true,
-      classInvited: true,
-      newMaterials: true,
-      reviewedScores: true,
-      newQuestions: true,
-      sidebarIndicators: true,
-    };
-  }
+  if (typeof window === "undefined") return getStudentDefaultPrefs();
   try {
     const raw = window.localStorage.getItem(STUDENT_NOTIFICATION_PREFS_KEY);
-    if (!raw) {
-      return {
-        profileApprovals: true,
-        classApproved: true,
-        classInvited: true,
-        newMaterials: true,
-        reviewedScores: true,
-        newQuestions: true,
-        sidebarIndicators: true,
-      };
-    }
-    const parsed = JSON.parse(raw) as Partial<StudentNotificationPrefs>;
-    return {
-      profileApprovals: parsed.profileApprovals ?? true,
-      classApproved: parsed.classApproved ?? true,
-      classInvited: parsed.classInvited ?? true,
-      newMaterials: parsed.newMaterials ?? true,
-      reviewedScores: parsed.reviewedScores ?? true,
-      newQuestions: parsed.newQuestions ?? true,
-      sidebarIndicators: parsed.sidebarIndicators ?? true,
-    };
+    if (!raw) return getStudentDefaultPrefs();
+    return mergeStudentPrefs(JSON.parse(raw) as Partial<StudentNotificationPrefs>);
   } catch {
-    return {
-      profileApprovals: true,
-      classApproved: true,
-      classInvited: true,
-      newMaterials: true,
-      reviewedScores: true,
-      newQuestions: true,
-      sidebarIndicators: true,
-    };
+    return getStudentDefaultPrefs();
+  }
+};
+
+export const hydrateStudentNotificationPrefs = async (): Promise<StudentNotificationPrefs> => {
+  const fallback = loadStudentNotificationPrefs();
+  try {
+    const res = await fetch("/api/user-preferences", { credentials: "include" });
+    if (!res.ok) return fallback;
+    const body = await res.json().catch(() => ({}));
+    const merged = mergeStudentPrefs(readNestedPrefs(body?.preferences, STUDENT_NOTIFICATION_PREFS_PATH));
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STUDENT_NOTIFICATION_PREFS_KEY, JSON.stringify(merged));
+    }
+    return merged;
+  } catch {
+    return fallback;
+  }
+};
+
+export const hydrateStudentNotificationState = async (): Promise<StudentNotificationState> => {
+  const fallback = loadStudentNotificationState();
+  try {
+    const res = await fetch("/api/user-preferences", { credentials: "include" });
+    if (!res.ok) return fallback;
+    const body = await res.json().catch(() => ({}));
+    const merged = mergeStudentNotificationState(readStudentNotificationState(body?.preferences));
+    persistStudentNotificationState(merged);
+    return merged;
+  } catch {
+    return fallback;
+  }
+};
+
+export const saveStudentNotificationPrefs = async (prefs: StudentNotificationPrefs): Promise<StudentNotificationPrefs> => {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(STUDENT_NOTIFICATION_PREFS_KEY, JSON.stringify(prefs));
+  }
+  try {
+    const res = await fetch("/api/user-preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        preferences: {
+          notifications: {
+            student: prefs,
+          },
+        },
+      }),
+    });
+    if (!res.ok) throw new Error("save_failed");
+    const body = await res.json().catch(() => ({}));
+    return mergeStudentPrefs(readNestedPrefs(body?.preferences, STUDENT_NOTIFICATION_PREFS_PATH) || prefs);
+  } catch {
+    return prefs;
+  }
+};
+
+export const loadStudentMaterialSeenUpdates = (classID: string): Record<string, string> => {
+  const state = loadStudentNotificationState();
+  return state.materialSeenByClass?.[classID] || {};
+};
+
+export const markStudentMaterialSeen = async (
+  classID: string,
+  materialID: string,
+  signature: string,
+): Promise<Record<string, string>> => {
+  const current = loadStudentNotificationState();
+  const nextByClass = {
+    ...(current.materialSeenByClass || {}),
+    [classID]: {
+      ...((current.materialSeenByClass || {})[classID] || {}),
+      [materialID]: signature,
+    },
+  };
+  const nextState = mergeStudentNotificationState({ ...current, materialSeenByClass: nextByClass });
+  persistStudentNotificationState(nextState);
+
+  try {
+    const res = await fetch("/api/user-preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        preferences: {
+          student_notification_state: nextState,
+        },
+      }),
+    });
+    if (!res.ok) throw new Error("save_failed");
+    const body = await res.json().catch(() => ({}));
+    const merged = mergeStudentNotificationState(readStudentNotificationState(body?.preferences) || nextState);
+    persistStudentNotificationState(merged);
+    return merged.materialSeenByClass?.[classID] || {};
+  } catch {
+    return nextState.materialSeenByClass?.[classID] || {};
   }
 };
 
 export const fetchStudentNotifications = async (
   prefs: StudentNotificationPrefs,
 ): Promise<StudentNotificationItem[]> => {
-  const items: StudentNotificationItem[] = [];
-
-  if (prefs.profileApprovals) {
-    const approvalRes = await fetch("/api/profile-change-requests", { credentials: "include" });
-    if (approvalRes.ok) {
-      const approvalData = await approvalRes.json();
-      const approvals = Array.isArray(approvalData) ? (approvalData as ProfileChangeRequest[]) : [];
-      approvals.forEach((req) => {
-        if (!req?.id) return;
-        if (req.status === "pending") {
-          items.push({
-            id: `student-approval-pending-${req.id}`,
-            title: "Approval Diproses",
-            message: `Permintaan ${requestTypeLabel(req.request_type)} kamu sedang diproses admin.`,
-            createdAt: req.created_at || nowIso(),
-          });
-          return;
-        }
-        if (req.status === "approved") {
-          items.push({
-            id: `student-approval-approved-${req.id}`,
-            title: "Approval Disetujui",
-            message: `Permintaan ${requestTypeLabel(req.request_type)} kamu sudah disetujui.`,
-            createdAt: req.reviewed_at || req.created_at || nowIso(),
-          });
-          return;
-        }
-        if (req.status === "rejected") {
-          items.push({
-            id: `student-approval-rejected-${req.id}`,
-            title: "Approval Ditolak",
-            message: req.reason
-              ? `Permintaan ${requestTypeLabel(req.request_type)} ditolak: ${req.reason}`
-              : `Permintaan ${requestTypeLabel(req.request_type)} kamu ditolak.`,
-            createdAt: req.reviewed_at || req.created_at || nowIso(),
-          });
-        }
-      });
-    }
-  }
-
-  const myClassesRes = await fetch("/api/student/my-classes", { credentials: "include" });
-  if (!myClassesRes.ok) {
-    return items;
-  }
-  const pendingClassesRes = await fetch("/api/student/pending-classes", { credentials: "include" });
-
-  const classData = await myClassesRes.json();
-  const classes = Array.isArray(classData) ? (classData as StudentClass[]) : [];
-  const pendingClassData = pendingClassesRes.ok ? await pendingClassesRes.json() : [];
-  const pendingClasses = Array.isArray(pendingClassData) ? (pendingClassData as PendingClassJoin[]) : [];
-
-  // Membership notifications:
-  // - if class previously pending and now appears in approved classes => ACC masuk kelas
-  // - if class appears in approved classes without pending history => invited by teacher
-  const seenPendingClassIDs = readStringSet(SEEN_PENDING_CLASS_IDS_KEY);
-  const seenApprovedClassIDs = readStringSet(SEEN_APPROVED_CLASS_IDS_KEY);
-  const seenAIGradedSubmissionIDs = readStringSet(SEEN_AI_GRADED_SUBMISSION_IDS_KEY);
-  const hasSeenApprovalStateBefore =
-    typeof window !== "undefined" && window.localStorage.getItem(SEEN_APPROVED_CLASS_IDS_KEY) != null;
-
-  const pendingNowIDs = new Set<string>();
-  pendingClasses.forEach((pending) => {
-    if (pending?.class_id) pendingNowIDs.add(pending.class_id);
+  const items = (await fetchNotificationCenter(60)) as StudentNotificationItem[];
+  return items.filter((item) => {
+    if (item.category === "profile_approval") return prefs.profileApprovals;
+    if (item.category === "class_approval") return prefs.classApproved;
+    if (item.category === "class_invite") return prefs.classInvited;
+    if (item.category === "class_announcement") return prefs.classAnnouncements;
+    if (item.category === "system_announcement") return prefs.systemAnnouncements;
+    if (item.category === "material_update") return prefs.newMaterials;
+    if (item.category === "task_due_soon" || item.category === "task_overdue") return prefs.deadlineReminders;
+    if (item.category === "question_new") return prefs.newQuestions;
+    if (item.category === "ai_graded") return prefs.aiGradingComplete;
+    if (item.category === "teacher_review") return prefs.reviewedScores;
+    if (item.category === "appeal_update") return prefs.appealUpdates;
+    return true;
   });
-
-  if (hasSeenApprovalStateBefore) {
-    classes.forEach((cls) => {
-      if (!cls?.id || seenApprovedClassIDs.has(cls.id)) return;
-      if (seenPendingClassIDs.has(cls.id)) {
-        if (prefs.classApproved) {
-          items.push({
-            id: `student-class-approved-${cls.id}`,
-            title: "ACC Masuk Kelas",
-            message: `Permintaan masuk kamu ke kelas ${cls.class_name || "-"} sudah disetujui.`,
-            createdAt: nowIso(),
-          });
-        }
-      } else {
-        if (prefs.classInvited) {
-          items.push({
-            id: `student-class-invited-${cls.id}`,
-            title: "Diundang ke Kelas",
-            message: `Kamu diundang masuk ke kelas ${cls.class_name || "-"}${cls.teacher_name ? ` oleh ${cls.teacher_name}` : ""}.`,
-            createdAt: nowIso(),
-          });
-        }
-      }
-    });
-  }
-
-  const nextSeenApproved = new Set<string>(seenApprovedClassIDs);
-  classes.forEach((cls) => {
-    if (cls?.id) nextSeenApproved.add(cls.id);
-  });
-  const nextSeenPending = new Set<string>(seenPendingClassIDs);
-  pendingNowIDs.forEach((id) => nextSeenPending.add(id));
-  persistStringSet(SEEN_APPROVED_CLASS_IDS_KEY, nextSeenApproved);
-  persistStringSet(SEEN_PENDING_CLASS_IDS_KEY, nextSeenPending);
-
-  if (classes.length === 0) {
-    return items;
-  }
-
-  const classResponses = await Promise.all(
-    classes.map((cls) => fetch(`/api/student/classes/${cls.id}`, { credentials: "include" })),
-  );
-  const classDetailsRaw = await Promise.all(
-    classResponses.map(async (res) => (res.ok ? res.json() : null)),
-  );
-  const classDetails = classDetailsRaw.filter(Boolean) as StudentClassDetail[];
-
-  const seenQuestionCounts = readSeenQuestionCounts();
-  const nextSeenQuestionCounts: Record<string, number> = { ...seenQuestionCounts };
-
-  classDetails.forEach((detail) => {
-    const className = detail.class_name || "kelas";
-    const materials = Array.isArray(detail.materials) ? detail.materials : [];
-    const seenMaterialUpdates = readSeenMaterialUpdates(detail.id);
-    materials.forEach((material) => {
-      const materialName = material.judul || "materi";
-      const questions = Array.isArray(material.essay_questions) ? material.essay_questions : [];
-      const updateSignature = material.updated_at || material.created_at || "";
-      const createdAt = updateSignature || nowIso();
-
-      if (prefs.newMaterials && updateSignature && seenMaterialUpdates[material.id] !== updateSignature) {
-        items.push({
-          id: `student-material-${material.id}-${updateSignature}`,
-          title: "Materi Baru / Diperbarui",
-          message: `${materialName} di ${className} memiliki update terbaru.`,
-          createdAt,
-        });
-      }
-
-      if (prefs.newQuestions) {
-        const key = `${detail.id}:${material.id}`;
-        const currentCount = questions.length;
-        const previousCount = seenQuestionCounts[key] ?? 0;
-        if (currentCount > previousCount) {
-          const delta = currentCount - previousCount;
-          items.push({
-            id: `student-question-${material.id}-${currentCount}`,
-            title: "Soal Baru",
-            message: `${delta} soal baru tersedia di ${materialName} (${className}).`,
-            createdAt,
-          });
-        }
-        nextSeenQuestionCounts[key] = currentCount;
-      }
-
-      if (prefs.reviewedScores) {
-        questions.forEach((q) => {
-          const hasAIGrade = q.skor_ai != null || String(q.umpan_balik_ai || "").trim().length > 0;
-          if (q.submission_id && hasAIGrade && !seenAIGradedSubmissionIDs.has(q.submission_id)) {
-            items.push({
-              id: `student-ai-graded-${q.submission_id}`,
-              title: "Penilaian AI Selesai",
-              message: `Jawabanmu di ${materialName} (${className}) sudah selesai dinilai AI.`,
-              createdAt,
-            });
-            seenAIGradedSubmissionIDs.add(q.submission_id);
-          }
-
-          const hasReview = q.revised_score != null || String(q.teacher_feedback || "").trim().length > 0;
-          if (!hasReview) return;
-          items.push({
-            id: `student-review-${q.id}-${q.revised_score ?? "na"}-${String(q.teacher_feedback || "").length}`,
-            title: "Nilai Direview Guru",
-            message: `Guru sudah mereview jawabanmu di ${materialName} (${className}).`,
-            createdAt,
-          });
-        });
-      }
-    });
-  });
-
-  persistSeenQuestionCounts(nextSeenQuestionCounts);
-  persistStringSet(SEEN_AI_GRADED_SUBMISSION_IDS_KEY, seenAIGradedSubmissionIDs);
-  items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return items.slice(0, 40);
 };

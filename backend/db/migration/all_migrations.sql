@@ -109,3 +109,44 @@ ALTER TABLE classes ADD COLUMN announcement_enabled BOOLEAN NOT NULL DEFAULT FAL
 ALTER TABLE classes ADD COLUMN announcement_title TEXT NOT NULL DEFAULT '';
 ALTER TABLE classes ADD COLUMN announcement_content TEXT NOT NULL DEFAULT '';
 ALTER TABLE classes ADD COLUMN announcement_tone TEXT NOT NULL DEFAULT 'info';
+
+-- Migration 000051_add_class_announcement_schedule.up.sql
+ALTER TABLE classes ADD COLUMN announcement_starts_at TIMESTAMPTZ NULL;
+ALTER TABLE classes ADD COLUMN announcement_ends_at TIMESTAMPTZ NULL;
+
+-- Migration 000052_create_notifications_table.up.sql
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    external_key TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    href TEXT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMPTZ NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    event_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, external_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_event
+    ON notifications (user_id, event_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read_active
+    ON notifications (user_id, is_read, is_active, event_at DESC);
+
+-- Migration 000053_add_join_policy_to_classes.up.sql
+ALTER TABLE classes
+ADD COLUMN IF NOT EXISTS join_policy TEXT NOT NULL DEFAULT 'approval_required';
+
+ALTER TABLE classes
+DROP CONSTRAINT IF EXISTS chk_classes_join_policy;
+
+ALTER TABLE classes
+ADD CONSTRAINT chk_classes_join_policy
+CHECK (join_policy IN ('approval_required', 'open', 'closed'));

@@ -4,32 +4,19 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { FiBell, FiCheckCircle, FiClock, FiRefreshCw } from "react-icons/fi";
 import { useAuth } from "@/context/AuthContext";
-import { DEFAULT_NOTIFICATION_POLL_INTERVAL_MS, loadNotificationPollIntervalMs } from "@/lib/notificationRealtime";
-
-interface ProfileRequestItem {
-  id: string;
-  user_name?: string | null;
-  user_role?: string | null;
-  request_type?: string | null;
-  created_at: string;
-}
-
-type NotifItem = {
-  id: string;
-  title: string;
-  message: string;
-  createdAt: string;
-  href: string;
-};
+import { DEFAULT_NOTIFICATION_POLL_INTERVAL_MS, loadNotificationPollIntervalMs, subscribeNotificationStream } from "@/lib/notificationRealtime";
+import {
+  fetchSuperadminNotifications,
+  hydrateSuperadminNotificationPrefs,
+  loadSuperadminNotificationPrefs,
+  SuperadminNotificationItem as NotifItem,
+} from "@/lib/superadminNotifications";
+import { markAllNotificationCenterItemsRead, markNotificationCenterItemsRead } from "@/lib/notificationCenter";
 
 const NOTIF_READ_STORAGE_PREFIX = "read_notifications_";
 
-function formatRequestType(value?: string | null): string {
-  if (!value) return "Profile Change";
-  if (value === "teacher_verification") return "Teacher Verification";
-  if (value === "profile_change") return "Profile Change";
-  return value;
-}
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
 
 function formatDate(value?: string) {
   if (!value) return "-";
@@ -85,19 +72,12 @@ export default function SuperadminNotificationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/profile-requests?status=pending", { credentials: "include" });
-      const data = res.ok ? await res.json() : [];
-      const list = (Array.isArray(data) ? data : []) as ProfileRequestItem[];
-      const mapped: NotifItem[] = list.map((item) => ({
-        id: `profile-${item.id}`,
-        title: "Approval Pending",
-        message: `${item.user_name || "User"} (${item.user_role || "-"}) menunggu approval (${formatRequestType(item.request_type)}).`,
-        createdAt: item.created_at,
-        href: "/dashboard/superadmin/profile-requests?status=pending",
-      }));
+      await hydrateSuperadminNotificationPrefs();
+      const mapped = await fetchSuperadminNotifications(loadSuperadminNotificationPrefs());
       setItems(mapped);
-    } catch (err: any) {
-      setError(err?.message || "Gagal memuat notifikasi.");
+      setReadIds(mapped.filter((item) => item.isRead).map((item) => item.id));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Gagal memuat notifikasi."));
       setItems([]);
     } finally {
       setLoading(false);
@@ -129,28 +109,38 @@ export default function SuperadminNotificationsPage() {
     return () => window.clearInterval(timer);
   }, [user?.id, user?.peran, pollIntervalMs, readStorageKey]);
 
-  const markAsRead = (id: string) => {
-    if (readIds.includes(id)) return;
+  useEffect(() => {
+    if (!user || user.peran !== "superadmin") return;
+    return subscribeNotificationStream(() => {
+      void load();
+    });
+  }, [user?.id, user?.peran, readStorageKey]);
+
+  const isItemRead = (item: NotifItem) => item.isRead ?? readIds.includes(item.id);
+
+  const markAsRead = async (id: string) => {
+    await markNotificationCenterItemsRead([id]).catch(() => undefined);
     saveReadIds([...readIds, id]);
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     if (items.length === 0) return;
     const next = Array.from(new Set([...readIds, ...items.map((item) => item.id)]));
+    await markAllNotificationCenterItemsRead().catch(() => undefined);
     saveReadIds(next);
   };
 
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items.filter((item) => {
-      if (filter === "unread" && readIds.includes(item.id)) return false;
-      if (filter === "read" && !readIds.includes(item.id)) return false;
+      if (filter === "unread" && isItemRead(item)) return false;
+      if (filter === "read" && !isItemRead(item)) return false;
       if (!needle) return true;
       return item.title.toLowerCase().includes(needle) || item.message.toLowerCase().includes(needle);
     });
   }, [items, query, filter, readIds]);
 
-  const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
+  const unreadCount = items.filter((item) => !isItemRead(item)).length;
 
   return (
     <div className="space-y-6">
@@ -203,7 +193,7 @@ export default function SuperadminNotificationsPage() {
 
         <div className="space-y-2">
           {filteredItems.map((item) => {
-            const isRead = readIds.includes(item.id);
+            const isRead = isItemRead(item);
             return (
               <div
                 key={item.id}
@@ -226,7 +216,7 @@ export default function SuperadminNotificationsPage() {
                         Dibaca
                       </button>
                     )}
-                    <Link href={item.href} className="sage-button !px-2.5 !py-1.5 text-xs">
+                    <Link href={item.href || "/dashboard/superadmin/monitoring"} className="sage-button !px-2.5 !py-1.5 text-xs">
                       Buka
                     </Link>
                   </div>

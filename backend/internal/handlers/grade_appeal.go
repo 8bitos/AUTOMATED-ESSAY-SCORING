@@ -53,6 +53,7 @@ func (h *GradeAppealHandlers) CreateGradeAppealHandler(w http.ResponseWriter, r 
 		return
 	}
 	respondWithJSON(w, http.StatusCreated, appeal)
+	services.PublishNotificationInvalidation("grade_appeal_created", []string{"teacher", "student"}, nil)
 }
 
 func (h *GradeAppealHandlers) GetMyGradeAppealsHandler(w http.ResponseWriter, r *http.Request) {
@@ -116,4 +117,5 @@ func (h *GradeAppealHandlers) ReviewGradeAppealHandler(w http.ResponseWriter, r 
 		return
 	}
 	respondWithJSON(w, http.StatusOK, updated)
+	services.PublishNotificationInvalidation("grade_appeal_reviewed", []string{"teacher", "student"}, nil)
 }

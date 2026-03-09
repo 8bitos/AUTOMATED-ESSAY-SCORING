@@ -53,6 +53,17 @@ const FAQ_ITEMS: FAQItem[] = [
     keywords: ["fitur guru", "akses", "hak akses", "role guru"],
   },
   {
+    id: "akun-peta-fitur-guru",
+    category: "Akun & Akses",
+    question: "Sebagai guru, bagaimana cara cepat memahami semua fitur yang tersedia?",
+    answer: [
+      "Mulai dari sidebar: Kelas untuk workspace kelas, Penilaian untuk review submission/banding, Bank Soal untuk reuse soal, Laporan Nilai untuk rekap performa, Bantuan untuk dokumentasi, dan Setting untuk profil/keamanan/notifikasi.",
+      "Dashboard guru dipakai sebagai ringkasan operasional harian, sedangkan detail kerja utama ada di halaman kelas, penilaian, dan bank soal.",
+      "Gunakan halaman Update Sistem/Revisi untuk mengecek fitur baru atau perubahan workflow sebelum dipakai di kelas aktif.",
+    ],
+    keywords: ["peta fitur", "semua fitur", "guru", "sidebar", "menu"],
+  },
+  {
     id: "akun-write-lock",
     category: "Akun & Akses",
     question: "Kenapa kadang saya tidak bisa edit/create meski login sebagai guru?",
@@ -421,13 +432,24 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     id: "fitur-update-sistem-guru",
     category: "Dashboard Guru",
-    question: "Menu Update Sistem/Revisi untuk guru fungsinya apa?",
+    question: "Di mana guru bisa melihat update sistem atau revisi fitur terbaru?",
     answer: [
-      "Halaman ini menampilkan histori perubahan fitur (major/minor) antar versi sistem.",
+      "Gunakan menu Update Sistem/Revisi di sidebar guru untuk melihat histori perubahan fitur antar versi sistem.",
       "Gunakan halaman ini untuk briefing cepat tim pengajar sebelum memakai alur baru.",
       "Visibilitas menu dikendalikan lewat feature flag publik oleh superadmin.",
     ],
     keywords: ["update sistem", "revisi", "changelog", "feature flag"],
+  },
+  {
+    id: "fitur-cara-menemukan-fitur-guru",
+    category: "Dashboard Guru",
+    question: "Kalau lupa letak fitur tertentu, cara tercepat menemukannya bagaimana?",
+    answer: [
+      "Gunakan pola utama sidebar: fitur operasional kelas ada di Kelas, evaluasi ada di Penilaian, koleksi soal ada di Bank Soal, dan analisis hasil ada di Laporan Nilai.",
+      "Pakai pencarian pada halaman Bantuan untuk istilah seperti join request, rubrik, bulk submit, banding, atau command search.",
+      "Jika fitur terasa baru atau berbeda dari sebelumnya, cek Update Sistem/Revisi untuk melihat perubahan versi terbaru.",
+    ],
+    keywords: ["mencari fitur", "letak fitur", "guru", "search", "sidebar"],
   },
 ];
 

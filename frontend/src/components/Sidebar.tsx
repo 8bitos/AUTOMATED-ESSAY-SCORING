@@ -6,12 +6,24 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import {
   fetchStudentNotifications,
+  hydrateStudentNotificationPrefs,
   loadStudentNotificationPrefs,
 } from '@/lib/studentNotifications';
 import {
   DEFAULT_NOTIFICATION_POLL_INTERVAL_MS,
   loadNotificationPollIntervalMs,
+  subscribeNotificationStream,
 } from '@/lib/notificationRealtime';
+import {
+  fetchTeacherNotifications,
+  hydrateTeacherNotificationPrefs,
+  loadTeacherNotificationPrefs,
+} from '@/lib/teacherNotifications';
+import {
+  fetchSuperadminNotifications,
+  hydrateSuperadminNotificationPrefs,
+  loadSuperadminNotificationPrefs,
+} from '@/lib/superadminNotifications';
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -28,18 +40,6 @@ type NavItem = {
   variant?: "default" | "updates";
 };
 
-type TeacherNotificationPrefs = {
-  classRequests: boolean;
-  assessmentUpdates: boolean;
-  systemAnnouncements: boolean;
-  sidebarIndicators?: boolean;
-};
-
-type SuperadminNotificationPrefs = {
-  approvalRequests: boolean;
-  sidebarIndicators?: boolean;
-};
-
 type TeacherClassItem = {
   id: string;
   class_name: string;
@@ -50,17 +50,11 @@ type StudentClassItem = {
   class_name: string;
 };
 
-type AdminProfileRequestItem = {
-  id: string;
-};
-
 type PublicFeatureFlagItem = {
   key: string;
   value: boolean;
 };
 
-const TEACHER_NOTIFICATION_PREFS_KEY = "teacher_notification_preferences";
-const SUPERADMIN_NOTIFICATION_PREFS_KEY = "superadmin_notification_preferences";
 const NOTIF_READ_STORAGE_PREFIX = "read_notifications_";
 
 const getGradeFromClassName = (className: string): "10" | "11" | "12" | "other" => {
@@ -188,75 +182,19 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
   const refreshBadges = useCallback(async () => {
     const next: Record<string, boolean> = {};
     const readIDs = getReadIDs();
+    const isRead = (item: { id: string; isRead?: boolean }) => item.isRead ?? readIDs.has(item.id);
 
     if (userRole === "teacher") {
-      let prefs: TeacherNotificationPrefs = {
-        classRequests: true,
-        assessmentUpdates: true,
-        systemAnnouncements: true,
-        sidebarIndicators: true,
-      };
-      if (typeof window !== "undefined") {
-        try {
-          const raw = window.localStorage.getItem(TEACHER_NOTIFICATION_PREFS_KEY);
-          if (raw) prefs = { ...prefs, ...(JSON.parse(raw) as Partial<TeacherNotificationPrefs>) };
-        } catch {
-          // noop
-        }
-      }
+      const prefs = loadTeacherNotificationPrefs();
       if (!prefs.sidebarIndicators) {
         setBadgeMap({});
         return;
       }
       try {
-        const classRes = await fetch("/api/classes", { credentials: "include" });
-        const classes = classRes.ok ? await classRes.json() : [];
-        if (prefs.classRequests) {
-          let hasUnreadJoin = false;
-          for (const cls of Array.isArray(classes) ? classes : []) {
-            const pendingRes = await fetch(`/api/classes/${cls.id}/join-requests`, { credentials: "include" });
-            if (!pendingRes.ok) continue;
-            const pendingItems = await pendingRes.json();
-            for (const req of Array.isArray(pendingItems) ? pendingItems : []) {
-              const notifID = `join-${req.member_id || req.id}`;
-              if (!readIDs.has(notifID)) {
-                hasUnreadJoin = true;
-                break;
-              }
-            }
-            if (hasUnreadJoin) break;
-          }
-          next.teacher_classes = hasUnreadJoin;
-        }
-
-        if (prefs.assessmentUpdates) {
-          let hasUnreadAssessment = false;
-          for (const cls of Array.isArray(classes) ? classes : []) {
-            const materialsRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: "include" });
-            const materials = materialsRes.ok ? await materialsRes.json() : [];
-            for (const material of Array.isArray(materials) ? materials : []) {
-              const questionRes = await fetch(`/api/materials/${material.id}/essay-questions`, { credentials: "include" });
-              const questions = questionRes.ok ? await questionRes.json() : [];
-              for (const q of Array.isArray(questions) ? questions : []) {
-                const submissionRes = await fetch(`/api/essay-questions/${q.id}/submissions`, { credentials: "include" });
-                const submissions = submissionRes.ok ? await submissionRes.json() : [];
-                for (const sub of Array.isArray(submissions) ? submissions : []) {
-                  const reviewed = sub?.revised_score != null || String(sub?.teacher_feedback || "").trim().length > 0;
-                  if (reviewed) continue;
-                  const notifID = `assessment-${sub.id}`;
-                  if (!readIDs.has(notifID)) {
-                    hasUnreadAssessment = true;
-                    break;
-                  }
-                }
-                if (hasUnreadAssessment) break;
-              }
-              if (hasUnreadAssessment) break;
-            }
-            if (hasUnreadAssessment) break;
-          }
-          next.teacher_penilaian = hasUnreadAssessment;
-        }
+        const items = await fetchTeacherNotifications(prefs);
+        const unread = items.filter((item) => !isRead(item));
+        next.teacher_classes = unread.some((item) => item.category === "class_request" || item.category === "class_announcement");
+        next.teacher_penilaian = unread.some((item) => item.category === "assessment_update" || item.category === "appeal_request");
       } catch {
         // noop
       }
@@ -265,29 +203,16 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     }
 
     if (userRole === "superadmin") {
-      let prefs: SuperadminNotificationPrefs = { approvalRequests: true, sidebarIndicators: true };
-      if (typeof window !== "undefined") {
-        try {
-          const raw = window.localStorage.getItem(SUPERADMIN_NOTIFICATION_PREFS_KEY);
-          if (raw) prefs = { ...prefs, ...(JSON.parse(raw) as Partial<SuperadminNotificationPrefs>) };
-        } catch {
-          // noop
-        }
-      }
+      const prefs = loadSuperadminNotificationPrefs();
       if (!prefs.sidebarIndicators) {
         setBadgeMap({});
         return;
       }
-      if (prefs.approvalRequests) {
-        try {
-          const res = await fetch("/api/admin/profile-requests?status=pending", { credentials: "include" });
-          const items = res.ok ? await res.json() : [];
-          next.superadmin_approval = (Array.isArray(items) ? (items as AdminProfileRequestItem[]) : []).some(
-            (item) => !readIDs.has(`profile-${item.id}`)
-          );
-        } catch {
-          next.superadmin_approval = false;
-        }
+      try {
+        const items = await fetchSuperadminNotifications(prefs);
+        next.superadmin_approval = items.some((item) => item.category === "approval_request" && !isRead(item));
+      } catch {
+        next.superadmin_approval = false;
       }
       setBadgeMap(next);
       return;
@@ -301,10 +226,15 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
       }
       try {
         const items = await fetchStudentNotifications(prefs);
-        const unread = items.filter((item) => !readIDs.has(item.id));
-        next.student_classes = unread.some((item) => item.id.startsWith("student-class-approved-") || item.id.startsWith("student-class-invited-"));
-        next.student_assignments = unread.some((item) => item.id.startsWith("student-material-") || item.id.startsWith("student-question-"));
-        next.student_grades = unread.some((item) => item.id.startsWith("student-ai-graded-") || item.id.startsWith("student-review-"));
+        const unread = items.filter((item) => !isRead(item));
+        next.student_classes = unread.some((item) => item.category === "class_approval" || item.category === "class_invite" || item.category === "class_announcement");
+        next.student_assignments = unread.some((item) =>
+          item.category === "material_update" ||
+          item.category === "question_new" ||
+          item.category === "task_due_soon" ||
+          item.category === "task_overdue"
+        );
+        next.student_grades = unread.some((item) => item.category === "ai_graded" || item.category === "teacher_review" || item.category === "appeal_update");
       } catch {
         // noop
       }
@@ -317,6 +247,15 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
   useEffect(() => {
     let active = true;
     (async () => {
+      if (userRole === "teacher") {
+        await hydrateTeacherNotificationPrefs();
+      }
+      if (userRole === "superadmin") {
+        await hydrateSuperadminNotificationPrefs();
+      }
+      if (userRole === "student") {
+        await hydrateStudentNotificationPrefs();
+      }
       const next = await loadNotificationPollIntervalMs();
       if (active) setPollIntervalMs(next);
     })();
@@ -338,6 +277,12 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
       window.removeEventListener("storage", onStorage);
     };
   }, [pollIntervalMs, refreshBadges]);
+
+  useEffect(() => {
+    return subscribeNotificationStream(() => {
+      void refreshBadges();
+    });
+  }, [refreshBadges]);
 
   useEffect(() => {
     fetchTeacherClasses();

@@ -359,6 +359,11 @@ var adminSettingWhitelist = map[string]adminSettingMeta{
 		Description: "Izinkan superadmin menghapus materi",
 		Type:        "boolean",
 	},
+	"profile_change_auto_approve": {
+		Key:         "profile_change_auto_approve",
+		Description: "Setujui otomatis perubahan profil yang biasanya masuk approval",
+		Type:        "boolean",
+	},
 	"notification_poll_interval_seconds": {
 		Key:         "notification_poll_interval_seconds",
 		Description: "Interval auto-refresh notifikasi realtime (detik)",
@@ -384,6 +389,8 @@ func validateSettingValue(key, value string) (string, error) {
 	case "superadmin_allow_delete_class":
 		fallthrough
 	case "superadmin_allow_delete_material":
+		fallthrough
+	case "profile_change_auto_approve":
 		v := strings.ToLower(value)
 		if v != "true" && v != "false" {
 			return "", fmt.Errorf("%s must be true or false", key)

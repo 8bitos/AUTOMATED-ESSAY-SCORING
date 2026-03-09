@@ -30,6 +30,17 @@ const FAQ_ITEMS: FAQItem[] = [
     keywords: ["superadmin", "scope", "role", "akses"],
   },
   {
+    id: "admin-feature-map",
+    category: "Akses & Role",
+    question: "Sebagai superadmin, bagaimana cara cepat memahami semua fitur yang tersedia?",
+    answer: [
+      "Mulai dari sidebar: Approval untuk request user, Manajemen User untuk data akun, AI Ops dan Queue Monitor untuk operasional AI, Audit Log untuk histori aksi, Pengumuman untuk broadcast, serta Config/Settings/Feature Flags untuk kontrol sistem.",
+      "Gunakan Bantuan ini sebagai peta fungsi panel admin, lalu cek Update Sistem/Revisi untuk melihat fitur baru atau perubahan perilaku sistem.",
+      "Pisahkan kebutuhan harian berdasarkan domain: approval, monitoring, konfigurasi, dan audit agar navigasi lebih cepat.",
+    ],
+    keywords: ["peta fitur", "superadmin", "semua fitur", "sidebar", "menu"],
+  },
+  {
     id: "admin-impersonate",
     category: "Operasional Admin",
     question: "Menu Impersonate dipakai untuk apa?",
@@ -108,6 +119,28 @@ const FAQ_ITEMS: FAQItem[] = [
       "Perubahan konfigurasi sebaiknya dilakukan terkontrol dan diverifikasi dampaknya setelah disimpan.",
     ],
     keywords: ["config", "settings", "parameter sistem"],
+  },
+  {
+    id: "admin-system-updates",
+    category: "Konfigurasi Sistem",
+    question: "Di mana superadmin bisa melihat update sistem atau revisi fitur terbaru?",
+    answer: [
+      "Gunakan menu Update Sistem/Revisi untuk melihat histori perubahan versi yang sudah dirilis.",
+      "Halaman ini membantu superadmin memantau dampak perubahan sebelum briefing user atau mengecek perubahan operasional.",
+      "Jika menu disembunyikan, cek feature flag publik terkait visibilitas Update Sistem/Revisi.",
+    ],
+    keywords: ["update sistem", "revisi", "changelog", "rilis", "feature flag"],
+  },
+  {
+    id: "admin-find-features",
+    category: "Konfigurasi Sistem",
+    question: "Kalau lupa letak fitur admin tertentu, cara menemukannya bagaimana?",
+    answer: [
+      "Cocokkan dulu kebutuhanmu: approval/user management untuk data akun, monitoring/audit untuk observabilitas, AI Ops/Queue untuk grading, dan config/settings/feature flags untuk kontrol sistem.",
+      "Gunakan pencarian pada halaman Bantuan untuk kata kunci seperti approval, queue, impersonate, audit, config, atau feature flag.",
+      "Saat ada fitur baru, cek halaman Update Sistem/Revisi supaya perubahan menu dan alur operasional lebih cepat dipahami.",
+    ],
+    keywords: ["mencari fitur", "letak fitur", "admin", "search", "menu"],
   },
 ];
 

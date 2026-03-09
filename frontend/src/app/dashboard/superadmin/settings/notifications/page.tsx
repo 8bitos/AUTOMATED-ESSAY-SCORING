@@ -3,33 +3,38 @@
 import { useEffect, useState } from "react";
 import { FiBell } from "react-icons/fi";
 import ToggleSwitch from "@/components/ToggleSwitch";
+import {
+  hydrateSuperadminNotificationPrefs,
+  saveSuperadminNotificationPrefs,
+  SuperadminNotificationPrefs,
+} from "@/lib/superadminNotifications";
 
-type SuperadminNotificationPrefs = {
-  approvalRequests: boolean;
-  sidebarIndicators: boolean;
+type AdminSettingItem = {
+  key?: string;
+  value?: string | number | boolean | null;
 };
-
-const STORAGE_KEY = "superadmin_notification_preferences";
 
 export default function SuperadminNotificationSettingsPage() {
   const [prefs, setPrefs] = useState<SuperadminNotificationPrefs>({
     approvalRequests: true,
+    anomalyAlerts: true,
     sidebarIndicators: true,
   });
   const [pollIntervalSeconds, setPollIntervalSeconds] = useState("30");
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as Partial<SuperadminNotificationPrefs>;
-      setPrefs((prev) => ({ ...prev, ...parsed }));
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    let active = true;
+    void (async () => {
+      const next = await hydrateSuperadminNotificationPrefs();
+      if (active) setPrefs(next);
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -40,8 +45,8 @@ export default function SuperadminNotificationSettingsPage() {
         const res = await fetch("/api/admin/settings", { credentials: "include" });
         if (!res.ok) return;
         const payload = await res.json().catch(() => ({}));
-        const list = Array.isArray(payload?.items) ? payload.items : [];
-        const item = list.find((x: any) => x?.key === "notification_poll_interval_seconds");
+        const list = Array.isArray(payload?.items) ? (payload.items as AdminSettingItem[]) : [];
+        const item = list.find((x) => x?.key === "notification_poll_interval_seconds");
         if (active && item?.value) setPollIntervalSeconds(String(item.value));
       } finally {
         if (active) setLoadingConfig(false);
@@ -53,9 +58,13 @@ export default function SuperadminNotificationSettingsPage() {
     };
   }, []);
 
-  const savePreferences = (e: React.FormEvent) => {
+  const savePreferences = async (e: React.FormEvent) => {
     e.preventDefault();
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    setSavingPrefs(true);
+    setMessage(null);
+    const saved = await saveSuperadminNotificationPrefs(prefs);
+    setPrefs(saved);
+    setSavingPrefs(false);
     setMessage("Preferensi notifikasi berhasil disimpan.");
   };
 
@@ -73,8 +82,8 @@ export default function SuperadminNotificationSettingsPage() {
       if (!res.ok) throw new Error(body?.message || "Gagal menyimpan interval realtime");
       setPollIntervalSeconds(String(body?.value || pollIntervalSeconds));
       setMessage("Interval realtime notifikasi berhasil disimpan.");
-    } catch (err: any) {
-      setMessage(err?.message || "Gagal menyimpan interval realtime");
+    } catch (err: unknown) {
+      setMessage(err instanceof Error && err.message ? err.message : "Gagal menyimpan interval realtime");
     } finally {
       setSavingConfig(false);
     }
@@ -123,6 +132,21 @@ export default function SuperadminNotificationSettingsPage() {
           />
         </label>
 
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Alert anomali</p>
+            <p className="text-xs text-slate-500">Notifikasi saat sistem mendeteksi anomali seperti fail rate AI atau queue bermasalah.</p>
+          </div>
+          <ToggleSwitch
+            label="Toggle notifikasi alert anomali superadmin"
+            checked={prefs.anomalyAlerts}
+            onChange={(value) => {
+              setPrefs((prev) => ({ ...prev, anomalyAlerts: value }));
+              setMessage(null);
+            }}
+          />
+        </label>
+
         <div className="rounded-lg border border-slate-200 p-4 space-y-2">
           <p className="text-sm font-medium text-slate-900">Interval Realtime Notifikasi</p>
           <p className="text-xs text-slate-500">Dipakai oleh lonceng notifikasi dan halaman notifikasi semua role. Rentang 5-300 detik.</p>
@@ -154,8 +178,8 @@ export default function SuperadminNotificationSettingsPage() {
         {message && <p className="text-sm text-emerald-700">{message}</p>}
 
         <div className="flex justify-end">
-          <button type="submit" className="sage-button">
-            Simpan Preferensi
+          <button type="submit" className="sage-button" disabled={savingPrefs}>
+            {savingPrefs ? "Menyimpan..." : "Simpan Preferensi"}
           </button>
         </div>
       </form>

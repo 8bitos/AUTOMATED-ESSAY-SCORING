@@ -54,6 +54,7 @@ func (h *EssayQuestionHandlers) CreateEssayQuestionHandler(w http.ResponseWriter
 	}
 
 	respondWithJSON(w, http.StatusCreated, createdQuestion)
+	services.PublishNotificationInvalidation("essay_question_created", []string{"teacher", "student"}, nil)
 }
 
 // GetEssayQuestionsByMaterialIDHandler handles fetching all essay questions for a given material.
@@ -102,6 +103,7 @@ func (h *EssayQuestionHandlers) UpdateEssayQuestionHandler(w http.ResponseWriter
 	}
 
 	respondWithJSON(w, http.StatusOK, updatedQuestion)
+	services.PublishNotificationInvalidation("essay_question_updated", []string{"teacher", "student"}, nil)
 }
 
 // DeleteEssayQuestionHandler handles deleting an essay question by its ID.

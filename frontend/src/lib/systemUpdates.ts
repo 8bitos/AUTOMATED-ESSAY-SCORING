@@ -11,7 +11,7 @@ export type SystemUpdateEntry = {
 export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
   {
     version: "1.1",
-    date: "2026-03-06",
+    date: "2026-03-09",
     title: "Perbaikan UI Kelas/Soal + Stabilitas Dark Mode",
     majorUpdates: [
       "Menambahkan Mode Rubrik per card section pada halaman Teacher Soal (Per Soal vs Global), termasuk editor rubrik global, sinkronisasi rubrik ke soal, dan integrasi ke alur tambah/edit soal.",
@@ -36,6 +36,8 @@ export const SYSTEM_UPDATES: SystemUpdateEntry[] = [
       "Menyempurnakan flow urut soal dengan affordance drag handle (`::`), kontrol naik/turun, border kontrol yang lebih rapi, serta animasi pergeseran saat reorder.",
     ],
     minorUpdates: [
+      "Menambahkan FAQ bantuan lintas role untuk akses halaman Update Sistem/Revisi agar student, teacher, dan superadmin lebih cepat menemukan histori perubahan fitur terbaru.",
+      "Menambahkan FAQ peta fitur per role di halaman Bantuan agar user lebih mudah mengenali menu utama, fungsi tiap area, dan cara menemukan fitur saat navigasi berubah.",
       "Menambahkan badge indikator Rubrik Global pada daftar soal teacher saat mode global aktif agar scope penilaian langsung terlihat.",
       "Menambahkan hint interaksi buka/tutup pada panel rubrik siswa agar area soal panjang tetap mudah dipindai.",
       "Merapikan affordance dropdown detail per soal di mode daftar siswa (tap card untuk expand/collapse) agar tampilan awal tetap ringkas.",

@@ -21,6 +21,11 @@ import {
 } from "react-icons/fi";
 import TeacherProfileModal from "@/components/TeacherProfileModal";
 import SafeHtml from "@/components/ui/SafeHtml";
+import {
+  hydrateStudentNotificationState,
+  loadStudentMaterialSeenUpdates,
+  markStudentMaterialSeen,
+} from "@/lib/studentNotifications";
 
 interface EssayQuestion {
   id: string;
@@ -95,6 +100,8 @@ interface ClassDetail {
   announcement_title?: string;
   announcement_content?: string;
   announcement_tone?: "info" | "success" | "warning" | "urgent";
+  announcement_starts_at?: string | null;
+  announcement_ends_at?: string | null;
   materials?: Material[];
 }
 
@@ -105,6 +112,34 @@ const getAnnouncementToneStyles = (tone?: AnnouncementTone) => {
   if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
   if (tone === "urgent") return "border-rose-200 bg-rose-50 text-rose-900";
   return "border-sky-200 bg-sky-50 text-sky-900";
+};
+
+const isClassAnnouncementActive = (cls?: Pick<ClassDetail, "announcement_enabled" | "announcement_title" | "announcement_content" | "announcement_starts_at" | "announcement_ends_at"> | null) => {
+  if (!cls?.announcement_enabled || !cls.announcement_title || !cls.announcement_content) return false;
+  const now = Date.now();
+  const startsAt = cls.announcement_starts_at ? new Date(cls.announcement_starts_at).getTime() : null;
+  const endsAt = cls.announcement_ends_at ? new Date(cls.announcement_ends_at).getTime() : null;
+  if (startsAt && now < startsAt) return false;
+  if (endsAt && now > endsAt) return false;
+  return true;
+};
+
+const formatAnnouncementSchedule = (startsAt?: string | null, endsAt?: string | null) => {
+  const format = (value?: string | null) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString("id-ID", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  };
+  const startLabel = format(startsAt);
+  const endLabel = format(endsAt);
+  if (startLabel && endLabel) return `Tayang ${startLabel} sampai ${endLabel}`;
+  if (startLabel) return `Mulai tayang ${startLabel}`;
+  if (endLabel) return `Berakhir ${endLabel}`;
+  return "";
 };
 
 type MaterialFilter = "all" | "pending" | "submitted" | "reviewed";
@@ -216,6 +251,8 @@ type SectionMediaItem = {
   caption?: string;
 };
 
+type RawSectionMediaItem = NonNullable<NonNullable<SectionContentCardData["meta"]>["media_items"]>[number];
+
 const normalizeSectionMediaItems = (
   type: SectionContentType,
   body?: string,
@@ -223,7 +260,7 @@ const normalizeSectionMediaItems = (
 ): SectionMediaItem[] => {
   const items = Array.isArray(meta?.media_items)
     ? meta.media_items
-        .filter((item): item is NonNullable<SectionContentCardData["meta"]>["media_items"][number] =>
+        .filter((item): item is RawSectionMediaItem =>
           !!item && typeof item.url === "string" && item.url.trim().length > 0
         )
         .map((item) => ({
@@ -238,7 +275,7 @@ const normalizeSectionMediaItems = (
                   : 100,
           name: item.name,
           kind: item.kind,
-          align: item.align === "left" || item.align === "right" ? item.align : "center",
+          align: item.align === "left" || item.align === "right" ? item.align : ("center" as const),
           caption: typeof item.caption === "string" ? item.caption : "",
         }))
     : [];
@@ -460,16 +497,16 @@ export default function StudentClassMaterialsPage() {
 
   useEffect(() => {
     if (!classId) return;
-    try {
-      const raw = window.localStorage.getItem(`student_material_seen_updates_${classId}`);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, string>;
-      if (parsed && typeof parsed === "object") {
-        setSeenUpdateByMaterial(parsed);
+    let active = true;
+    void (async () => {
+      await hydrateStudentNotificationState();
+      if (active) {
+        setSeenUpdateByMaterial(loadStudentMaterialSeenUpdates(classId));
       }
-    } catch {
-      setSeenUpdateByMaterial({});
-    }
+    })();
+    return () => {
+      active = false;
+    };
   }, [classId]);
 
   useEffect(() => {
@@ -563,11 +600,7 @@ export default function StudentClassMaterialsPage() {
     if (!signature) return;
     setSeenUpdateByMaterial((prev) => {
       const next = { ...prev, [material.id]: signature };
-      try {
-        window.localStorage.setItem(`student_material_seen_updates_${classId}`, JSON.stringify(next));
-      } catch {
-        // ignore write failure
-      }
+      void markStudentMaterialSeen(classId, material.id, signature);
       return next;
     });
   };
@@ -966,10 +999,15 @@ export default function StudentClassMaterialsPage() {
             <p className="text-[color:var(--ink-500)] mt-1">{cls.deskripsi}</p>
           </div>
         </div>
-        {cls.announcement_enabled && cls.announcement_title && cls.announcement_content ? (
-          <div className={`mt-4 rounded-2xl border px-4 py-4 shadow-sm ${getAnnouncementToneStyles(cls.announcement_tone)}`}>
+        {isClassAnnouncementActive(cls) ? (
+          <div className={`class-announcement-banner mt-4 rounded-2xl border px-4 py-4 shadow-sm ${getAnnouncementToneStyles(cls.announcement_tone)}`}>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] opacity-70">Pengumuman Kelas</p>
             <h2 className="mt-1 text-lg font-semibold">{cls.announcement_title}</h2>
+            {formatAnnouncementSchedule(cls.announcement_starts_at, cls.announcement_ends_at) ? (
+              <p className="mt-1 text-xs font-medium opacity-75">
+                {formatAnnouncementSchedule(cls.announcement_starts_at, cls.announcement_ends_at)}
+              </p>
+            ) : null}
             <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed opacity-90">{cls.announcement_content}</p>
           </div>
         ) : null}

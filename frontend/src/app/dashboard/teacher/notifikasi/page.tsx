@@ -4,29 +4,24 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { FiBell, FiCheckCircle, FiClock, FiRefreshCw } from "react-icons/fi";
 import { useAuth } from "@/context/AuthContext";
-import { DEFAULT_NOTIFICATION_POLL_INTERVAL_MS, loadNotificationPollIntervalMs } from "@/lib/notificationRealtime";
+import { DEFAULT_NOTIFICATION_POLL_INTERVAL_MS, loadNotificationPollIntervalMs, subscribeNotificationStream } from "@/lib/notificationRealtime";
+import {
+  fetchTeacherNotifications,
+  hydrateTeacherNotificationPrefs,
+  loadTeacherNotificationPrefs,
+  TeacherNotificationItem as NotificationItem,
+} from "@/lib/teacherNotifications";
+import { markAllNotificationCenterItemsRead, markNotificationCenterItemsRead } from "@/lib/notificationCenter";
 
-type TeacherNotificationPrefs = {
-  classRequests: boolean;
-  assessmentUpdates: boolean;
-  systemAnnouncements: boolean;
-};
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  createdAt: string;
-  href: string;
-};
-
-const TEACHER_NOTIFICATION_PREFS_KEY = "teacher_notification_preferences";
 const NOTIF_READ_STORAGE_PREFIX = "read_notifications_";
 const TEACHER_NOTIFICATION_HISTORY_PREFIX = "teacher_notifications_history_";
 
 function sortByCreatedAtDesc(items: NotificationItem[]) {
   return [...items].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
+
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
 
 function toLocalDate(value?: string) {
   if (!value) return "-";
@@ -62,26 +57,6 @@ export default function TeacherNotifikasiPage() {
     return `${TEACHER_NOTIFICATION_HISTORY_PREFIX}${userKey}`;
   }, [user?.id, user?.nama_lengkap]);
 
-  const loadPrefs = (): TeacherNotificationPrefs => {
-    if (typeof window === "undefined") {
-      return { classRequests: true, assessmentUpdates: true, systemAnnouncements: true };
-    }
-    const raw = window.localStorage.getItem(TEACHER_NOTIFICATION_PREFS_KEY);
-    if (!raw) {
-      return { classRequests: true, assessmentUpdates: true, systemAnnouncements: true };
-    }
-    try {
-      const parsed = JSON.parse(raw) as Partial<TeacherNotificationPrefs>;
-      return {
-        classRequests: parsed.classRequests ?? true,
-        assessmentUpdates: parsed.assessmentUpdates ?? true,
-        systemAnnouncements: parsed.systemAnnouncements ?? true,
-      };
-    } catch {
-      return { classRequests: true, assessmentUpdates: true, systemAnnouncements: true };
-    }
-  };
-
   const loadReadIds = () => {
     if (typeof window === "undefined") return;
     const raw = window.localStorage.getItem(readStorageKey);
@@ -111,13 +86,17 @@ export default function TeacherNotifikasiPage() {
       const parsed = JSON.parse(raw);
       const list = Array.isArray(parsed) ? parsed : [];
       return list
-        .map((x: any) => ({
-          id: String(x?.id || ""),
-          title: String(x?.title || ""),
-          message: String(x?.message || ""),
-          createdAt: String(x?.createdAt || ""),
-          href: String(x?.href || "/dashboard/teacher"),
-        }))
+        .map((x: unknown) => {
+          const item = typeof x === "object" && x !== null ? (x as Record<string, unknown>) : {};
+          return {
+            id: String(item.id || ""),
+            title: String(item.title || ""),
+            message: String(item.message || ""),
+            createdAt: String(item.createdAt || ""),
+            href: String(item.href || "/dashboard/teacher"),
+            category: (item.category || "assessment_update") as NotificationItem["category"],
+          };
+        })
         .filter((x: NotificationItem) => x.id && x.title);
     } catch {
       return [];
@@ -147,66 +126,12 @@ export default function TeacherNotifikasiPage() {
     setLoading(true);
     setError(null);
     try {
-      const prefs = loadPrefs();
-      const allItems: NotificationItem[] = [];
-
-      const classRes = await fetch("/api/classes", { credentials: "include" });
-      if (!classRes.ok) throw new Error("Gagal memuat kelas");
-      const classes = await classRes.json();
-
-      if (prefs.classRequests) {
-        for (const cls of Array.isArray(classes) ? classes : []) {
-          const pendingRes = await fetch(`/api/classes/${cls.id}/join-requests`, { credentials: "include" });
-          if (!pendingRes.ok) continue;
-          const pendingItems = await pendingRes.json();
-          for (const req of Array.isArray(pendingItems) ? pendingItems : []) {
-            allItems.push({
-              id: `join-${req.member_id || req.id}`,
-              title: "Join Request Baru",
-              message: `${req.student_name || "Siswa"} meminta bergabung ke ${cls.class_name || "kelas Anda"}.`,
-              createdAt: req.requested_at || new Date().toISOString(),
-              href: "/dashboard/teacher/classes",
-            });
-          }
-        }
-      }
-
-      if (prefs.assessmentUpdates) {
-        for (const cls of Array.isArray(classes) ? classes : []) {
-          const materialsRes = await fetch(`/api/classes/${cls.id}/materials`, { credentials: "include" });
-          const materials = materialsRes.ok ? await materialsRes.json() : [];
-
-          for (const material of Array.isArray(materials) ? materials : []) {
-            const questionRes = await fetch(`/api/materials/${material.id}/essay-questions`, { credentials: "include" });
-            const questions = questionRes.ok ? await questionRes.json() : [];
-
-            for (const question of Array.isArray(questions) ? questions : []) {
-              const submissionRes = await fetch(`/api/essay-questions/${question.id}/submissions`, { credentials: "include" });
-              const submissions = submissionRes.ok ? await submissionRes.json() : [];
-
-              for (const submission of Array.isArray(submissions) ? submissions : []) {
-                const reviewed =
-                  submission?.revised_score != null ||
-                  String(submission?.teacher_feedback || "").trim().length > 0;
-                if (reviewed) continue;
-
-                allItems.push({
-                  id: `assessment-${submission.id}`,
-                  title: "Submission Perlu Review",
-                  message: `${submission.student_name || "Siswa"} mengirim jawaban di ${material.judul || "materi"} (${cls.class_name || "kelas"}).`,
-                  createdAt: submission.submitted_at || new Date().toISOString(),
-                  href: "/dashboard/teacher/penilaian",
-                });
-              }
-            }
-          }
-        }
-      }
-
+      await hydrateTeacherNotificationPrefs();
+      const allItems = await fetchTeacherNotifications(loadTeacherNotificationPrefs());
       saveHistory(sortByCreatedAtDesc(allItems));
-      loadReadIds();
-    } catch (err: any) {
-      setError(err?.message || "Gagal memuat notifikasi.");
+      setReadIds(allItems.filter((item) => item.isRead).map((item) => item.id));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Gagal memuat notifikasi."));
       setItems(loadHistory());
       loadReadIds();
     } finally {
@@ -241,25 +166,35 @@ export default function TeacherNotifikasiPage() {
     return () => window.clearInterval(timer);
   }, [user?.id, user?.peran, pollIntervalMs]);
 
+  useEffect(() => {
+    if (!user || user.peran !== "teacher") return;
+    return subscribeNotificationStream(() => {
+      void fetchNotifications();
+    });
+  }, [user?.id, user?.peran]);
+
+  const isItemRead = (item: NotificationItem) => item.isRead ?? readIds.includes(item.id);
+
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items.filter((item) => {
-      if (filter === "unread" && readIds.includes(item.id)) return false;
-      if (filter === "read" && !readIds.includes(item.id)) return false;
+      if (filter === "unread" && isItemRead(item)) return false;
+      if (filter === "read" && !isItemRead(item)) return false;
       if (!needle) return true;
       return item.title.toLowerCase().includes(needle) || item.message.toLowerCase().includes(needle);
     });
   }, [items, query, filter, readIds]);
 
-  const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
+  const unreadCount = items.filter((item) => !isItemRead(item)).length;
 
-  const markAsRead = (id: string) => {
-    if (readIds.includes(id)) return;
+  const markAsRead = async (id: string) => {
+    await markNotificationCenterItemsRead([id]).catch(() => undefined);
     saveReadIds([...readIds, id]);
   };
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
     const all = Array.from(new Set([...readIds, ...items.map((i) => i.id)]));
+    await markAllNotificationCenterItemsRead().catch(() => undefined);
     saveReadIds(all);
   };
 
@@ -314,7 +249,7 @@ export default function TeacherNotifikasiPage() {
 
         <div className="space-y-2">
           {filteredItems.map((item) => {
-            const isRead = readIds.includes(item.id);
+            const isRead = isItemRead(item);
             return (
               <div
                 key={item.id}
@@ -337,7 +272,7 @@ export default function TeacherNotifikasiPage() {
                         Dibaca
                       </button>
                     )}
-                    <Link href={item.href} className="sage-button !px-2.5 !py-1.5 text-xs">
+                    <Link href={item.href || "/dashboard/teacher"} className="sage-button !px-2.5 !py-1.5 text-xs">
                       Buka
                     </Link>
                   </div>

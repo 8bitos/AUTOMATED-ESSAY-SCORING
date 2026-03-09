@@ -202,6 +202,9 @@ func (h *AuthHandlers) UpdateProfileHandler(w http.ResponseWriter, r *http.Reque
 		"pending_fields": pendingFields,
 		"message":        "Profile updated",
 	})
+	if len(pendingFields) > 0 {
+		services.PublishNotificationInvalidation("profile_change_requested", []string{"superadmin"}, nil)
+	}
 }
 
 // ChangePasswordHandler updates the authenticated user's password.
@@ -361,6 +364,7 @@ func (h *AuthHandlers) ReviewProfileChangeRequestHandler(w http.ResponseWriter, 
 	})
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Request processed"})
+	services.PublishNotificationInvalidation("profile_change_reviewed", []string{"superadmin", "teacher", "student"}, nil)
 }
 
 func (h *AuthHandlers) AdminDashboardSummaryHandler(w http.ResponseWriter, r *http.Request) {

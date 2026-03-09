@@ -37,17 +37,6 @@ func parseAnnouncementDateTime(value string) (*time.Time, error) {
 	return nil, fmt.Errorf("invalid announcement datetime format")
 }
 
-func normalizeJoinPolicy(value string) string {
-	switch strings.TrimSpace(strings.ToLower(value)) {
-	case "open":
-		return "open"
-	case "closed":
-		return "closed"
-	default:
-		return "approval_required"
-	}
-}
-
 // ClassService menyediakan metode untuk manajemen kelas (CRUD) dan keanggotaan kelas.
 // Layanan ini juga berinteraksi dengan MaterialService dan EssayQuestionService
 // untuk mengambil data terkait materi dan pertanyaan esai dalam suatu kelas.
@@ -105,7 +94,7 @@ func (s *ClassService) CreateClass(req models.CreateClassRequest, userID string)
 // GetClasses mengambil semua kelas yang dibuat oleh guru tertentu.
 func (s *ClassService) GetClasses(teacherID string) ([]models.Class, error) {
 	query := `
-		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.join_policy, c.is_archived,
+		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
 		       c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
 		       c.announcement_starts_at, c.announcement_ends_at,
 		       c.created_at, c.updated_at
@@ -126,7 +115,7 @@ func (s *ClassService) GetClasses(teacherID string) ([]models.Class, error) {
 		var startsAt sql.NullTime
 		var endsAt sql.NullTime
 		if err := rows.Scan(
-			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.JoinPolicy, &c.IsArchived,
+			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
 			&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
 			&startsAt, &endsAt,
 			&c.CreatedAt, &c.UpdatedAt,
@@ -151,7 +140,7 @@ func (s *ClassService) GetClasses(teacherID string) ([]models.Class, error) {
 // Ini adalah endpoint publik yang mungkin digunakan untuk development atau tampilan awal.
 func (s *ClassService) GetAllClasses() ([]models.Class, error) {
 	query := `
-		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.join_policy, c.is_archived,
+		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
 		       c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
 		       c.announcement_starts_at, c.announcement_ends_at,
 		       c.created_at, c.updated_at
@@ -171,7 +160,7 @@ func (s *ClassService) GetAllClasses() ([]models.Class, error) {
 		var startsAt sql.NullTime
 		var endsAt sql.NullTime
 		if err := rows.Scan(
-			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.JoinPolicy, &c.IsArchived,
+			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
 			&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
 			&startsAt, &endsAt,
 			&c.CreatedAt, &c.UpdatedAt,
@@ -194,7 +183,7 @@ func (s *ClassService) GetAllClasses() ([]models.Class, error) {
 // GetClassByID retrieves a single class by its ID.
 func (s *ClassService) GetClassByID(classID string) (*models.Class, error) {
 	query := `
-		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.join_policy, c.is_archived,
+		SELECT c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
 		       c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
 		       c.announcement_starts_at, c.announcement_ends_at,
 		       c.created_at, c.updated_at
@@ -206,7 +195,7 @@ func (s *ClassService) GetClassByID(classID string) (*models.Class, error) {
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
 	err := s.db.QueryRowContext(context.Background(), query, classID).Scan(
-		&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.JoinPolicy, &c.IsArchived,
+		&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
 		&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
 		&startsAt, &endsAt,
 		&c.CreatedAt, &c.UpdatedAt,
@@ -395,12 +384,6 @@ func (s *ClassService) UpdateClass(classID, teacherID string, req *models.Update
 		args = append(args, *req.Description)
 		argID++
 	}
-	if req.JoinPolicy != nil {
-		joinPolicy := normalizeJoinPolicy(*req.JoinPolicy)
-		updates = append(updates, fmt.Sprintf("join_policy = $%d", argID))
-		args = append(args, joinPolicy)
-		argID++
-	}
 	if req.IsArchived != nil {
 		updates = append(updates, fmt.Sprintf("is_archived = $%d", argID))
 		args = append(args, *req.IsArchived)
@@ -472,7 +455,7 @@ func (s *ClassService) UpdateClass(classID, teacherID string, req *models.Update
 		UPDATE classes
 		SET %s
 		WHERE id = $%d AND teacher_id = $%d
-		RETURNING id, teacher_id, class_name, deskripsi, class_code, join_policy, is_archived,
+		RETURNING id, teacher_id, class_name, deskripsi, class_code, is_archived,
 		          announcement_enabled, announcement_title, announcement_content, announcement_tone,
 		          announcement_starts_at, announcement_ends_at,
 		          created_at, updated_at
@@ -482,7 +465,7 @@ func (s *ClassService) UpdateClass(classID, teacherID string, req *models.Update
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
 	if err := s.db.QueryRowContext(context.Background(), query, args...).Scan(
-		&c.ID, &c.TeacherID, &c.ClassName, &c.Description, &c.ClassCode, &c.JoinPolicy, &c.IsArchived,
+		&c.ID, &c.TeacherID, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
 		&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
 		&startsAt, &endsAt,
 		&c.CreatedAt, &c.UpdatedAt,
@@ -510,21 +493,15 @@ func (s *ClassService) DeleteClass(classID, teacherID string) error {
 }
 
 // JoinClass menambahkan seorang siswa ke sebuah kelas menggunakan kode kelas.
-// Nilai balik status akan berupa "approved" atau "pending".
-func (s *ClassService) JoinClass(classCode, studentID string) (string, error) {
+func (s *ClassService) JoinClass(classCode, studentID string) error {
 	var classID string
-	var joinPolicy string
 	// 1. Temukan ID Kelas berdasarkan Kode Kelas.
-	err := s.db.QueryRowContext(context.Background(), "SELECT id, join_policy FROM classes WHERE class_code = $1", classCode).Scan(&classID, &joinPolicy)
+	err := s.db.QueryRowContext(context.Background(), "SELECT id FROM classes WHERE class_code = $1", classCode).Scan(&classID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("class not found") // Kelas tidak ditemukan.
+			return fmt.Errorf("class not found") // Kelas tidak ditemukan.
 		}
-		return "", fmt.Errorf("error finding class by code: %w", err)
-	}
-	joinPolicy = normalizeJoinPolicy(joinPolicy)
-	if joinPolicy == "closed" {
-		return "", fmt.Errorf("class is closed for join requests")
+		return fmt.Errorf("error finding class by code: %w", err)
 	}
 
 	// 2. Periksa Keanggotaan yang Sudah Ada.
@@ -533,67 +510,38 @@ func (s *ClassService) JoinClass(classCode, studentID string) (string, error) {
 	if err == nil {
 		switch strings.ToLower(existingStatus) {
 		case "approved":
-			return "", fmt.Errorf("student is already a member of this class")
+			return fmt.Errorf("student is already a member of this class")
 		case "pending":
-			if joinPolicy == "open" {
-				_, uErr := s.db.ExecContext(
-					context.Background(),
-					"UPDATE class_members SET status = 'approved', requested_at = $1, approved_at = $1, joined_at = $1 WHERE id = $2",
-					time.Now(),
-					existingMemberID,
-				)
-				if uErr != nil {
-					return "", fmt.Errorf("error auto-approving join request: %w", uErr)
-				}
-				return "approved", nil
-			}
-			return "", fmt.Errorf("join request already pending")
+			return fmt.Errorf("join request already pending")
 		default:
-			nextStatus := "pending"
-			approvedAtValue := any(nil)
-			if joinPolicy == "open" {
-				nextStatus = "approved"
-				approvedAtValue = time.Now()
-			}
 			_, uErr := s.db.ExecContext(
 				context.Background(),
-				"UPDATE class_members SET status = $1, requested_at = $2, approved_at = $3, joined_at = $2 WHERE id = $4",
-				nextStatus,
+				"UPDATE class_members SET status = 'pending', requested_at = $1, approved_at = NULL, joined_at = $1 WHERE id = $2",
 				time.Now(),
-				approvedAtValue,
 				existingMemberID,
 			)
 			if uErr != nil {
-				return "", fmt.Errorf("error updating join request status: %w", uErr)
+				return fmt.Errorf("error updating join request status: %w", uErr)
 			}
-			if nextStatus == "approved" {
-				return "approved", nil
-			}
-			return "pending", nil
+			return nil
 		}
 	}
 	// Jika error bukan sql.ErrNoRows, berarti ada masalah lain saat memeriksa.
 	if err != nil && err != sql.ErrNoRows {
-		return "", fmt.Errorf("error checking existing membership: %w", err)
+		return fmt.Errorf("error checking existing membership: %w", err)
 	}
 
 	// 3. Masukkan Keanggotaan Baru.
-	status := "pending"
-	var approvedAt any
-	if joinPolicy == "open" {
-		status = "approved"
-		approvedAt = time.Now()
-	}
 	query := `
-		INSERT INTO class_members (class_id, user_id, status, requested_at, approved_at, joined_at)
-		VALUES ($1, $2, $3, $4, $5, $4)
+		INSERT INTO class_members (class_id, user_id, status, requested_at, joined_at)
+		VALUES ($1, $2, 'pending', $3, $3)
 	`
-	_, err = s.db.ExecContext(context.Background(), query, classID, studentID, status, time.Now(), approvedAt)
+	_, err = s.db.ExecContext(context.Background(), query, classID, studentID, time.Now())
 	if err != nil {
-		return "", fmt.Errorf("error inserting new class member: %w", err)
+		return fmt.Errorf("error inserting new class member: %w", err)
 	}
 
-	return status, nil
+	return nil
 }
 
 // GetStudentClasses retrieves all classes a student is a member of,
@@ -602,7 +550,7 @@ func (s *ClassService) JoinClass(classCode, studentID string) (string, error) {
 func (s *ClassService) GetStudentClasses(studentID string) ([]models.Class, error) {
 	query := `
 		SELECT
-			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.join_policy, c.is_archived,
+			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
 			c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
 			c.announcement_starts_at, c.announcement_ends_at,
 			c.created_at, c.updated_at
@@ -624,7 +572,7 @@ func (s *ClassService) GetStudentClasses(studentID string) ([]models.Class, erro
 		var startsAt sql.NullTime
 		var endsAt sql.NullTime
 		if err := rows.Scan(
-			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.JoinPolicy, &c.IsArchived,
+			&c.ID, &c.TeacherID, &c.TeacherName, &c.ClassName, &c.Description, &c.ClassCode, &c.IsArchived,
 			&c.AnnouncementEnabled, &c.AnnouncementTitle, &c.AnnouncementContent, &c.AnnouncementTone,
 			&startsAt, &endsAt,
 			&c.CreatedAt, &c.UpdatedAt,
@@ -716,7 +664,7 @@ func (s *ClassService) GetStudentClassDetails(classID, studentID string) (*model
 	// 2. Ambil Detail Kelas.
 	query := `
 		SELECT
-			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.join_policy, c.is_archived,
+			c.id, c.teacher_id, u.nama_lengkap, c.class_name, c.deskripsi, c.class_code, c.is_archived,
 			c.announcement_enabled, c.announcement_title, c.announcement_content, c.announcement_tone,
 			c.created_at, c.updated_at
 		FROM classes c
@@ -727,7 +675,7 @@ func (s *ClassService) GetStudentClassDetails(classID, studentID string) (*model
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
 	err = s.db.QueryRowContext(context.Background(), query, classID).Scan(
-		&cls.ID, &cls.TeacherID, &cls.TeacherName, &cls.ClassName, &cls.Description, &cls.ClassCode, &cls.JoinPolicy, &cls.IsArchived,
+		&cls.ID, &cls.TeacherID, &cls.TeacherName, &cls.ClassName, &cls.Description, &cls.ClassCode, &cls.IsArchived,
 		&cls.AnnouncementEnabled, &cls.AnnouncementTitle, &cls.AnnouncementContent, &cls.AnnouncementTone,
 		&startsAt, &endsAt,
 		&cls.CreatedAt, &cls.UpdatedAt,

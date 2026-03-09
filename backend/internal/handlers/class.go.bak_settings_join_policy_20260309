@@ -201,7 +201,7 @@ func (h *ClassHandlers) JoinClassHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	status, err := h.Service.JoinClass(req.ClassCode, studentID)
+	err := h.Service.JoinClass(req.ClassCode, studentID)
 	if err != nil {
 		log.Printf("ERROR: Failed to join class for student %s with code %s: %v", studentID, req.ClassCode, err)
 		if err.Error() == "class not found" {
@@ -216,25 +216,12 @@ func (h *ClassHandlers) JoinClassHandler(w http.ResponseWriter, r *http.Request)
 			respondWithError(w, http.StatusConflict, "Permintaan bergabung sudah dikirim dan masih menunggu ACC guru")
 			return
 		}
-		if err.Error() == "class is closed for join requests" {
-			respondWithError(w, http.StatusForbidden, "Kelas ini tidak menerima join via kode. Minta guru untuk mengundang Anda.")
-			return
-		}
 		respondWithError(w, http.StatusInternalServerError, "Failed to join class")
 		return
 	}
 
-	message := "Permintaan bergabung berhasil dikirim. Menunggu ACC guru."
-	targetRoles := []string{"teacher"}
-	eventType := "join_request_created"
-	if status == "approved" {
-		message = "Berhasil bergabung ke kelas."
-		targetRoles = []string{"student"}
-		eventType = "class_joined"
-	}
-
-	respondWithJSON(w, http.StatusOK, map[string]string{"message": message})
-	services.PublishNotificationInvalidation(eventType, targetRoles, nil)
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Permintaan bergabung berhasil dikirim. Menunggu ACC guru."})
+	services.PublishNotificationInvalidation("join_request_created", []string{"teacher"}, nil)
 }
 
 // RemoveStudentFromClassHandler handles removing a student from a class.

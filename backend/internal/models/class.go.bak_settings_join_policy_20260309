@@ -14,8 +14,7 @@ type Class struct {
 	ClassName            string     `json:"class_name"`             // Nama kelas (misalnya, "Matematika Dasar").
 	Description          string     `json:"deskripsi"`              // Deskripsi singkat tentang kelas.
 	ClassCode            string     `json:"class_code"`             // Kode unik kelas untuk bergabung.
-	JoinPolicy           string     `json:"join_policy"`
-	IsArchived           bool       `json:"is_archived"` // Status arsip kelas.
+	IsArchived           bool       `json:"is_archived"`            // Status arsip kelas.
 	AnnouncementEnabled  bool       `json:"announcement_enabled"`
 	AnnouncementTitle    string     `json:"announcement_title,omitempty"`
 	AnnouncementContent  string     `json:"announcement_content,omitempty"`
@@ -55,7 +54,6 @@ type ReviewJoinRequest struct {
 type UpdateClassRequest struct {
 	ClassName            *string `json:"nama_kelas,omitempty"`
 	Description          *string `json:"deskripsi,omitempty"`
-	JoinPolicy           *string `json:"join_policy,omitempty"`
 	IsArchived           *bool   `json:"is_archived,omitempty"`
 	AnnouncementEnabled  *bool   `json:"announcement_enabled,omitempty"`
 	AnnouncementTitle    *string `json:"announcement_title,omitempty"`

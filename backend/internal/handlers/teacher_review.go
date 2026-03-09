@@ -43,6 +43,7 @@ func (h *TeacherReviewHandlers) CreateTeacherReviewHandler(w http.ResponseWriter
 	}
 
 	respondWithJSON(w, http.StatusCreated, newReview)
+	services.PublishNotificationInvalidation("teacher_review_created", []string{"teacher", "student"}, nil)
 }
 
 // UpdateTeacherReviewHandler handles updating an existing teacher review.
@@ -72,6 +73,7 @@ func (h *TeacherReviewHandlers) UpdateTeacherReviewHandler(w http.ResponseWriter
 	}
 
 	respondWithJSON(w, http.StatusOK, updatedReview)
+	services.PublishNotificationInvalidation("teacher_review_updated", []string{"teacher", "student"}, nil)
 }
 
 // GetTeacherReviewBySubmissionIDHandler handles fetching a teacher review by its submission ID.
@@ -120,4 +122,5 @@ func (h *TeacherReviewHandlers) UpsertTeacherReviewsBatchHandler(w http.Response
 	}
 
 	respondWithJSON(w, http.StatusOK, result)
+	services.PublishNotificationInvalidation("teacher_review_batch_upserted", []string{"teacher", "student"}, nil)
 }

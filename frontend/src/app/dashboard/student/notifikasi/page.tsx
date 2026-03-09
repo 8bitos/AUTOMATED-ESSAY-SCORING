@@ -4,8 +4,14 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { FiBell, FiCheckCircle, FiClock, FiRefreshCw } from "react-icons/fi";
 import { useAuth } from "@/context/AuthContext";
-import { fetchStudentNotifications, loadStudentNotificationPrefs, StudentNotificationItem } from "@/lib/studentNotifications";
-import { DEFAULT_NOTIFICATION_POLL_INTERVAL_MS, loadNotificationPollIntervalMs } from "@/lib/notificationRealtime";
+import {
+  fetchStudentNotifications,
+  hydrateStudentNotificationPrefs,
+  loadStudentNotificationPrefs,
+  StudentNotificationItem,
+} from "@/lib/studentNotifications";
+import { DEFAULT_NOTIFICATION_POLL_INTERVAL_MS, loadNotificationPollIntervalMs, subscribeNotificationStream } from "@/lib/notificationRealtime";
+import { markAllNotificationCenterItemsRead, markNotificationCenterItemsRead } from "@/lib/notificationCenter";
 
 const NOTIF_READ_STORAGE_PREFIX = "read_notifications_";
 
@@ -23,7 +29,11 @@ const formatDate = (value?: string) => {
   }).format(d);
 };
 
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
+
 const resolveStudentNotifHref = (item: StudentNotificationItem): string => {
+  if (item.href) return item.href;
   const id = String(item.id || "").toLowerCase();
   if (id.startsWith("student-review-") || id.startsWith("student-ai-graded-")) {
     return "/dashboard/student/grades";
@@ -81,11 +91,13 @@ export default function StudentNotificationsPage() {
     setLoading(true);
     setError(null);
     try {
+      await hydrateStudentNotificationPrefs();
       const prefs = loadStudentNotificationPrefs();
       const nextItems = await fetchStudentNotifications(prefs);
       setItems(nextItems);
-    } catch (err: any) {
-      setError(err?.message || "Gagal memuat notifikasi.");
+      setReadIds(nextItems.filter((item) => item.isRead).map((item) => item.id));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Gagal memuat notifikasi."));
       setItems([]);
     } finally {
       setLoading(false);
@@ -118,28 +130,38 @@ export default function StudentNotificationsPage() {
     return () => window.clearInterval(timer);
   }, [user?.id, user?.peran, pollIntervalMs]);
 
-  const markAllRead = () => {
+  useEffect(() => {
+    if (!user || user.peran !== "student") return;
+    return subscribeNotificationStream(() => {
+      void loadItems();
+    });
+  }, [user?.id, user?.peran]);
+
+  const isItemRead = (item: StudentNotificationItem) => item.isRead ?? readIds.includes(item.id);
+
+  const markAllRead = async () => {
     if (items.length === 0) return;
     const next = Array.from(new Set([...readIds, ...items.map((item) => item.id)]));
+    await markAllNotificationCenterItemsRead().catch(() => undefined);
     saveReadIds(next);
   };
 
-  const markAsRead = (id: string) => {
-    if (readIds.includes(id)) return;
+  const markAsRead = async (id: string) => {
+    await markNotificationCenterItemsRead([id]).catch(() => undefined);
     saveReadIds([...readIds, id]);
   };
 
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items.filter((item) => {
-      if (filter === "unread" && readIds.includes(item.id)) return false;
-      if (filter === "read" && !readIds.includes(item.id)) return false;
+      if (filter === "unread" && isItemRead(item)) return false;
+      if (filter === "read" && !isItemRead(item)) return false;
       if (!needle) return true;
       return item.title.toLowerCase().includes(needle) || item.message.toLowerCase().includes(needle);
     });
   }, [items, query, filter, readIds]);
 
-  const unreadCount = items.filter((item) => !readIds.includes(item.id)).length;
+  const unreadCount = items.filter((item) => !isItemRead(item)).length;
 
   return (
     <div className="space-y-6">
@@ -192,7 +214,7 @@ export default function StudentNotificationsPage() {
 
         <div className="space-y-2">
           {filteredItems.map((item) => {
-            const isRead = readIds.includes(item.id);
+            const isRead = isItemRead(item);
             return (
               <div
                 key={item.id}

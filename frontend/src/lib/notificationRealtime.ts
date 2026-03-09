@@ -20,3 +20,24 @@ export const loadNotificationPollIntervalMs = async (): Promise<number> => {
     return DEFAULT_NOTIFICATION_POLL_INTERVAL_MS;
   }
 };
+
+export const subscribeNotificationStream = (
+  onInvalidate: () => void,
+): (() => void) => {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") {
+    return () => {};
+  }
+
+  const source = new EventSource("/api/notifications/stream", { withCredentials: true });
+  const handleInvalidate = () => onInvalidate();
+
+  source.addEventListener("invalidate", handleInvalidate);
+  source.onerror = () => {
+    // Native EventSource reconnects automatically.
+  };
+
+  return () => {
+    source.removeEventListener("invalidate", handleInvalidate);
+    source.close();
+  };
+};

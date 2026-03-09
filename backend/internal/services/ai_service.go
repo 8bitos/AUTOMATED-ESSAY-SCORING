@@ -554,7 +554,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 	promptBuilder.WriteString("6) keywords must be concise and relevant (3-6 items).\n")
 	promptBuilder.WriteString("7) weight must be positive number.\n")
 	promptBuilder.WriteString("8) For holistik, rubrics must contain exactly 1 aspect.\n")
-	promptBuilder.WriteString("9) For analitik, rubrics must contain 2 - 5 aspects with clear simple names.\n")
+	promptBuilder.WriteString("9) For analitik, rubrics must contain 3 - 5 aspects with clear simple names.\n")
 	promptBuilder.WriteString("10) Each descriptor description must be plain string, no object.\n")
 	promptBuilder.WriteString("11) If the material is not history-related, return an error JSON: {\"error\":\"MATERI_BUKAN_SEJARAH\"}\n")
 

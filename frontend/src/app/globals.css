@@ -856,6 +856,14 @@
     color: #0f172a !important;
   }
 
+  html[data-theme='dark'] .student-material-view .student-material-backlink {
+    color: #f8fafc !important;
+  }
+
+  html[data-theme='dark'] .student-material-view .student-material-backlink:hover {
+    color: #ffffff !important;
+  }
+
   /* Teacher penilaian page: normalize dark mode for heavy table/card sections */
   html[data-theme='dark'] .teacher-penilaian-view :is(.bg-white, .bg-white\/95, .bg-slate-50, .bg-slate-50\/70, .bg-slate-50\/40, .bg-slate-100) {
     background-color: var(--dark-layer-2) !important;
@@ -1025,6 +1033,118 @@
     color: #ffffff !important;
   }
 
+  html[data-theme='dark'] .teacher-class-view .sage-button-outline {
+    background-color: rgba(15, 23, 42, 0.88) !important;
+    border-color: rgba(148, 163, 184, 0.34) !important;
+    color: #f8fafc !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .sage-button-outline:hover {
+    background-color: rgba(30, 41, 59, 0.96) !important;
+    border-color: rgba(125, 211, 252, 0.4) !important;
+    color: #ffffff !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 30px rgba(2, 6, 23, 0.32) !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner.border-sky-200.bg-sky-50.text-sky-900 {
+    background: linear-gradient(180deg, rgba(17, 71, 109, 0.42) 0%, rgba(15, 43, 69, 0.62) 100%) !important;
+    border-color: rgba(56, 189, 248, 0.58) !important;
+    color: #e0f2fe !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner.border-emerald-200.bg-emerald-50.text-emerald-900 {
+    background: linear-gradient(180deg, rgba(6, 78, 59, 0.44) 0%, rgba(7, 45, 35, 0.66) 100%) !important;
+    border-color: rgba(52, 211, 153, 0.58) !important;
+    color: #d1fae5 !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner.border-amber-200.bg-amber-50.text-amber-900 {
+    background: linear-gradient(180deg, rgba(120, 53, 15, 0.48) 0%, rgba(69, 33, 12, 0.68) 100%) !important;
+    border-color: rgba(251, 191, 36, 0.58) !important;
+    color: #fef3c7 !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner.border-rose-200.bg-rose-50.text-rose-900 {
+    background: linear-gradient(180deg, rgba(127, 29, 29, 0.48) 0%, rgba(76, 18, 31, 0.68) 100%) !important;
+    border-color: rgba(251, 113, 133, 0.58) !important;
+    color: #ffe4e6 !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner button.border-white\/60 {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    color: inherit !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .class-announcement-banner button.border-white\/60:hover {
+    background-color: rgba(255, 255, 255, 0.22) !important;
+  }
+
+  html[data-theme='dark'] .student-class-view .class-announcement-banner {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 30px rgba(2, 6, 23, 0.32) !important;
+  }
+
+  html[data-theme='dark'] .student-class-view .class-announcement-banner.border-sky-200.bg-sky-50.text-sky-900 {
+    background: linear-gradient(180deg, rgba(17, 71, 109, 0.42) 0%, rgba(15, 43, 69, 0.62) 100%) !important;
+    border-color: rgba(56, 189, 248, 0.58) !important;
+    color: #e0f2fe !important;
+  }
+
+  html[data-theme='dark'] .student-class-view .class-announcement-banner.border-emerald-200.bg-emerald-50.text-emerald-900 {
+    background: linear-gradient(180deg, rgba(6, 78, 59, 0.44) 0%, rgba(7, 45, 35, 0.66) 100%) !important;
+    border-color: rgba(52, 211, 153, 0.58) !important;
+    color: #d1fae5 !important;
+  }
+
+  html[data-theme='dark'] .student-class-view .class-announcement-banner.border-amber-200.bg-amber-50.text-amber-900 {
+    background: linear-gradient(180deg, rgba(120, 53, 15, 0.48) 0%, rgba(69, 33, 12, 0.68) 100%) !important;
+    border-color: rgba(251, 191, 36, 0.58) !important;
+    color: #fef3c7 !important;
+  }
+
+  html[data-theme='dark'] .student-class-view .class-announcement-banner.border-rose-200.bg-rose-50.text-rose-900 {
+    background: linear-gradient(180deg, rgba(127, 29, 29, 0.48) 0%, rgba(76, 18, 31, 0.68) 100%) !important;
+    border-color: rgba(251, 113, 133, 0.58) !important;
+    color: #ffe4e6 !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel {
+    background: linear-gradient(180deg, #0f172a 0%, #111c34 100%) !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+    color: #e5eefc !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel :is(.text-slate-900, .text-slate-800, .text-slate-700) {
+    color: #f8fafc !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel :is(.text-slate-600, .text-slate-500, .text-slate-400) {
+    color: #94a3b8 !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel .announcement-modal-toggle {
+    background-color: rgba(15, 23, 42, 0.58) !important;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel .announcement-modal-input {
+    background-color: rgba(15, 23, 42, 0.7) !important;
+    border-color: rgba(148, 163, 184, 0.24) !important;
+    color: #f8fafc !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel .announcement-modal-input::placeholder {
+    color: #94a3b8 !important;
+  }
+
+  html[data-theme='dark'] .teacher-class-view .announcement-modal-panel .announcement-modal-input:focus {
+    border-color: rgba(125, 211, 252, 0.65) !important;
+    box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.25);
+  }
+
   /* Final override: sidebar active item must stay high-contrast in dark mode */
   html[data-theme='dark'] #sidebar .sidebar-nav-item.bg-slate-100,
   html[data-theme='dark'] #sidebar .sidebar-nav-row.bg-slate-100,
@@ -1107,6 +1227,44 @@
   html[data-theme='dark'] :is(.rounded-full.bg-white, .rounded-md.bg-white) {
     background-color: #1f2937 !important;
     color: #e2e8f0 !important;
+  }
+
+  /* Superadmin database page */
+  html[data-theme='dark'] .superadmin-database-view :is(.bg-white, .bg-white\/95, .bg-white\/90, .bg-white\/80, .bg-white\/70, .bg-white\/60, .bg-slate-50, .bg-slate-100, .bg-slate-200) {
+    background-color: var(--dark-layer-2) !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view [class*="bg-slate-50/"],
+  html[data-theme='dark'] .superadmin-database-view [class*="bg-white/"] {
+    background-color: color-mix(in srgb, var(--dark-layer-2) 94%, transparent) !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view [class*="dark:bg-[#0d2749]"],
+  html[data-theme='dark'] .superadmin-database-view [class*="dark:bg-[#081a33]"],
+  html[data-theme='dark'] .superadmin-database-view [class*="dark:bg-slate-950"],
+  html[data-theme='dark'] .superadmin-database-view [class*="dark:!bg-slate-950"] {
+    background-color: var(--dark-layer-2) !important;
+    background-image: none !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view :is(.border-slate-100, .border-slate-200, .border-slate-300, .border-slate-600, .border-slate-700, .border-slate-800, .divide-slate-200, .divide-slate-700, .divide-slate-800) {
+    border-color: rgba(148, 163, 184, 0.3) !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view :is(.text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500) {
+    color: #e2e8f0 !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view .text-slate-400 {
+    color: #94a3b8 !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view :is(.hover\:bg-slate-50:hover, .hover\:bg-slate-100:hover) {
+    background-color: var(--dark-layer-3) !important;
+  }
+
+  html[data-theme='dark'] .superadmin-database-view :is(thead.bg-slate-50, tbody.bg-white, td.bg-white, th.bg-slate-50) {
+    background-color: var(--dark-layer-2) !important;
   }
 }
 

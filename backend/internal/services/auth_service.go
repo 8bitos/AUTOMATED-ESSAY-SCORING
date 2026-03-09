@@ -25,6 +25,22 @@ func NewAuthService(db *sql.DB) *AuthService {
 	return &AuthService{db: db}
 }
 
+func (s *AuthService) getBoolSetting(key string, defaultValue bool) (bool, error) {
+	var raw string
+	err := s.db.QueryRow("SELECT value FROM system_settings WHERE key = $1", key).Scan(&raw)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return defaultValue, nil
+		}
+		return false, fmt.Errorf("error loading setting %s: %w", key, err)
+	}
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if raw == "" {
+		return defaultValue, nil
+	}
+	return raw == "true", nil
+}
+
 // AuthenticateUser memverifikasi kredensial pengguna (email/username dan password).
 // Mengembalikan objek User jika kredensial valid, atau error jika tidak.
 func (s *AuthService) AuthenticateUser(identifier, password string) (*models.User, error) {
@@ -630,12 +646,36 @@ func (s *AuthService) UpdateProfile(userID string, req *models.UpdateProfileRequ
 	}
 
 	if len(pendingChanges) > 0 {
-		raw, err := json.Marshal(pendingChanges)
+		autoApprove, err := s.getBoolSetting("profile_change_auto_approve", false)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error encoding pending changes: %w", err)
+			return nil, nil, err
 		}
-		if err := s.createApprovalRequest(userID, "profile_change", raw); err != nil {
-			return nil, nil, fmt.Errorf("error creating profile change request: %w", err)
+
+		if autoApprove {
+			autoUpdates := make([]string, 0, len(pendingChanges))
+			autoArgs := make([]interface{}, 0, len(pendingChanges)+1)
+			autoArgID := 1
+			for field, value := range pendingChanges {
+				autoUpdates = append(autoUpdates, fmt.Sprintf("%s = $%d", field, autoArgID))
+				autoArgs = append(autoArgs, value)
+				autoArgID++
+			}
+			if len(autoUpdates) > 0 {
+				query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", strings.Join(autoUpdates, ", "), autoArgID)
+				autoArgs = append(autoArgs, userID)
+				if _, err := s.db.Exec(query, autoArgs...); err != nil {
+					return nil, nil, fmt.Errorf("error auto-approving profile changes: %w", err)
+				}
+			}
+			pendingChanges = map[string]interface{}{}
+		} else {
+			raw, err := json.Marshal(pendingChanges)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error encoding pending changes: %w", err)
+			}
+			if err := s.createApprovalRequest(userID, "profile_change", raw); err != nil {
+				return nil, nil, fmt.Errorf("error creating profile change request: %w", err)
+			}
 		}
 	}
 

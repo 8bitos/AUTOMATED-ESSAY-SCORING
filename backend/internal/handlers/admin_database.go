@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -33,6 +36,37 @@ type adminDatabaseTableSummary struct {
 	PrimaryKeyColumns []string              `json:"primary_key_columns"`
 	SupportsCRUD      bool                  `json:"supports_crud"`
 	Columns           []adminDatabaseColumn `json:"columns"`
+}
+
+type adminDatabaseForeignKey struct {
+	ConstraintName string   `json:"constraint_name"`
+	SourceTable    string   `json:"source_table"`
+	SourceColumns  []string `json:"source_columns"`
+	TargetTable    string   `json:"target_table"`
+	TargetColumns  []string `json:"target_columns"`
+	DeleteRule     string   `json:"delete_rule"`
+	UpdateRule     string   `json:"update_rule"`
+}
+
+type adminDatabaseResetAnalysis struct {
+	SelectedTables     []string                  `json:"selected_tables"`
+	RecommendedTables  []string                  `json:"recommended_tables"`
+	DeleteOrder        []string                  `json:"delete_order"`
+	BlockingReferences []adminDatabaseForeignKey `json:"blocking_references"`
+	RelatedReferences  []adminDatabaseForeignKey `json:"related_references"`
+	PotentialErrors    []string                  `json:"potential_errors"`
+	Recommendations    []string                  `json:"recommendations"`
+	Cycles             [][]string                `json:"cycles,omitempty"`
+}
+
+type adminMediaItem struct {
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Category   string `json:"category"`
+	Extension  string `json:"extension"`
+	Size       int64  `json:"size"`
+	ModifiedAt string `json:"modified_at"`
+	MimeType   string `json:"mime_type"`
 }
 
 func quoteAdminIdentifier(name string) string {
@@ -186,6 +220,344 @@ func adminDatabaseColumnMap(columns []adminDatabaseColumn) map[string]adminDatab
 	return result
 }
 
+func uniqueSortedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func mapsKeysSet(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for key := range values {
+		result = append(result, key)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func slicesEqualString(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCycle(cycle []string) []string {
+	if len(cycle) == 0 {
+		return cycle
+	}
+	minIdx := 0
+	for i := 1; i < len(cycle); i++ {
+		if cycle[i] < cycle[minIdx] {
+			minIdx = i
+		}
+	}
+	rotated := append(append([]string{}, cycle[minIdx:]...), cycle[:minIdx]...)
+	reversed := make([]string, len(rotated))
+	for i := range rotated {
+		reversed[i] = rotated[len(rotated)-1-i]
+	}
+	if strings.Join(reversed, "|") < strings.Join(rotated, "|") {
+		return reversed
+	}
+	return rotated
+}
+
+func uniqueCycles(cycles [][]string) [][]string {
+	seen := map[string]struct{}{}
+	result := make([][]string, 0, len(cycles))
+	for _, cycle := range cycles {
+		normalized := normalizeCycle(cycle)
+		key := strings.Join(normalized, "|")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, normalized)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.Join(result[i], "|") < strings.Join(result[j], "|")
+	})
+	return result
+}
+
+func adminMediaCategory(fileName string) (string, string) {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	mimeType := mime.TypeByExtension(ext)
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp":
+		return "gambar", mimeType
+	case ".mp4", ".mov", ".avi", ".mkv", ".webm":
+		return "video", mimeType
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac":
+		return "audio", mimeType
+	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv":
+		return "dokumen", mimeType
+	case ".zip", ".rar", ".7z", ".tar", ".gz":
+		return "arsip", mimeType
+	default:
+		return "lainnya", mimeType
+	}
+}
+
+func (h *AdminOpsHandlers) adminDatabaseListForeignKeys() ([]adminDatabaseForeignKey, error) {
+	rows, err := h.DB.Query(`
+		SELECT
+			tc.constraint_name,
+			tc.table_name AS source_table,
+			kcu.column_name AS source_column,
+			ccu.table_name AS target_table,
+			ccu.column_name AS target_column,
+			rc.delete_rule,
+			rc.update_rule,
+			kcu.ordinal_position
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+		  ON tc.constraint_name = kcu.constraint_name
+		 AND tc.constraint_schema = kcu.constraint_schema
+		JOIN information_schema.constraint_column_usage ccu
+		  ON tc.constraint_name = ccu.constraint_name
+		 AND tc.constraint_schema = ccu.constraint_schema
+		JOIN information_schema.referential_constraints rc
+		  ON tc.constraint_name = rc.constraint_name
+		 AND tc.constraint_schema = rc.constraint_schema
+		WHERE tc.constraint_type = 'FOREIGN KEY'
+		  AND tc.constraint_schema = 'public'
+		ORDER BY tc.constraint_name, kcu.ordinal_position
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	grouped := map[string]*adminDatabaseForeignKey{}
+	order := make([]string, 0)
+	for rows.Next() {
+		var constraintName, sourceTable, sourceColumn, targetTable, targetColumn, deleteRule, updateRule string
+		var ordinalPosition int
+		if err := rows.Scan(&constraintName, &sourceTable, &sourceColumn, &targetTable, &targetColumn, &deleteRule, &updateRule, &ordinalPosition); err != nil {
+			return nil, err
+		}
+		item, ok := grouped[constraintName]
+		if !ok {
+			item = &adminDatabaseForeignKey{
+				ConstraintName: constraintName,
+				SourceTable:    sourceTable,
+				TargetTable:    targetTable,
+				DeleteRule:     deleteRule,
+				UpdateRule:     updateRule,
+			}
+			grouped[constraintName] = item
+			order = append(order, constraintName)
+		}
+		item.SourceColumns = append(item.SourceColumns, sourceColumn)
+		item.TargetColumns = append(item.TargetColumns, targetColumn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]adminDatabaseForeignKey, 0, len(order))
+	for _, key := range order {
+		result = append(result, *grouped[key])
+	}
+	return result, nil
+}
+
+func (h *AdminOpsHandlers) adminDatabaseAnalyzeReset(selected []string) (*adminDatabaseResetAnalysis, error) {
+	selected = uniqueSortedStrings(selected)
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("tables is required")
+	}
+	allowedTables, err := h.adminDatabaseListTables()
+	if err != nil {
+		return nil, err
+	}
+	allowedSet := make(map[string]struct{}, len(allowedTables))
+	for _, table := range allowedTables {
+		allowedSet[table] = struct{}{}
+	}
+	for _, table := range selected {
+		if _, ok := allowedSet[table]; !ok {
+			return nil, fmt.Errorf("table not found: %s", table)
+		}
+	}
+
+	foreignKeys, err := h.adminDatabaseListForeignKeys()
+	if err != nil {
+		return nil, err
+	}
+
+	required := make(map[string]struct{}, len(selected))
+	for _, table := range selected {
+		required[table] = struct{}{}
+	}
+	blockers := make([]adminDatabaseForeignKey, 0)
+	related := make([]adminDatabaseForeignKey, 0)
+	potentialErrors := make([]string, 0)
+
+	changed := true
+	for changed {
+		changed = false
+		for _, fk := range foreignKeys {
+			_, targetSelected := required[fk.TargetTable]
+			if !targetSelected {
+				continue
+			}
+			related = append(related, fk)
+			if fk.DeleteRule != "NO ACTION" && fk.DeleteRule != "RESTRICT" {
+				continue
+			}
+			if _, ok := required[fk.SourceTable]; ok {
+				continue
+			}
+			required[fk.SourceTable] = struct{}{}
+			blockers = append(blockers, fk)
+			potentialErrors = append(potentialErrors,
+				fmt.Sprintf("Menghapus isi tabel %s akan gagal karena constraint %s dari tabel %s (%s -> %s).",
+					fk.TargetTable,
+					fk.ConstraintName,
+					fk.SourceTable,
+					strings.Join(fk.SourceColumns, ", "),
+					strings.Join(fk.TargetColumns, ", "),
+				),
+			)
+			changed = true
+		}
+	}
+
+	recommended := mapsKeysSet(required)
+	graph := make(map[string][]string, len(recommended))
+	indegree := make(map[string]int, len(recommended))
+	for _, table := range recommended {
+		graph[table] = []string{}
+		indegree[table] = 0
+	}
+	for _, fk := range foreignKeys {
+		if _, sourceOk := required[fk.SourceTable]; !sourceOk {
+			continue
+		}
+		if _, targetOk := required[fk.TargetTable]; !targetOk {
+			continue
+		}
+		graph[fk.TargetTable] = append(graph[fk.TargetTable], fk.SourceTable)
+		indegree[fk.SourceTable]++
+	}
+
+	queue := make([]string, 0)
+	for _, table := range recommended {
+		if indegree[table] == 0 {
+			queue = append(queue, table)
+		}
+	}
+	sort.Strings(queue)
+	topo := make([]string, 0, len(recommended))
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		topo = append(topo, current)
+		children := append([]string{}, graph[current]...)
+		sort.Strings(children)
+		for _, child := range children {
+			indegree[child]--
+			if indegree[child] == 0 {
+				queue = append(queue, child)
+				sort.Strings(queue)
+			}
+		}
+	}
+
+	cycles := make([][]string, 0)
+	if len(topo) != len(recommended) {
+		visited := map[string]int{}
+		stack := make([]string, 0)
+		var dfs func(string)
+		dfs = func(node string) {
+			visited[node] = 1
+			stack = append(stack, node)
+			for _, child := range graph[node] {
+				if visited[child] == 0 {
+					dfs(child)
+					continue
+				}
+				if visited[child] == 1 {
+					idx := -1
+					for i := len(stack) - 1; i >= 0; i-- {
+						if stack[i] == child {
+							idx = i
+							break
+						}
+					}
+					if idx >= 0 {
+						cycles = append(cycles, append([]string{}, stack[idx:]...))
+					}
+				}
+			}
+			stack = stack[:len(stack)-1]
+			visited[node] = 2
+		}
+		for _, table := range recommended {
+			if visited[table] == 0 {
+				dfs(table)
+			}
+		}
+		cycles = uniqueCycles(cycles)
+		potentialErrors = append(potentialErrors, "Ada siklus dependency antar tabel terpilih/rekomendasi, sehingga urutan reset otomatis bisa gagal.")
+	}
+
+	deleteOrder := make([]string, 0, len(topo))
+	for i := len(topo) - 1; i >= 0; i-- {
+		deleteOrder = append(deleteOrder, topo[i])
+	}
+
+	recommendations := make([]string, 0)
+	if len(blockers) > 0 {
+		extras := make([]string, 0)
+		selectedSet := make(map[string]struct{}, len(selected))
+		for _, table := range selected {
+			selectedSet[table] = struct{}{}
+		}
+		for _, table := range recommended {
+			if _, ok := selectedSet[table]; ok {
+				continue
+			}
+			extras = append(extras, table)
+		}
+		if len(extras) > 0 {
+			recommendations = append(recommendations, fmt.Sprintf("Tambahkan tabel berikut ke reset agar tidak bentrok foreign key: %s.", strings.Join(extras, ", ")))
+		}
+	}
+	if len(cycles) > 0 {
+		recommendations = append(recommendations, "Periksa siklus dependency dan reset tabel terkait secara bertahap atau kosongkan data child lebih dulu.")
+	}
+	if len(recommendations) == 0 {
+		recommendations = append(recommendations, "Reset dapat dijalankan dengan urutan hapus yang direkomendasikan.")
+	}
+
+	return &adminDatabaseResetAnalysis{
+		SelectedTables:     selected,
+		RecommendedTables:  recommended,
+		DeleteOrder:        deleteOrder,
+		BlockingReferences: blockers,
+		RelatedReferences:  related,
+		PotentialErrors:    uniqueSortedStrings(potentialErrors),
+		Recommendations:    recommendations,
+		Cycles:             cycles,
+	}, nil
+}
+
 func adminDatabaseParseValue(col adminDatabaseColumn, raw any) (any, error) {
 	if raw == nil {
 		return nil, nil
@@ -321,13 +693,18 @@ func (h *AdminOpsHandlers) AdminDatabaseRowsHandler(w http.ResponseWriter, r *ht
 		page = parsed
 	}
 	size := 20
+	loadAll := false
 	if raw := strings.TrimSpace(r.URL.Query().Get("size")); raw != "" {
-		parsed, parseErr := strconv.Atoi(raw)
-		if parseErr != nil || parsed < 1 || parsed > 200 {
-			respondWithError(w, http.StatusBadRequest, "Invalid size")
-			return
+		if strings.EqualFold(raw, "all") {
+			loadAll = true
+		} else {
+			parsed, parseErr := strconv.Atoi(raw)
+			if parseErr != nil || parsed < 1 || parsed > 200 {
+				respondWithError(w, http.StatusBadRequest, "Invalid size")
+				return
+			}
+			size = parsed
 		}
-		size = parsed
 	}
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 
@@ -369,16 +746,23 @@ func (h *AdminOpsHandlers) AdminDatabaseRowsHandler(w http.ResponseWriter, r *ht
 		orderParts = append(orderParts, quoteAdminIdentifier(col)+" ASC")
 	}
 
-	args = append(args, size, (page-1)*size)
 	dataQuery := fmt.Sprintf(
-		"SELECT %s FROM %s%s ORDER BY %s LIMIT $%d OFFSET $%d",
+		"SELECT %s FROM %s%s ORDER BY %s",
 		strings.Join(columnNames, ", "),
 		quoteAdminIdentifier(tableName),
 		whereSQL,
 		strings.Join(orderParts, ", "),
-		len(args)-1,
-		len(args),
 	)
+	if loadAll {
+		size = int(total)
+		if size < 1 {
+			size = 1
+		}
+		page = 1
+	} else {
+		args = append(args, size, (page-1)*size)
+		dataQuery = fmt.Sprintf("%s LIMIT $%d OFFSET $%d", dataQuery, len(args)-1, len(args))
+	}
 	rows, err := h.DB.Query(dataQuery, args...)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to load table rows")
@@ -422,6 +806,95 @@ func (h *AdminOpsHandlers) AdminDatabaseRowsHandler(w http.ResponseWriter, r *ht
 		"primary_key_columns": adminDatabasePrimaryKeys(columns),
 		"rows":                resultRows,
 	})
+}
+
+func (h *AdminOpsHandlers) AdminMediaListHandler(w http.ResponseWriter, r *http.Request) {
+	category := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("category")))
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
+	entries, err := os.ReadDir("./uploads")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to load uploads")
+		return
+	}
+
+	items := make([]adminMediaItem, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		itemCategory, mimeType := adminMediaCategory(entry.Name())
+		if category != "" && category != "semua" && category != itemCategory {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(entry.Name()), query) {
+			continue
+		}
+		items = append(items, adminMediaItem{
+			Name:       entry.Name(),
+			Path:       "/uploads/" + entry.Name(),
+			Category:   itemCategory,
+			Extension:  strings.TrimPrefix(strings.ToLower(filepath.Ext(entry.Name())), "."),
+			Size:       info.Size(),
+			ModifiedAt: info.ModTime().Format(time.RFC3339),
+			MimeType:   mimeType,
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ModifiedAt > items[j].ModifiedAt
+	})
+
+	respondWithJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminOpsHandlers) AdminMediaDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	payload, err := decodeAdminDatabaseRequestBody(r)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	name, _ := payload["name"].(string)
+	name = strings.TrimSpace(filepath.Base(name))
+	if name == "" || name == "." || name == "/" {
+		respondWithError(w, http.StatusBadRequest, "Nama file tidak valid")
+		return
+	}
+
+	uploadsAbs, err := filepath.Abs("./uploads")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to resolve uploads directory")
+		return
+	}
+	targetAbs, err := filepath.Abs(filepath.Join("./uploads", name))
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to resolve upload file")
+		return
+	}
+	if targetAbs != uploadsAbs && !strings.HasPrefix(targetAbs, uploadsAbs+string(os.PathSeparator)) {
+		respondWithError(w, http.StatusBadRequest, "Invalid media path")
+		return
+	}
+	if err := os.Remove(targetAbs); err != nil {
+		if os.IsNotExist(err) {
+			respondWithError(w, http.StatusNotFound, "File tidak ditemukan")
+			return
+		}
+		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("Gagal menghapus file: %v", err))
+		return
+	}
+
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "database_delete_media", name, nil, map[string]any{
+		"file_name": name,
+		"path":      "/uploads/" + name,
+	})
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "File berhasil dihapus"})
 }
 
 func (h *AdminOpsHandlers) AdminDatabaseCreateRowHandler(w http.ResponseWriter, r *http.Request) {
@@ -623,6 +1096,20 @@ func (h *AdminOpsHandlers) AdminDatabaseDeleteRowHandler(w http.ResponseWriter, 
 		quoteAdminIdentifier(tableName),
 		strings.Join(whereParts, " AND "),
 	)
+
+	if tableName == "users" {
+		var role string
+		checkSQL := fmt.Sprintf(
+			"SELECT peran FROM %s WHERE %s",
+			quoteAdminIdentifier(tableName),
+			strings.Join(whereParts, " AND "),
+		)
+		if err := h.DB.QueryRow(checkSQL, args...).Scan(&role); err == nil && strings.EqualFold(strings.TrimSpace(role), "superadmin") {
+			respondWithError(w, http.StatusForbidden, "Role superadmin tidak boleh dihapus")
+			return
+		}
+	}
+
 	result, err := h.DB.Exec(deleteSQL, args...)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("Failed to delete row: %v", err))
@@ -640,6 +1127,114 @@ func (h *AdminOpsHandlers) AdminDatabaseDeleteRowHandler(w http.ResponseWriter, 
 		"keys":  rawKeys,
 	})
 	respondWithJSON(w, http.StatusOK, map[string]any{"message": "Row deleted", "affected": affected})
+}
+
+func (h *AdminOpsHandlers) AdminDatabaseResetAnalysisHandler(w http.ResponseWriter, r *http.Request) {
+	payload, err := decodeAdminDatabaseRequestBody(r)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	rawTables, _ := payload["tables"].([]any)
+	tables := make([]string, 0, len(rawTables))
+	for _, raw := range rawTables {
+		if name, ok := raw.(string); ok && strings.TrimSpace(name) != "" {
+			tables = append(tables, strings.TrimSpace(name))
+		}
+	}
+	analysis, err := h.adminDatabaseAnalyzeReset(tables)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondWithJSON(w, http.StatusOK, analysis)
+}
+
+func (h *AdminOpsHandlers) AdminDatabaseResetHandler(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("userID").(string)
+	if strings.TrimSpace(userID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	payload, err := decodeAdminDatabaseRequestBody(r)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	rawTables, _ := payload["tables"].([]any)
+	tables := make([]string, 0, len(rawTables))
+	for _, raw := range rawTables {
+		if name, ok := raw.(string); ok && strings.TrimSpace(name) != "" {
+			tables = append(tables, strings.TrimSpace(name))
+		}
+	}
+	password, _ := payload["password"].(string)
+	if err := h.AuthService.VerifyPassword(userID, password); err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Password admin tidak valid")
+		return
+	}
+	analysis, err := h.adminDatabaseAnalyzeReset(tables)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !slicesEqualString(analysis.SelectedTables, analysis.RecommendedTables) {
+		respondWithJSON(w, http.StatusBadRequest, map[string]any{
+			"message":  "Reset diblokir karena masih ada dependency foreign key di tabel lain.",
+			"analysis": analysis,
+		})
+		return
+	}
+	if len(analysis.Cycles) > 0 {
+		respondWithJSON(w, http.StatusBadRequest, map[string]any{
+			"message":  "Reset diblokir karena ada siklus dependency antar tabel.",
+			"analysis": analysis,
+		})
+		return
+	}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to start reset transaction")
+		return
+	}
+	defer tx.Rollback()
+
+	affectedTables := make([]map[string]any, 0, len(analysis.DeleteOrder))
+	for _, tableName := range analysis.DeleteOrder {
+		query := fmt.Sprintf("DELETE FROM %s", quoteAdminIdentifier(tableName))
+		result, execErr := tx.Exec(query)
+		if execErr != nil {
+			respondWithJSON(w, http.StatusBadRequest, map[string]any{
+				"message":  fmt.Sprintf("Reset gagal saat mengosongkan tabel %s", tableName),
+				"analysis": analysis,
+				"error":    execErr.Error(),
+			})
+			return
+		}
+		affected, _ := result.RowsAffected()
+		affectedTables = append(affectedTables, map[string]any{
+			"table":        tableName,
+			"deleted_rows": affected,
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to commit reset transaction")
+		return
+	}
+
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "database_reset_tables", "database", nil, map[string]any{
+		"tables":       analysis.SelectedTables,
+		"delete_order": analysis.DeleteOrder,
+	})
+	respondWithJSON(w, http.StatusOK, map[string]any{
+		"message":  "Reset tabel berhasil dijalankan",
+		"tables":   affectedTables,
+		"analysis": analysis,
+	})
 }
 
 func mapsKeys(values map[string]any) []string {

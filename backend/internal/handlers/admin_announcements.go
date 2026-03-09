@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"api-backend/internal/services"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -243,6 +244,7 @@ func (h *AdminOpsHandlers) AdminCreateAnnouncementHandler(w http.ResponseWriter,
 		"is_active":   created.IsActive,
 	})
 	respondWithJSON(w, http.StatusCreated, created)
+	publishAnnouncementInvalidation(created.TargetRole)
 }
 
 func (h *AdminOpsHandlers) AdminUpdateAnnouncementHandler(w http.ResponseWriter, r *http.Request) {
@@ -366,6 +368,7 @@ func (h *AdminOpsHandlers) AdminUpdateAnnouncementHandler(w http.ResponseWriter,
 
 	_ = h.AuditService.LogAction(actorID, "update_announcement", "announcement", &announcementID, nil)
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Announcement updated"})
+	services.PublishNotificationInvalidation("announcement_updated", []string{"teacher", "student"}, nil)
 }
 
 func (h *AdminOpsHandlers) AdminDeleteAnnouncementHandler(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +392,18 @@ func (h *AdminOpsHandlers) AdminDeleteAnnouncementHandler(w http.ResponseWriter,
 
 	_ = h.AuditService.LogAction(actorID, "delete_announcement", "announcement", &announcementID, nil)
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Announcement deleted"})
+	services.PublishNotificationInvalidation("announcement_deleted", []string{"teacher", "student"}, nil)
+}
+
+func publishAnnouncementInvalidation(targetRole string) {
+	switch strings.TrimSpace(strings.ToLower(targetRole)) {
+	case "teacher":
+		services.PublishNotificationInvalidation("announcement_changed", []string{"teacher"}, nil)
+	case "student":
+		services.PublishNotificationInvalidation("announcement_changed", []string{"student"}, nil)
+	default:
+		services.PublishNotificationInvalidation("announcement_changed", []string{"teacher", "student"}, nil)
+	}
 }
 
 func (h *AdminOpsHandlers) ListActiveAnnouncementsHandler(w http.ResponseWriter, r *http.Request) {
