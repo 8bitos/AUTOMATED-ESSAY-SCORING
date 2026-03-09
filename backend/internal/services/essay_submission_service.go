@@ -31,6 +31,8 @@ type EssaySubmissionService struct {
 	limiterMu            sync.Mutex
 	lastAIRequestAt      time.Time
 	aiMinInterval        time.Duration
+	cancelMu             sync.RWMutex
+	cancelledJobs        map[string]struct{}
 }
 
 type essayGradingJob struct {
@@ -257,6 +259,7 @@ func NewEssaySubmissionService(db *sql.DB, ai *AIService, eqs *EssayQuestionServ
 		settingService:       settings,
 		jobQueue:             make(chan essayGradingJob, 500),
 		aiMinInterval:        time.Minute / time.Duration(rpmLimit),
+		cancelledJobs:        make(map[string]struct{}),
 	}
 	for i := 0; i < workers; i++ {
 		go svc.runGradingWorker()
@@ -762,6 +765,7 @@ func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, te
 	if isTaskSubmission {
 		return newSubmission, nil, nil
 	}
+	s.clearStopRequest(newSubmission.ID)
 
 	if s.aiService == nil {
 		return newSubmission, nil, fmt.Errorf("AI service is unavailable; submission queued without grading")
@@ -791,6 +795,34 @@ func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, te
 	return newSubmission, nil, nil
 }
 
+func (s *EssaySubmissionService) markStopRequested(submissionID string) {
+	if strings.TrimSpace(submissionID) == "" {
+		return
+	}
+	s.cancelMu.Lock()
+	defer s.cancelMu.Unlock()
+	s.cancelledJobs[submissionID] = struct{}{}
+}
+
+func (s *EssaySubmissionService) clearStopRequest(submissionID string) {
+	if strings.TrimSpace(submissionID) == "" {
+		return
+	}
+	s.cancelMu.Lock()
+	defer s.cancelMu.Unlock()
+	delete(s.cancelledJobs, submissionID)
+}
+
+func (s *EssaySubmissionService) isStopRequested(submissionID string) bool {
+	if strings.TrimSpace(submissionID) == "" {
+		return false
+	}
+	s.cancelMu.RLock()
+	defer s.cancelMu.RUnlock()
+	_, ok := s.cancelledJobs[submissionID]
+	return ok
+}
+
 func (s *EssaySubmissionService) waitRateSlot() {
 	s.limiterMu.Lock()
 	defer s.limiterMu.Unlock()
@@ -818,6 +850,10 @@ func (s *EssaySubmissionService) shouldUseInstantGrading() bool {
 }
 
 func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEssayResponse, error) {
+	if s.isStopRequested(job.SubmissionID) {
+		_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", "Dihentikan admin sebelum grading dimulai.", nil)
+		return nil, errors.New("grading stopped by admin")
+	}
 	if err := s.updateSubmissionGradingStatus(job.SubmissionID, "processing", "", nil); err != nil {
 		log.Printf("WARNING: failed to set processing status for %s: %v", job.SubmissionID, err)
 	}
@@ -838,6 +874,10 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 	var lastErr error
 	backoffs := []time.Duration{0, 2 * time.Second, 5 * time.Second}
 	for _, delay := range backoffs {
+		if s.isStopRequested(job.SubmissionID) {
+			_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", "Dihentikan admin saat menunggu proses AI.", nil)
+			return nil, errors.New("grading stopped by admin")
+		}
 		if delay > 0 {
 			time.Sleep(delay)
 		}
@@ -846,6 +886,10 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 		if lastErr == nil {
 			break
 		}
+	}
+	if s.isStopRequested(job.SubmissionID) {
+		_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", "Dihentikan admin saat proses grading berjalan.", nil)
+		return nil, errors.New("grading stopped by admin")
 	}
 
 	if lastErr != nil || gradeResp == nil {
@@ -912,12 +956,17 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 
 	gradedAt := time.Now()
 	_ = s.updateSubmissionGradingStatus(job.SubmissionID, "completed", "", &gradedAt)
+	s.clearStopRequest(job.SubmissionID)
 
 	return gradeResp, nil
 }
 
 func (s *EssaySubmissionService) runGradingWorker() {
 	for job := range s.jobQueue {
+		if s.isStopRequested(job.SubmissionID) {
+			_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", "Dihentikan admin sebelum diproses worker.", nil)
+			continue
+		}
 		if _, err := s.gradeJob(job); err != nil {
 			log.Printf("WARNING: AI grading worker failed for submission %s: %v", job.SubmissionID, err)
 		}
@@ -1548,6 +1597,7 @@ func (s *EssaySubmissionService) RetryQueueSubmissions(submissionIDs []string) (
 		`, submissionID); err != nil {
 			return nil, fmt.Errorf("failed to reset submission %s: %w", submissionID, err)
 		}
+		s.clearStopRequest(submissionID)
 
 		if err := s.enqueueGradingJob(job); err != nil {
 			_ = s.updateSubmissionGradingStatus(submissionID, "failed", "Grading queue penuh. Coba lagi beberapa saat.", nil)
@@ -1564,6 +1614,88 @@ func (s *EssaySubmissionService) RetryQueueSubmissions(submissionIDs []string) (
 		resp.Details = append(resp.Details, models.RetryQueueItemResult{
 			SubmissionID: submissionID,
 			Status:       "queued",
+		})
+	}
+
+	return resp, nil
+}
+
+func (s *EssaySubmissionService) StopQueueSubmissions(submissionIDs []string) (*models.StopQueueResponse, error) {
+	resp := &models.StopQueueResponse{
+		Details: []models.StopQueueItemResult{},
+	}
+
+	seen := map[string]struct{}{}
+	for _, submissionID := range submissionIDs {
+		submissionID = strings.TrimSpace(submissionID)
+		if submissionID == "" {
+			continue
+		}
+		if _, exists := seen[submissionID]; exists {
+			continue
+		}
+		seen[submissionID] = struct{}{}
+
+		var (
+			status         string
+			submissionType string
+		)
+		err := s.db.QueryRowContext(
+			context.Background(),
+			`SELECT submission_type, ai_grading_status
+			 FROM essay_submissions
+			 WHERE id = $1`,
+			submissionID,
+		).Scan(&submissionType, &status)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				resp.Skipped++
+				resp.Details = append(resp.Details, models.StopQueueItemResult{
+					SubmissionID: submissionID,
+					Status:       "skipped",
+					Message:      "Submission tidak ditemukan",
+				})
+				continue
+			}
+			return nil, fmt.Errorf("failed to load submission %s: %w", submissionID, err)
+		}
+		if submissionType != "essay" {
+			resp.Skipped++
+			resp.Details = append(resp.Details, models.StopQueueItemResult{
+				SubmissionID: submissionID,
+				Status:       "skipped",
+				Message:      "Submission tugas tidak memakai AI queue",
+			})
+			continue
+		}
+		if status != "queued" && status != "processing" {
+			resp.Skipped++
+			resp.Details = append(resp.Details, models.StopQueueItemResult{
+				SubmissionID: submissionID,
+				Status:       "skipped",
+				Message:      fmt.Sprintf("Status saat ini %s tidak bisa dihentikan", status),
+			})
+			continue
+		}
+
+		s.markStopRequested(submissionID)
+		if _, err := s.db.ExecContext(
+			context.Background(),
+			`UPDATE essay_submissions
+			 SET ai_grading_status = 'failed',
+			     ai_grading_error = 'Dihentikan admin.',
+			     ai_graded_at = NOW()
+			 WHERE id = $1`,
+			submissionID,
+		); err != nil {
+			return nil, fmt.Errorf("failed to stop submission %s: %w", submissionID, err)
+		}
+
+		resp.Accepted++
+		resp.Details = append(resp.Details, models.StopQueueItemResult{
+			SubmissionID: submissionID,
+			Status:       "stopped",
+			Message:      "Job AI dihentikan admin",
 		})
 	}
 

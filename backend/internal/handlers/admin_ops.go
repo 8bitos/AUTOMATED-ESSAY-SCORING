@@ -150,6 +150,37 @@ func (h *AdminOpsHandlers) AdminQueueRetryHandler(w http.ResponseWriter, r *http
 	respondWithJSON(w, http.StatusOK, result)
 }
 
+func (h *AdminOpsHandlers) AdminQueueStopHandler(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		SubmissionIDs []string `json:"submission_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if len(payload.SubmissionIDs) == 0 {
+		respondWithError(w, http.StatusBadRequest, "submission_ids is required")
+		return
+	}
+	if len(payload.SubmissionIDs) > 100 {
+		respondWithError(w, http.StatusBadRequest, "Maximum 100 submission_ids per request")
+		return
+	}
+
+	result, err := h.EssaySubmissionService.StopQueueSubmissions(payload.SubmissionIDs)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "stop_grading_queue", "essay_submission", nil, map[string]interface{}{
+		"submission_ids": payload.SubmissionIDs,
+		"accepted":       result.Accepted,
+		"skipped":        result.Skipped,
+	})
+	respondWithJSON(w, http.StatusOK, result)
+}
+
 func getBackendEnvPath() string {
 	return filepath.Join(".", ".env")
 }

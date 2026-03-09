@@ -227,6 +227,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	adminRouter.HandleFunc("/grading-queue/summary", adminOpsHandlers.AdminQueueSummaryHandler).Methods("GET")
 	adminRouter.HandleFunc("/grading-queue/jobs", adminOpsHandlers.AdminQueueJobsHandler).Methods("GET")
 	adminRouter.HandleFunc("/grading-queue/retry", adminOpsHandlers.AdminQueueRetryHandler).Methods("POST")
+	adminRouter.HandleFunc("/grading-queue/stop", adminOpsHandlers.AdminQueueStopHandler).Methods("POST")
 	adminRouter.HandleFunc("/users", authHandlers.AdminListUsersHandler).Methods("GET")
 	adminRouter.HandleFunc("/users/{userId}", authHandlers.AdminUserDetailHandler).Methods("GET")
 	adminRouter.HandleFunc("/users/{userId}", authHandlers.AdminUpdateUserHandler).Methods("PUT")

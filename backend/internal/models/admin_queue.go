@@ -46,3 +46,15 @@ type RetryQueueResponse struct {
 	Skipped  int                    `json:"skipped"`
 	Details  []RetryQueueItemResult `json:"details"`
 }
+
+type StopQueueItemResult struct {
+	SubmissionID string `json:"submission_id"`
+	Status       string `json:"status"`
+	Message      string `json:"message,omitempty"`
+}
+
+type StopQueueResponse struct {
+	Accepted int                   `json:"accepted"`
+	Skipped  int                   `json:"skipped"`
+	Details  []StopQueueItemResult `json:"details"`
+}

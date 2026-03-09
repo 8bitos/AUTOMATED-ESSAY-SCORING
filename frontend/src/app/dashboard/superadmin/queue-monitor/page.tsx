@@ -35,6 +35,7 @@ export default function SuperadminQueueMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -81,6 +82,28 @@ export default function SuperadminQueueMonitorPage() {
       setError(err?.message || "Gagal retry queue");
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const stopOne = async (submissionId: string) => {
+    setStoppingId(submissionId);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/grading-queue/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ submission_ids: [submissionId] }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message || "Gagal menghentikan queue");
+      }
+      await loadData();
+    } catch (err: any) {
+      setError(err?.message || "Gagal menghentikan queue");
+    } finally {
+      setStoppingId(null);
     }
   };
 
@@ -157,14 +180,28 @@ export default function SuperadminQueueMonitorPage() {
                   <p className="text-xs text-slate-500">
                     Submit: {new Date(item.submitted_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   </p>
-                  <button
-                    type="button"
-                    className="sage-button-outline !px-3 !py-1.5 text-xs"
-                    onClick={() => retryOne(item.submission_id)}
-                    disabled={retryingId === item.submission_id}
-                  >
-                    {retryingId === item.submission_id ? "Retry..." : "Retry"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {(item.status === "queued" || item.status === "processing") && (
+                      <button
+                        type="button"
+                        className="sage-button-outline !px-3 !py-1.5 text-xs"
+                        onClick={() => stopOne(item.submission_id)}
+                        disabled={stoppingId === item.submission_id}
+                      >
+                        {stoppingId === item.submission_id ? "Stopping..." : "Stop"}
+                      </button>
+                    )}
+                    {item.status === "failed" && (
+                      <button
+                        type="button"
+                        className="sage-button-outline !px-3 !py-1.5 text-xs"
+                        onClick={() => retryOne(item.submission_id)}
+                        disabled={retryingId === item.submission_id}
+                      >
+                        {retryingId === item.submission_id ? "Retry..." : "Retry"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
