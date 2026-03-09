@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { FiChevronDown, FiChevronUp } from "react-icons/fi";
@@ -493,6 +493,7 @@ const getQuestionGradingState = (
 };
 
 export default function StudentMaterialDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const classId = params.classId as string;
@@ -534,9 +535,12 @@ export default function StudentMaterialDetailPage() {
   const [reattemptQuestionIds, setReattemptQuestionIds] = useState<Record<string, boolean>>({});
   const [retryConfirmQuestionId, setRetryConfirmQuestionId] = useState<string | null>(null);
   const [retryPopupMessage, setRetryPopupMessage] = useState("");
+  const [completionPopupOpen, setCompletionPopupOpen] = useState(false);
   const [liveTickMs, setLiveTickMs] = useState(Date.now());
   const tabChangePendingRef = useRef(false);
   const materialRef = useRef<Material | null>(null);
+  const completionHandledRef = useRef(false);
+  const submittedInSessionRef = useRef(false);
 
   useEffect(() => {
     materialRef.current = material;
@@ -708,6 +712,22 @@ export default function StudentMaterialDetailPage() {
     }, 4000);
     return () => clearInterval(timer);
   }, [canOpenResultsTab, pendingEvaluationCount, fetchData]);
+
+  useEffect(() => {
+    if (!isSoalContext || isTugasContext) {
+      completionHandledRef.current = false;
+      setCompletionPopupOpen(false);
+      return;
+    }
+    if (!allSoalAnswered) {
+      completionHandledRef.current = false;
+      return;
+    }
+    if (!submittedInSessionRef.current) return;
+    if (completionHandledRef.current) return;
+    completionHandledRef.current = true;
+    setCompletionPopupOpen(true);
+  }, [allSoalAnswered, isSoalContext, isTugasContext]);
 
   useEffect(() => {
     if (!material) return;
@@ -1179,6 +1199,7 @@ export default function StudentMaterialDetailPage() {
           : status === "failed"
             ? "Jawaban diterima, tetapi gagal masuk antrian AI."
             : "Jawaban diterima dan sedang diproses AI.";
+      submittedInSessionRef.current = true;
       setSubmitMessage((prev) => ({ ...prev, [questionId]: data?.grading_message || defaultMessage }));
       setReattemptQuestionIds((prev) => ({ ...prev, [questionId]: false }));
       await fetchData(false);
@@ -1243,6 +1264,7 @@ export default function StudentMaterialDetailPage() {
             : status === "failed"
               ? "Jawaban diterima, tetapi gagal masuk antrian AI."
               : "Jawaban diterima dan sedang diproses AI.";
+        submittedInSessionRef.current = true;
         setSubmitMessage((prev) => ({ ...prev, [q.id]: data?.grading_message || defaultMessage }));
         setReattemptQuestionIds((prev) => ({ ...prev, [q.id]: false }));
         successCount += 1;
@@ -1407,8 +1429,35 @@ export default function StudentMaterialDetailPage() {
 
   if (!material || !cls) return null;
 
+  const handleQuizCompletedReturn = () => {
+    setCompletionPopupOpen(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(attemptStorageKey);
+    }
+    router.push(`/dashboard/student/classes/${classId}/materials/${materialId}`);
+  };
+
   return (
     <div className={`student-material-view space-y-4 md:space-y-6 ${shouldForceFullscreen ? "min-h-screen bg-slate-950 p-4 md:p-6" : ""}`}>
+      {completionPopupOpen && (
+        <div className="fixed inset-0 z-[82] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-5 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Sesi Selesai</p>
+            <p className="mt-2 text-sm text-slate-700">
+              Kamu telah menyelesaikan semua jawaban pada sesi ini. Kembali ke halaman materi untuk melihat section lainnya.
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                className="sage-button"
+                onClick={handleQuizCompletedReturn}
+              >
+                Kembali ke Materi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {shouldForceFullscreen && (
         <style jsx global>{`
           body.sage-quiz-fullscreen #sidebar { display: none !important; }

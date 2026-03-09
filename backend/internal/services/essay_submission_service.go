@@ -264,7 +264,82 @@ func NewEssaySubmissionService(db *sql.DB, ai *AIService, eqs *EssayQuestionServ
 	for i := 0; i < workers; i++ {
 		go svc.runGradingWorker()
 	}
+	go svc.recoverPendingQueue()
 	return svc
+}
+
+func (s *EssaySubmissionService) recoverPendingQueue() {
+	if s.aiService == nil {
+		log.Printf("WARNING: skipping queue recovery because AI service is unavailable")
+		return
+	}
+
+	rows, err := s.db.QueryContext(
+		context.Background(),
+		`SELECT id, soal_id, siswa_id, teks_jawaban, ai_grading_status
+		 FROM essay_submissions
+		 WHERE submission_type = 'essay'
+		   AND ai_grading_status IN ('queued', 'processing')
+		 ORDER BY submitted_at ASC`,
+	)
+	if err != nil {
+		log.Printf("WARNING: failed to scan pending grading queue on startup: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	recovered := 0
+	failed := 0
+	for rows.Next() {
+		var (
+			job    essayGradingJob
+			status string
+		)
+		if err := rows.Scan(&job.SubmissionID, &job.QuestionID, &job.StudentID, &job.TeksJawaban, &status); err != nil {
+			log.Printf("WARNING: failed to scan pending queue item during startup recovery: %v", err)
+			failed++
+			continue
+		}
+
+		config, cfgErr := s.loadQuizAttemptConfig(job.QuestionID)
+		if cfgErr != nil {
+			log.Printf("WARNING: failed to load attempt config for recovered submission %s: %v", job.SubmissionID, cfgErr)
+			_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", "Gagal memulihkan job AI saat startup.", nil)
+			failed++
+			continue
+		}
+		job.ScoringMethod = config.AttemptScoring
+
+		if _, err := s.db.ExecContext(
+			context.Background(),
+			`UPDATE essay_submissions
+			 SET ai_grading_status = 'queued',
+			     ai_grading_error = NULL,
+			     ai_graded_at = NULL
+			 WHERE id = $1`,
+			job.SubmissionID,
+		); err != nil {
+			log.Printf("WARNING: failed to reset recovered submission %s to queued: %v", job.SubmissionID, err)
+			failed++
+			continue
+		}
+		s.clearStopRequest(job.SubmissionID)
+
+		if err := s.enqueueGradingJob(job); err != nil {
+			log.Printf("WARNING: failed to requeue recovered submission %s: %v", job.SubmissionID, err)
+			_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", "Recovery queue penuh saat startup.", nil)
+			failed++
+			continue
+		}
+
+		recovered++
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("WARNING: queue recovery iteration failed: %v", err)
+	}
+	if recovered > 0 || failed > 0 {
+		log.Printf("Queue recovery completed: recovered=%d failed=%d", recovered, failed)
+	}
 }
 
 // CreateEssaySubmission membuat submission esai baru di database dan secara otomatis
