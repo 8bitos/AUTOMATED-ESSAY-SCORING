@@ -20,6 +20,7 @@ interface EssayQuestion {
 interface Material {
   id: string;
   judul: string;
+  isi_materi?: string;
   created_at?: string;
   updated_at?: string;
   essay_questions?: EssayQuestion[];
@@ -46,7 +47,7 @@ interface CalendarEventItem {
   title: string;
   description: string;
   href?: string;
-  type: "approval" | "material" | "feedback" | "pending";
+  type: "approval" | "material" | "feedback" | "pending" | "deadline";
 }
 
 const toDateKey = (iso?: string): string => {
@@ -67,6 +68,25 @@ const formatDateLabel = (value?: string) => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+};
+
+const parseTaskDueAt = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { format?: string; items?: Array<Record<string, unknown>> };
+    if (parsed?.format !== "sage_section_cards_v1" || !Array.isArray(parsed.items)) return undefined;
+    const dueDates = parsed.items
+      .filter((item) => item?.type === "tugas")
+      .map((item) => (typeof item?.meta === "object" && item.meta ? (item.meta as Record<string, unknown>).tugas_due_at : undefined))
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+      .map((v) => new Date(v))
+      .filter((v) => !Number.isNaN(v.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (dueDates.length === 0) return undefined;
+    return dueDates[0].toISOString();
+  } catch {
+    return undefined;
+  }
 };
 
 const getMonthDays = (monthDate: Date) => {
@@ -155,6 +175,20 @@ export default function StudentCalendarPage() {
                 type: "feedback",
               });
             }
+
+            const dueAt = parseTaskDueAt(mat.isi_materi);
+            const dueKey = toDateKey(dueAt);
+            if (dueKey && dueAt) {
+              items.push({
+                id: `due-${mat.id}-${dueAt}`,
+                date: dueKey,
+                datetime: dueAt,
+                title: "Deadline Tugas",
+                description: `Batas pengumpulan ${mat.judul} (${cls.class_name}).`,
+                href: `/dashboard/student/classes/${cls.id}/materials/${mat.id}?view=tugas`,
+                type: "deadline",
+              });
+            }
           });
         });
 
@@ -228,12 +262,21 @@ export default function StudentCalendarPage() {
   }, [events]);
 
   const monthLabel = new Intl.DateTimeFormat("id-ID", { month: "2-digit", year: "2-digit" }).format(monthCursor);
-  const typeBadgeClass = (type: CalendarEventItem["type"]) => {
-    if (type === "approval") return "bg-indigo-100 text-indigo-700";
-    if (type === "material") return "bg-sky-100 text-sky-700";
-    if (type === "feedback") return "bg-emerald-100 text-emerald-700";
-    return "bg-amber-100 text-amber-700";
-  };
+const typeBadgeClass = (type: CalendarEventItem["type"]) => {
+  if (type === "approval") return "bg-indigo-100 text-indigo-700";
+  if (type === "material") return "bg-sky-100 text-sky-700";
+  if (type === "feedback") return "bg-emerald-100 text-emerald-700";
+  if (type === "deadline") return "bg-rose-100 text-rose-700";
+  return "bg-amber-100 text-amber-700";
+};
+
+const typeCardAccent = (type: CalendarEventItem["type"]) => {
+  if (type === "approval") return "border-l-indigo-400";
+  if (type === "material") return "border-l-sky-400";
+  if (type === "feedback") return "border-l-emerald-400";
+  if (type === "deadline") return "border-l-rose-400";
+  return "border-l-amber-400";
+};
 
   return (
     <div className="space-y-6">
@@ -320,7 +363,7 @@ export default function StudentCalendarPage() {
                   <p className="text-sm text-slate-500">Tidak ada agenda pada tanggal ini.</p>
                 ) : (
                   selectedEvents.map((event) => (
-                    <div key={event.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div key={event.id} className={`rounded-lg border border-slate-200 bg-slate-50 p-3 border-l-4 ${typeCardAccent(event.type)}`}>
                       <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-medium text-slate-900">{event.title}</p>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${typeBadgeClass(event.type)}`}>
@@ -347,7 +390,7 @@ export default function StudentCalendarPage() {
                   <p className="text-sm text-slate-500">Belum ada agenda mendatang.</p>
                 ) : (
                   upcomingEvents.map((event) => (
-                    <div key={`upcoming-${event.id}`} className="rounded-lg border border-slate-200 p-2">
+                    <div key={`upcoming-${event.id}`} className={`rounded-lg border border-slate-200 p-2 border-l-4 ${typeCardAccent(event.type)}`}>
                       <p className="text-xs font-medium text-slate-900">{event.title}</p>
                       <p className="text-[11px] text-slate-500">{formatDateLabel(event.datetime)}</p>
                     </div>

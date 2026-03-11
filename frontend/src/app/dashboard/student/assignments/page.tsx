@@ -135,29 +135,59 @@ export default function StudentAssignmentsPage() {
     });
   }, [assignmentRows, query, filter, sortBy]);
 
-  const summary = useMemo(() => {
-    const totalMaterials = assignmentRows.length;
-    const pendingMaterials = assignmentRows.filter((r) => r.pendingQuestions > 0).length;
-    const doneMaterials = assignmentRows.filter((r) => r.totalQuestions > 0 && r.pendingQuestions === 0).length;
-    return { totalMaterials, pendingMaterials, doneMaterials };
+  const actionableRows = useMemo(() => {
+    return filteredRows.filter((row) => row.totalQuestions > 0 && row.pendingQuestions > 0);
+  }, [filteredRows]);
+
+  const latestRows = useMemo(() => {
+    const sorted = [...filteredRows].sort((a, b) => {
+      const at = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bt - at;
+    });
+    return sorted.slice(0, 10);
+  }, [filteredRows]);
+
+  const latestNonActionableRows = useMemo(() => {
+    const actionableKeys = new Set(actionableRows.map((row) => `${row.classId}-${row.materialId}`));
+    return latestRows.filter((row) => !actionableKeys.has(`${row.classId}-${row.materialId}`));
+  }, [actionableRows, latestRows]);
+
+  const quickStats = useMemo(() => {
+    const total = assignmentRows.length;
+    const pending = assignmentRows.filter((row) => row.totalQuestions > 0 && row.pendingQuestions > 0).length;
+    const done = assignmentRows.filter((row) => row.totalQuestions > 0 && row.pendingQuestions === 0).length;
+    return { total, pending, done };
   }, [assignmentRows]);
 
   return (
-    <div className="space-y-6">
-      <div className="sage-panel p-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Materi & Tugas</h1>
-        <p className="text-sm text-slate-500">Pantau materi per kelas, progres pengerjaan soal, dan tugas yang masih pending.</p>
-      </div>
-
-      <section className="sage-panel p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+    <div className="space-y-4">
+      <div className="sage-panel p-4 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">Materi & Tugas</h1>
+            <p className="text-sm text-slate-500">Fokus ke materi yang butuh aksi dan update terbaru.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
+              Pending {quickStats.pending}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
+              Selesai {quickStats.done}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
+              Total {quickStats.total}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
           <label className="relative block">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Cari materi, kelas, atau nama guru..."
-              className="sage-input pl-10"
+              placeholder="Cari materi, kelas, atau guru..."
+              className="sage-input h-9 pl-9 text-sm"
             />
           </label>
           <label className="relative block">
@@ -165,11 +195,11 @@ export default function StudentAssignmentsPage() {
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as TaskFilter)}
-              className="sage-input pl-10 min-w-56"
+              className="sage-input h-9 pl-9 text-sm min-w-48"
             >
-              <option value="all">Semua Materi</option>
+              <option value="all">Semua</option>
               <option value="pending">Perlu Dikerjakan</option>
-              <option value="done">Sudah Selesai</option>
+              <option value="done">Selesai</option>
             </select>
           </label>
           <label className="relative block">
@@ -177,134 +207,194 @@ export default function StudentAssignmentsPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as TaskSort)}
-              className="sage-input pl-10 min-w-56"
+              className="sage-input h-9 pl-9 text-sm min-w-52"
             >
-              <option value="latest">Urutkan: Terbaru</option>
-              <option value="lowest_progress">Urutkan: Progress Terendah</option>
-              <option value="highest_pending">Urutkan: Pending Terbanyak</option>
+              <option value="latest">Terbaru</option>
+              <option value="lowest_progress">Progress Terendah</option>
+              <option value="highest_pending">Pending Terbanyak</option>
             </select>
           </label>
         </div>
-      </section>
-
-      <section className="grid gap-4 sm:grid-cols-3">
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Total Materi</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{summary.totalMaterials}</p>
-        </div>
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Perlu Dikerjakan</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-700">{summary.pendingMaterials}</p>
-        </div>
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Selesai</p>
-          <p className="mt-1 text-2xl font-semibold text-emerald-700">{summary.doneMaterials}</p>
-        </div>
-      </section>
+      </div>
 
       {loading ? (
         <div className="sage-panel p-8 text-center text-slate-500">Memuat materi dan tugas...</div>
       ) : error ? (
         <div className="sage-panel p-8 text-center text-red-600">{error}</div>
+      ) : assignmentRows.length === 0 ? (
+        <div className="sage-panel p-8 text-center text-slate-500">
+          Belum ada materi atau tugas untuk ditampilkan.
+        </div>
       ) : filteredRows.length === 0 ? (
         <div className="sage-panel p-8 text-center text-slate-500">
           Tidak ada materi/tugas yang sesuai filter.
         </div>
       ) : (
-        <section className="grid gap-4">
-          {filteredRows.map((row) => {
-            const typeIcon =
-              row.materialType === "soal" ? <FiFileText size={16} className="text-blue-600" /> : row.materialType === "tugas" ? <FiClipboard size={16} className="text-purple-600" /> : <FiBookOpen size={16} className="text-emerald-600" />;
-            return (
-              <article key={`${row.classId}-${row.materialId}`} className="sage-card p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <p className="text-xs text-slate-500 flex items-center gap-2">
-                    <span>{row.className}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        row.materialType === "soal"
-                          ? "bg-blue-100 text-blue-700"
-                          : row.materialType === "tugas"
-                            ? "bg-purple-100 text-purple-700"
-                            : "bg-emerald-100 text-emerald-700"
-                      }`}
-                    >
-                      {row.materialType === "soal" ? "Soal" : row.materialType === "tugas" ? "Tugas" : "Materi"}
-                    </span>
-                  </p>
-                  <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-slate-900">
-                    {typeIcon}
-                    <span>{row.materialTitle}</span>
-                  </h2>
-                  <p className="text-sm text-slate-500">
-                    Guru:{" "}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedTeacherId(row.teacherId || null);
-                        setSelectedTeacherName(row.teacherName || null);
-                        setProfileModalOpen(true);
-                      }}
-                      className="text-[color:var(--sage-700)] hover:underline"
-                    >
-                      {row.teacherName || "-"}
-                    </button>
-                  </p>
-                </div>
+        <>
+          <section className="sage-panel p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">Butuh Aksi</h2>
+              <span className="text-xs text-slate-500">{actionableRows.length} item</span>
+            </div>
+            {actionableRows.length === 0 ? (
+              <p className="text-sm text-slate-500">Tidak ada tugas yang harus dikerjakan.</p>
+            ) : (
+              <div className="grid gap-3">
+                {actionableRows.map((row) => {
+                  const typeIcon =
+                    row.materialType === "soal" ? <FiFileText size={16} className="text-blue-600" /> : row.materialType === "tugas" ? <FiClipboard size={16} className="text-purple-600" /> : <FiBookOpen size={16} className="text-emerald-600" />;
+                  return (
+                    <article key={`${row.classId}-${row.materialId}`} className="sage-card p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {typeIcon}
+                            <h3 className="line-clamp-1 text-base font-semibold text-slate-900">{row.materialTitle}</h3>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                            <span>{row.className}</span>
+                            <span>•</span>
+                            <span>{row.materialType === "soal" ? "Soal" : row.materialType === "tugas" ? "Tugas" : "Materi"}</span>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTeacherId(row.teacherId || null);
+                                setSelectedTeacherName(row.teacherName || null);
+                                setProfileModalOpen(true);
+                              }}
+                              className="text-[color:var(--sage-700)] hover:underline"
+                            >
+                              {row.teacherName || "-"}
+                            </button>
+                          </div>
+                        </div>
 
-                <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-                    row.totalQuestions === 0
-                      ? "bg-slate-100 text-slate-700"
-                      : row.pendingQuestions > 0
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-emerald-100 text-emerald-800"
-                  }`}
-                >
-                  {row.totalQuestions === 0
-                    ? "Tanpa Soal"
-                    : row.pendingQuestions > 0
-                      ? `${row.pendingQuestions} Belum Dikerjakan`
-                      : "Selesai"}
-                </span>
-              </div>
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-800">
+                          {row.pendingQuestions} Belum
+                        </span>
+                      </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Total Soal</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{row.totalQuestions}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Sudah Submit</p>
-                  <p className="mt-1 text-base font-semibold text-emerald-700">{row.submittedQuestions}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Progress</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">{row.progress}%</p>
-                </div>
-              </div>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                        <span>{`Progress ${row.submittedQuestions}/${row.totalQuestions} (${row.progress}%)`}</span>
+                        <span>
+                          Update:{" "}
+                          {row.updatedAt
+                            ? new Date(row.updatedAt).toLocaleString("id-ID", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "-"}
+                        </span>
+                      </div>
 
-              <div className="mt-3 h-2 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full bg-[color:var(--sage-700)]" style={{ width: `${row.progress}%` }} />
+                      <div className="mt-3 flex items-center justify-end">
+                        <Link
+                          href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`}
+                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
+                        >
+                          <FiBookOpen />
+                          Buka
+                        </Link>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
+            )}
+          </section>
 
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-xs text-slate-500">
-                  Update: {row.updatedAt ? new Date(row.updatedAt).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}
-                </p>
-                <Link
-                  href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
-                >
-                  <FiBookOpen />
-                  Buka Materi
-                </Link>
+          {latestNonActionableRows.length > 0 && (
+            <section className="sage-panel p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-900">Terbaru</h2>
+                <span className="text-xs text-slate-500">Menampilkan 10 terakhir</span>
               </div>
-              </article>
-            );
-          })}
-        </section>
+              <div className="grid gap-3">
+                {latestNonActionableRows.map((row) => {
+                const typeIcon =
+                  row.materialType === "soal" ? <FiFileText size={16} className="text-blue-600" /> : row.materialType === "tugas" ? <FiClipboard size={16} className="text-purple-600" /> : <FiBookOpen size={16} className="text-emerald-600" />;
+                return (
+                  <article key={`${row.classId}-${row.materialId}`} className="sage-card p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {typeIcon}
+                          <h3 className="line-clamp-1 text-base font-semibold text-slate-900">{row.materialTitle}</h3>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                          <span>{row.className}</span>
+                          <span>•</span>
+                          <span>{row.materialType === "soal" ? "Soal" : row.materialType === "tugas" ? "Tugas" : "Materi"}</span>
+                          <span>•</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTeacherId(row.teacherId || null);
+                              setSelectedTeacherName(row.teacherName || null);
+                              setProfileModalOpen(true);
+                            }}
+                            className="text-[color:var(--sage-700)] hover:underline"
+                          >
+                            {row.teacherName || "-"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          row.totalQuestions === 0
+                            ? "bg-slate-100 text-slate-700"
+                            : row.pendingQuestions > 0
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {row.totalQuestions === 0
+                          ? "Tanpa Soal"
+                          : row.pendingQuestions > 0
+                            ? `${row.pendingQuestions} Belum`
+                            : "Selesai"}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>
+                        {row.totalQuestions === 0 ? "Tanpa soal." : `Progress ${row.submittedQuestions}/${row.totalQuestions} (${row.progress}%)`}
+                      </span>
+                      <span>
+                        Update:{" "}
+                        {row.updatedAt
+                          ? new Date(row.updatedAt).toLocaleString("id-ID", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "-"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-end">
+                      <Link
+                        href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`}
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
+                      >
+                        <FiBookOpen />
+                        Buka
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       <div className="flex flex-wrap gap-3">

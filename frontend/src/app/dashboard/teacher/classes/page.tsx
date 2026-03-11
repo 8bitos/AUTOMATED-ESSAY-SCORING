@@ -432,12 +432,7 @@ export default function ClassManagementPage() {
         </button>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Total Kelas" value={String(classes.length)} icon={<FiLayers />} />
-        <SummaryCard title="Kelas Aktif" value={String(activeCount)} icon={<FiBookOpen />} />
-        <SummaryCard title="Kelas Arsip" value={String(archivedCount)} icon={<FiArchive />} />
-        <SummaryCard title="Hasil Filter" value={String(activeClasses.length)} icon={<FiSearch />} />
-      </section>
+
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">

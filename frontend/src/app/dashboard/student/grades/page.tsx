@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FiAlertTriangle, FiBarChart2, FiChevronDown, FiChevronUp, FiClock, FiFilter, FiMessageSquare, FiSearch } from "react-icons/fi";
+import { FiChevronDown, FiChevronUp, FiClock, FiFilter, FiSearch } from "react-icons/fi";
 import TeacherProfileModal from "@/components/TeacherProfileModal";
 
 interface RubricScore {
@@ -164,8 +164,8 @@ export default function StudentGradesPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<GradeFilter>("all");
   const [sortBy, setSortBy] = useState<GradeSort>("latest");
-  const [selectedClassId, setSelectedClassId] = useState<string>("all");
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [detailSortBy, setDetailSortBy] = useState<Record<string, "default" | "score_high" | "score_low" | "status">>({});
   const [creatingAppealFor, setCreatingAppealFor] = useState<string>("");
   const [appealComposerOpen, setAppealComposerOpen] = useState<Record<string, boolean>>({});
   const [appealReasonBySubmission, setAppealReasonBySubmission] = useState<Record<string, string>>({});
@@ -215,8 +215,6 @@ export default function StudentGradesPage() {
     };
     void fetchData();
   }, [loadAppeals]);
-
-  const classOptions = useMemo(() => classes.map((cls) => ({ id: cls.id, name: cls.class_name })), [classes]);
 
   const calculateFinalScore = (questions: EssayQuestion[]) => {
     const totalQuestions = questions.length;
@@ -295,7 +293,6 @@ export default function StudentGradesPage() {
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = allRows.filter((row) => {
-      if (selectedClassId !== "all" && row.classId !== selectedClassId) return false;
       const matchQuery =
         !q ||
         row.materialTitle.toLowerCase().includes(q) ||
@@ -329,7 +326,7 @@ export default function StudentGradesPage() {
       const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       return bt - at;
     });
-  }, [allRows, appealsBySubmission, filter, query, selectedClassId, sortBy]);
+  }, [allRows, appealsBySubmission, filter, query, sortBy]);
 
   const summary = useMemo(() => {
     const numericScores = allRows
@@ -337,38 +334,22 @@ export default function StudentGradesPage() {
       .filter((score): score is number => typeof score === "number");
     const averageScore = numericScores.length > 0 ? numericScores.reduce((a, b) => a + b, 0) / numericScores.length : 0;
     const allQuestionItems = allRows.flatMap((row) => row.questionItems);
-    const answeredQuestions = allQuestionItems.filter((q) => q.submissionId.length > 0).length;
-    const reviewedQuestions = allQuestionItems.filter((q) => q.status === "reviewed").length;
+    const submittedQuestions = allQuestionItems.filter((q) => q.submissionId.length > 0).length;
     const waitingReview = allQuestionItems.filter((q) => q.status === "queued" || q.status === "processing" || q.status === "waiting_review").length;
-    const openAppeals = Object.values(appealsBySubmission).filter((a) => a.status === "open" || a.status === "in_review").length;
+    const scoredRows = allRows.filter((row) => typeof row.score === "number").length;
+    const needsImprovement = allRows.filter((row) => typeof row.score === "number" && row.score < 75).length;
+    const waitingReviewPct = submittedQuestions > 0 ? Math.round((waitingReview / submittedQuestions) * 100) : 0;
+    const improvementPct = scoredRows > 0 ? Math.round((needsImprovement / scoredRows) * 100) : 0;
 
     return {
       averageScore,
-      answeredQuestions,
-      reviewedQuestions,
+      submittedQuestions,
       waitingReview,
-      openAppeals,
-      reviewedProgress: answeredQuestions > 0 ? Math.round((reviewedQuestions / answeredQuestions) * 100) : 0,
+      needsImprovement,
+      waitingReviewPct,
+      improvementPct,
     };
   }, [allRows, appealsBySubmission]);
-
-  const priorityRows = useMemo(() => {
-    const waitingRows = filteredRows.filter((row) => row.answeredQuestions > row.reviewedQuestions).slice(0, 2);
-    const lowRows = filteredRows.filter((row) => typeof row.score === "number" && row.score < 75).slice(0, 2);
-    const openAppealRows = filteredRows.filter((row) =>
-      row.questionItems.some((item) => {
-        if (!item.submissionId) return false;
-        const appeal = appealsBySubmission[item.submissionId];
-        return Boolean(appeal && (appeal.status === "open" || appeal.status === "in_review"));
-      })
-    ).slice(0, 2);
-
-    return {
-      waitingRows,
-      lowRows,
-      openAppealRows,
-    };
-  }, [appealsBySubmission, filteredRows]);
 
   const getRowStatus = (row: MaterialGradeRow) => {
     const hasOpenAppeal = row.questionItems.some((item) => {
@@ -419,122 +400,64 @@ export default function StudentGradesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="sage-panel p-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Nilai & Feedback</h1>
-        <p className="text-sm text-slate-500">Halaman ini jadi pusat keputusan: lihat progres review, prioritas perbaikan, dan banding nilai.</p>
+    <div className="space-y-4">
+      <div className="sage-panel p-4 space-y-2">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Nilai & Feedback</h1>
+          <p className="text-sm text-slate-500">Ringkas, fokus ke hasil dan tindak lanjut.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-3" title="Rata-rata nilai akhir dari semua materi yang sudah dinilai.">
+            <p className="text-xs text-slate-500">Rata-rata Nilai</p>
+            <p className="mt-1 text-lg font-semibold text-slate-900">{summary.averageScore.toFixed(2)}</p>
+            <div className="mt-2 h-1.5 rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(100, Math.max(0, summary.averageScore))}%` }} />
+            </div>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" title="Jumlah jawaban yang masih menunggu review guru.">
+            <p className="text-xs text-amber-800">Menunggu Review</p>
+            <p className="mt-1 text-lg font-semibold text-amber-900">{summary.waitingReview}</p>
+            <div className="mt-2 h-1.5 rounded-full bg-amber-100">
+              <div className="h-full rounded-full bg-amber-500" style={{ width: `${summary.waitingReviewPct}%` }} />
+            </div>
+          </div>
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3" title="Jumlah materi dengan nilai di bawah 75.">
+            <p className="text-xs text-rose-800">Perlu Perbaikan</p>
+            <p className="mt-1 text-lg font-semibold text-rose-900">{summary.needsImprovement}</p>
+            <div className="mt-2 h-1.5 rounded-full bg-rose-100">
+              <div className="h-full rounded-full bg-rose-500" style={{ width: `${summary.improvementPct}%` }} />
+            </div>
+          </div>
+        </div>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Rata-rata Nilai Akhir</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{summary.averageScore.toFixed(2)}</p>
-        </div>
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Progress Review Guru</p>
-          <p className="mt-1 text-2xl font-semibold text-emerald-700">{summary.reviewedQuestions}/{summary.answeredQuestions}</p>
-          <p className="text-xs text-slate-500">{summary.reviewedProgress}% dari jawaban yang sudah dikirim</p>
-        </div>
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Menunggu Review</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-700">{summary.waitingReview}</p>
-        </div>
-        <div className="sage-panel p-4">
-          <p className="text-xs text-slate-500">Banding Aktif</p>
-          <p className="mt-1 text-2xl font-semibold text-sky-700">{summary.openAppeals}</p>
-        </div>
-      </section>
-
-      <section className="sage-panel p-4">
-        <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <FiAlertTriangle />
-          Prioritas Aksi
-        </p>
-        <div className="mt-3 grid gap-3 xl:grid-cols-3">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Menunggu Review</p>
-            {priorityRows.waitingRows.length === 0 ? (
-              <p className="mt-1 text-sm text-amber-800">Tidak ada materi menunggu review saat ini.</p>
-            ) : (
-              <div className="mt-2 space-y-1.5">
-                {priorityRows.waitingRows.map((row) => (
-                  <Link key={`wait-${row.classId}-${row.materialId}`} href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`} className="block text-sm text-amber-900 hover:underline">
-                    {row.materialTitle} ({row.className})
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Perlu Perbaikan (&lt;75)</p>
-            {priorityRows.lowRows.length === 0 ? (
-              <p className="mt-1 text-sm text-rose-800">Belum ada nilai yang perlu perbaikan.</p>
-            ) : (
-              <div className="mt-2 space-y-1.5">
-                {priorityRows.lowRows.map((row) => (
-                  <Link key={`low-${row.classId}-${row.materialId}`} href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`} className="block text-sm text-rose-900 hover:underline">
-                    {row.materialTitle} ({row.score?.toFixed(2)})
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Banding Sedang Diproses</p>
-            {priorityRows.openAppealRows.length === 0 ? (
-              <p className="mt-1 text-sm text-sky-800">Tidak ada banding aktif.</p>
-            ) : (
-              <div className="mt-2 space-y-1.5">
-                {priorityRows.openAppealRows.map((row) => (
-                  <Link key={`appeal-${row.classId}-${row.materialId}`} href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`} className="block text-sm text-sky-900 hover:underline">
-                    {row.materialTitle} ({row.className})
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="sage-panel p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
+      <section className="sage-panel p-3">
+        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
           <label className="relative block">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Cari materi, kelas, atau guru..."
-              className="sage-input pl-10"
+              className="sage-input h-9 pl-9 text-sm"
             />
           </label>
           <label className="relative block">
             <FiFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
-            <select value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)} className="sage-input pl-10 min-w-52">
-              <option value="all">Semua Kelas</option>
-              {classOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="relative block">
-            <FiFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
-            <select value={filter} onChange={(e) => setFilter(e.target.value as GradeFilter)} className="sage-input pl-10 min-w-52">
+            <select value={filter} onChange={(e) => setFilter(e.target.value as GradeFilter)} className="sage-input h-9 pl-9 text-sm min-w-44">
               <option value="all">Status: Semua</option>
               <option value="reviewed">Status: Reviewed</option>
               <option value="waiting_review">Status: Menunggu Review</option>
               <option value="needs_improvement">Status: Perlu Perbaikan</option>
-              <option value="has_appeal">Status: Banding Aktif</option>
             </select>
           </label>
           <label className="relative block">
             <FiFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--ink-500)]" />
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as GradeSort)} className="sage-input pl-10 min-w-52">
-              <option value="latest">Urutkan: Terbaru</option>
-              <option value="score_high">Urutkan: Nilai Tertinggi</option>
-              <option value="score_low">Urutkan: Nilai Terendah</option>
-              <option value="alphabet">Urutkan: Materi A-Z</option>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as GradeSort)} className="sage-input h-9 pl-9 text-sm min-w-44">
+              <option value="latest">Terbaru</option>
+              <option value="score_high">Nilai Tertinggi</option>
+              <option value="score_low">Nilai Terendah</option>
+              <option value="alphabet">Materi A-Z</option>
             </select>
           </label>
         </div>
@@ -544,10 +467,8 @@ export default function StudentGradesPage() {
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-slate-500">
-              <th className="px-3 py-2 font-medium">Kelas</th>
               <th className="px-3 py-2 font-medium">Konten</th>
-              <th className="px-3 py-2 font-medium">AI</th>
-              <th className="px-3 py-2 font-medium">Final</th>
+              <th className="px-3 py-2 font-medium">Skor</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Update</th>
               <th className="px-3 py-2 font-medium">Aksi</th>
@@ -556,21 +477,21 @@ export default function StudentGradesPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
                   Memuat nilai...
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-red-600">
+                <td colSpan={5} className="px-3 py-6 text-center text-red-600">
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && filteredRows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
                   Belum ada data nilai sesuai filter.
                 </td>
               </tr>
@@ -584,27 +505,27 @@ export default function StudentGradesPage() {
                 return (
                   <Fragment key={rowKey}>
                     <tr className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-3 py-3">
-                        <p className="font-medium text-slate-900">{row.className}</p>
-                        <button
-                          type="button"
-                          className="text-xs text-[color:var(--sage-700)] hover:underline"
-                          onClick={() => {
-                            setSelectedTeacherId(row.teacherId || null);
-                            setSelectedTeacherName(row.teacherName || null);
-                            setProfileModalOpen(true);
-                          }}
-                        >
-                          {row.teacherName || "-"}
-                        </button>
-                      </td>
                       <td className="px-3 py-3 text-slate-700">
-                        <p className="font-medium">{row.materialTitle}</p>
-                        <p className="text-[11px] text-slate-500">
-                          {row.materialType === "soal" ? "Soal" : row.materialType === "tugas" ? "Tugas" : "Materi"} • Submit {row.answeredQuestions}/{row.totalQuestions}
-                        </p>
+                        <p className="text-xs text-slate-500">{row.className}</p>
+                        <p className="font-medium text-slate-900">{row.materialTitle}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                          <span>{row.materialType === "soal" ? "Soal" : row.materialType === "tugas" ? "Tugas" : "Materi"}</span>
+                          <span>•</span>
+                          <span>Submit {row.answeredQuestions}/{row.totalQuestions}</span>
+                          <span>•</span>
+                          <button
+                            type="button"
+                            className="text-[color:var(--sage-700)] hover:underline"
+                            onClick={() => {
+                              setSelectedTeacherId(row.teacherId || null);
+                              setSelectedTeacherName(row.teacherName || null);
+                              setProfileModalOpen(true);
+                            }}
+                          >
+                            {row.teacherName || "-"}
+                          </button>
+                        </div>
                       </td>
-                      <td className="px-3 py-3 font-medium text-slate-700">{row.aiAverageScore == null ? "-" : row.aiAverageScore.toFixed(2)}</td>
                       <td className="px-3 py-3 font-semibold text-slate-900">{row.score == null ? "-" : row.score.toFixed(2)}</td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${status.cls}`}>{status.label}</span>
@@ -625,7 +546,7 @@ export default function StudentGradesPage() {
                             Detail
                           </button>
                           <Link
-                            href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}`}
+                            href={`/dashboard/student/classes/${row.classId}/materials/${row.materialId}?view=${row.materialType === "tugas" ? "tugas" : "soal"}`}
                             className="inline-flex items-center rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
                           >
                             Buka
@@ -635,14 +556,59 @@ export default function StudentGradesPage() {
                     </tr>
                     {expanded && (
                       <tr className="border-b border-slate-100 bg-slate-50/60">
-                        <td colSpan={7} className="px-3 py-3">
+                        <td colSpan={5} className="px-3 py-3">
                           <div className="grid gap-2">
+                            {row.questionItems.length > 0 && (
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-semibold text-slate-600">Detail Soal</p>
+                                <label className="text-xs text-slate-500 inline-flex items-center gap-2">
+                                  Urutkan:
+                                  <select
+                                    value={detailSortBy[rowKey] || "default"}
+                                    onChange={(e) =>
+                                      setDetailSortBy((prev) => ({
+                                        ...prev,
+                                        [rowKey]: e.target.value as "default" | "score_high" | "score_low" | "status",
+                                      }))
+                                    }
+                                    className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                                  >
+                                    <option value="default">Urutan Soal</option>
+                                    <option value="score_high">Nilai Tertinggi</option>
+                                    <option value="score_low">Nilai Terendah</option>
+                                    <option value="status">Status</option>
+                                  </select>
+                                </label>
+                              </div>
+                            )}
                             {row.questionItems.length === 0 && (
                               <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                                 Konten ini belum punya soal.
                               </div>
                             )}
-                            {row.questionItems.map((item, idx) => {
+                            {[...row.questionItems]
+                              .map((item, idx) => ({ item, idx }))
+                              .sort((a, b) => {
+                                const sortKey = detailSortBy[rowKey] || "default";
+                                if (sortKey === "default") return a.idx - b.idx;
+                                if (sortKey === "status") {
+                                  const order: Record<string, number> = {
+                                    reviewed: 1,
+                                    waiting_review: 2,
+                                    queued: 3,
+                                    processing: 4,
+                                    ai_failed: 5,
+                                    belum_submit: 6,
+                                  };
+                                  return (order[a.item.status] ?? 99) - (order[b.item.status] ?? 99);
+                                }
+                                const scoreA = a.item.finalScore ?? a.item.teacherScore ?? a.item.aiScore ?? -1;
+                                const scoreB = b.item.finalScore ?? b.item.teacherScore ?? b.item.aiScore ?? -1;
+                                if (sortKey === "score_high") return scoreB - scoreA;
+                                if (sortKey === "score_low") return scoreA - scoreB;
+                                return 0;
+                              })
+                              .map(({ item, idx }) => {
                               const appeal = item.submissionId ? appealsBySubmission[item.submissionId] : undefined;
                               const appealLabel = getAppealLabel(appeal?.status);
                               const appealTone = getAppealTone(appeal?.status);
@@ -768,55 +734,6 @@ export default function StudentGradesPage() {
               })}
           </tbody>
         </table>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <div className="sage-panel p-4">
-          <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <FiMessageSquare />
-            Feedback Terbaru
-          </p>
-          <div className="mt-3 space-y-3">
-            {allRows
-              .filter((row) => (row.latestFeedback || "").trim().length > 0)
-              .sort((a, b) => {
-                const at = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-                const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-                return bt - at;
-              })
-              .slice(0, 5)
-              .map((item) => (
-                <div key={`${item.classId}-${item.materialId}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">{item.className}</p>
-                  <p className="text-sm font-medium text-slate-900">{item.materialTitle}</p>
-                  <p className="mt-1 text-xs text-slate-700 line-clamp-3">{item.latestFeedback}</p>
-                  <Link href={`/dashboard/student/classes/${item.classId}/materials/${item.materialId}`} className="mt-2 inline-flex text-xs text-[color:var(--sage-700)] hover:underline">
-                    Buka materi
-                  </Link>
-                </div>
-              ))}
-            {allRows.filter((row) => (row.latestFeedback || "").trim().length > 0).length === 0 && (
-              <p className="text-sm text-slate-500">Belum ada feedback guru yang tercatat.</p>
-            )}
-          </div>
-        </div>
-        <div className="sage-panel p-4">
-          <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <FiBarChart2 />
-            Arah Perbaikan
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            <li className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              Prioritaskan materi dengan status <b>Perlu Perbaikan</b> agar dampak ke nilai rata-rata lebih cepat.
-            </li>
-            <li className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              Jika sudah submit tapi belum direview, pantau status <b>Menunggu Review</b>.
-            </li>
-            <li className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              Gunakan <b>Ajukan Banding</b> hanya saat ada ketidaksesuaian rubrik/feedback.
-            </li>
-          </ul>
-        </div>
       </section>
 
       <TeacherProfileModal

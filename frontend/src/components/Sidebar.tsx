@@ -80,6 +80,8 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
   // UI toggle from backend feature flag.
   // Default true so menu is visible unless explicitly disabled by superadmin.
   const [showUpdatesMenu, setShowUpdatesMenu] = useState(true);
+  const [showStudentAssignmentsMenu, setShowStudentAssignmentsMenu] = useState(true);
+  const [showStudentAnnouncementsMenu, setShowStudentAnnouncementsMenu] = useState(true);
   const [badgeMap, setBadgeMap] = useState<Record<string, boolean>>({});
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(DEFAULT_NOTIFICATION_POLL_INTERVAL_MS);
   const [teacherClasses, setTeacherClasses] = useState<TeacherClassItem[]>([]);
@@ -345,9 +347,11 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
         const body = await res.json().catch(() => ({}));
         const items = Array.isArray(body?.items) ? (body.items as PublicFeatureFlagItem[]) : [];
         const updatesMenuFlag = items.find((item) => item.key === "feature_show_updates_sidebar");
-        if (active && updatesMenuFlag) {
-          setShowUpdatesMenu(Boolean(updatesMenuFlag.value));
-        }
+        const studentAssignmentsFlag = items.find((item) => item.key === "feature_show_student_assignments_menu");
+        const studentAnnouncementsFlag = items.find((item) => item.key === "feature_show_student_announcements_menu");
+        if (active && updatesMenuFlag) setShowUpdatesMenu(Boolean(updatesMenuFlag.value));
+        if (active && studentAssignmentsFlag) setShowStudentAssignmentsMenu(Boolean(studentAssignmentsFlag.value));
+        if (active && studentAnnouncementsFlag) setShowStudentAnnouncementsMenu(Boolean(studentAnnouncementsFlag.value));
       } catch {
         // Keep default true to avoid accidental menu loss.
       }
@@ -480,12 +484,22 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
     variant: 'updates',
   }), [updatesLink]);
 
-  const navItems =
-    userRole === 'student'
-      ? studentNavItems
-      : userRole === 'superadmin'
-      ? superadminNavItems
-      : teacherNavItems;
+  const navItems = useMemo(() => {
+    const baseItems =
+      userRole === 'student'
+        ? studentNavItems
+        : userRole === 'superadmin'
+        ? superadminNavItems
+        : teacherNavItems;
+    if (userRole === "student") {
+      return baseItems.filter((item) => {
+        if (!showStudentAssignmentsMenu && item.href === "/dashboard/student/assignments") return false;
+        if (!showStudentAnnouncementsMenu && item.href === "/dashboard/student/announcements") return false;
+        return true;
+      });
+    }
+    return baseItems;
+  }, [userRole, studentNavItems, superadminNavItems, teacherNavItems, showStudentAssignmentsMenu, showStudentAnnouncementsMenu]);
   // Single source of truth for sidebar list:
   // this keeps future formatting changes localized in one place.
   const navItemsWithUpdates = useMemo(() => {

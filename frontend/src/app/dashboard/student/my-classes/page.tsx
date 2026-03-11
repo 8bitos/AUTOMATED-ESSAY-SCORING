@@ -100,6 +100,7 @@ export default function StudentMyClassesPage() {
   const [loadingSummaries, setLoadingSummaries] = useState(false);
   const [classQuery, setClassQuery] = useState('');
   const [classSort, setClassSort] = useState<"updated_desc" | "name_asc" | "pending_desc">("updated_desc");
+  const [pendingOpen, setPendingOpen] = useState(false);
   const browseDialogRef = useRef<HTMLDivElement | null>(null);
   const browseSearchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -399,100 +400,94 @@ export default function StudentMyClassesPage() {
   }, [browseOpen]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <header className="sage-panel p-6 flex flex-col gap-2">
         <p className="sage-pill">Kelas Saya</p>
         <h1 className="text-3xl text-slate-900">Daftar Kelas Aktif</h1>
         <p className="text-slate-500">
           Selamat datang, {user?.nama_lengkap} ({user?.peran})
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Total Kelas</p>
-            <p className="text-lg font-semibold text-slate-900">{dashboardSummary.totalKelas}</p>
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Gabung Kelas Baru</h2>
+              <p className="text-sm text-slate-500">Masukkan kode kelas dari guru Anda.</p>
+            </div>
+            <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
+              <form onSubmit={handleJoinClass} className="flex flex-1 flex-col gap-3 sm:flex-row">
+                <input
+                  id="join-class-input"
+                  type="text"
+                  value={classCode}
+                  onChange={(e) => setClassCode(e.target.value)}
+                  placeholder="Kode kelas"
+                  className="sage-input flex-1"
+                  required
+                />
+                <button type="submit" disabled={loading} className="sage-button whitespace-nowrap">
+                  {loading ? "Mengirim..." : "Gabung"}
+                </button>
+              </form>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <button type="button" className="sage-button-outline whitespace-nowrap" onClick={() => setBrowseOpen(true)}>
+                  Jelajah Kelas
+                </button>
+                {!fetchingClasses && pendingClasses.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPendingOpen((prev) => !prev)}
+                    className="whitespace-nowrap text-sm rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-red-700 hover:border-red-300 hover:bg-red-100"
+                  >
+                    Menunggu ACC ({pendingClasses.length})
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Soal Pending</p>
-            <p className="text-lg font-semibold text-slate-900">{loadingSummaries ? "-" : dashboardSummary.totalPendingSoal}</p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Total Tugas</p>
-            <p className="text-lg font-semibold text-slate-900">{loadingSummaries ? "-" : dashboardSummary.totalTugas}</p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Sudah Direview</p>
-            <p className="text-lg font-semibold text-slate-900">{loadingSummaries ? "-" : dashboardSummary.totalReviewedSoal}</p>
-          </div>
+          {joinNotice && (
+            <p className={`mt-3 text-sm ${joinNotice.type === "error" ? "text-red-500" : "text-slate-700"}`}>
+              {joinNotice.text}
+            </p>
+          )}
         </div>
-      </header>
-
-      <div className="sage-panel p-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Gabung Kelas Baru</h2>
-            <p className="text-sm text-slate-500">Masukkan kode kelas dari guru Anda.</p>
+        {!fetchingClasses && pendingClasses.length > 0 && pendingOpen && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {pendingClasses.map((item) => (
+                <div key={item.class_id} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <h3 className="text-sm font-semibold text-slate-900">{item.class_name}</h3>
+                  <p className="text-xs text-slate-600 mt-1">Kode: {item.class_code}</p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Guru:{" "}
+                    <button
+                      type="button"
+                      onClick={() => openTeacherProfile(item.teacher_id, item.teacher_name)}
+                      className="text-[color:var(--sage-700)] hover:underline"
+                    >
+                      {item.teacher_name || "-"}
+                    </button>
+                  </p>
+                  <p className="mt-2 text-[11px] text-amber-800">Status: Menunggu persetujuan</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Diajukan:{" "}
+                    {new Date(item.requested_at).toLocaleString("id-ID", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
-            <form onSubmit={handleJoinClass} className="flex flex-1 flex-col gap-3 sm:flex-row">
-              <input
-                id="join-class-input"
-                type="text"
-                value={classCode}
-                onChange={(e) => setClassCode(e.target.value)}
-                placeholder="Kode kelas"
-                className="sage-input flex-1"
-                required
-              />
-              <button type="submit" disabled={loading} className="sage-button whitespace-nowrap">
-                {loading ? "Mengirim..." : "Gabung"}
-              </button>
-            </form>
-            <button type="button" className="sage-button-outline whitespace-nowrap" onClick={() => setBrowseOpen(true)}>
-              Jelajah Kelas
-            </button>
-          </div>
-        </div>
-        {joinNotice && (
-          <p className={`mt-3 text-sm ${joinNotice.type === "error" ? "text-red-500" : "text-slate-700"}`}>
-            {joinNotice.text}
-          </p>
         )}
-      </div>
+      </header>
 
       {pageError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {pageError}
-        </div>
-      )}
-
-      {!fetchingClasses && pendingClasses.length > 0 && (
-        <div className="sage-panel p-6">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <h2 className="text-lg font-semibold text-slate-900">Menunggu ACC Guru</h2>
-            <span className="sage-pill">{pendingClasses.length} pending</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingClasses.map((item) => (
-              <div key={item.class_id} className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <h3 className="text-base font-semibold text-slate-900">{item.class_name}</h3>
-                <p className="text-sm text-slate-600 mt-1">Kode: {item.class_code}</p>
-                <p className="text-sm text-slate-600 mt-1">
-                  Guru:{" "}
-                  <button
-                    type="button"
-                    onClick={() => openTeacherProfile(item.teacher_id, item.teacher_name)}
-                    className="text-[color:var(--sage-700)] hover:underline"
-                  >
-                    {item.teacher_name || "-"}
-                  </button>
-                </p>
-                <p className="mt-2 text-xs text-amber-800">Status: Menunggu persetujuan</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Diajukan: {new Date(item.requested_at).toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                </p>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
@@ -522,8 +517,8 @@ export default function StudentMyClassesPage() {
         </div>
       ) : (
         <>
-          <div className="sage-panel p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="sage-panel p-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
                 type="text"
                 value={classQuery}
@@ -552,7 +547,7 @@ export default function StudentMyClassesPage() {
           {filteredClasses.map((cls) => (
             <div
               key={cls.id}
-              className={`rounded-2xl border border-slate-200 border-t-4 ${getClassCardAccent(cls.class_name, cls.class_code)} bg-white p-4 shadow-sm transition hover:shadow-md`}
+              className={`rounded-xl border border-slate-200 border-t-4 ${getClassCardAccent(cls.class_name, cls.class_code)} bg-white p-3 shadow-sm transition hover:shadow-md`}
             >
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">

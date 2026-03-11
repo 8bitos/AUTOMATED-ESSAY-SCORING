@@ -25,12 +25,16 @@ var featureFlagWhitelist = map[string]string{
 	"feature_enable_anomaly_alerts": "Aktifkan deteksi alert anomali",
 	"feature_enable_report_builder": "Aktifkan report builder superadmin",
 	"feature_show_updates_sidebar":  "Tampilkan menu Update Sistem/Revisi di sidebar semua role",
+	"feature_show_student_assignments_menu": "Tampilkan menu Materi & Tugas di sidebar siswa",
+	"feature_show_student_announcements_menu": "Tampilkan menu Pengumuman di sidebar siswa",
 }
 
 // Public flags are safe to expose to all authenticated users.
 // Use this list for UI-level toggles that must be consistent across roles.
 var publicFeatureFlagWhitelist = map[string]string{
 	"feature_show_updates_sidebar": "Tampilkan menu Update Sistem/Revisi di sidebar semua role",
+	"feature_show_student_assignments_menu": "Tampilkan menu Materi & Tugas di sidebar siswa",
+	"feature_show_student_announcements_menu": "Tampilkan menu Pengumuman di sidebar siswa",
 }
 
 func boolFromSettingValue(raw string, defaultValue bool) bool {
