@@ -5,6 +5,7 @@ import (
 	"api-backend/internal/services"
 	"api-backend/internal/utils" // Import utils for JWT
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,7 +50,14 @@ func (h *AuthHandlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Authenticate user using the identifier (email or username)
 	user, err := h.AuthService.AuthenticateUser(req.Identifier, req.Password)
 	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Invalid credentials")
+		switch {
+		case errors.Is(err, services.ErrAuthUserNotFound):
+			respondWithError(w, http.StatusUnauthorized, "Email/Username tidak ada.")
+		case errors.Is(err, services.ErrAuthInvalidPassword):
+			respondWithError(w, http.StatusUnauthorized, "Password salah.")
+		default:
+			respondWithError(w, http.StatusUnauthorized, "Invalid credentials")
+		}
 		return
 	}
 

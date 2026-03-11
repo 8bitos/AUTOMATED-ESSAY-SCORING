@@ -105,7 +105,7 @@ func (s *AuthService) AuthenticateUser(identifier, password string) (*models.Use
 
 	// Menangani kasus jika pengguna tidak ditemukan.
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrAuthUserNotFound
 	}
 	// Menangani error lain saat query database.
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *AuthService) AuthenticateUser(identifier, password string) (*models.Use
 	// Membandingkan password yang diberikan pengguna dengan password yang di-hash di database.
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials") // Password tidak cocok.
+		return nil, ErrAuthInvalidPassword // Password tidak cocok.
 	}
 
 	// Update last_login_at setelah login berhasil.
