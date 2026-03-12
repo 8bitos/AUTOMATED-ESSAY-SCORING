@@ -1,0 +1,9 @@
+id,judul,modul,precondition,langkah_uji,hasil_diharapkan,hasil_aktual,status,catatan
+TC-ESS-01,Buat Soal Esai (Rubrik Analitik),Penilaian Esai,"Guru login; Materi A tersedia","1) Buka Materi A -> Tambah Soal. 2) Isi teks soal. 3) Tambah rubrik analitik (min 1 aspek, min 2 skor). 4) Simpan.","Soal tampil di daftar; API /api/essay-questions sukses",,,,
+TC-ESS-02,Buat Soal Esai (Rubrik Holistik),Penilaian Esai,"Guru login; Materi A tersedia","1) Tambah Soal. 2) Pilih rubrik holistik. 3) Simpan.","Soal tersimpan; rubrik holistik tersimpan di DB",,,,
+TC-ESS-03,Submission Jawaban Siswa,Penilaian Esai,"Siswa login; Soal tersedia","1) Buka soal. 2) Isi jawaban panjang. 3) Submit.","Submission tersimpan; status penilaian AI muncul",,,,
+TC-ESS-04,Penilaian AI Selesai,Penilaian Esai,"Submission sudah dibuat","1) Tunggu proses AI. 2) Buka Penilaian guru.","Skor AI dan rubrik per aspek tampil",,,,
+TC-ESS-05,Guru Revisi Nilai,Penilaian Esai,"Submission tersedia di antrian","1) Buka submission. 2) Ubah nilai & feedback. 3) Simpan.","Revised score tersimpan; nilai akhir pakai revisi guru",,,,
+TC-ESS-10,Laporan Nilai (Filter & Export),Penilaian Esai,"Data submission tersedia","1) Buka Laporan Nilai. 2) Pilih kelas. 3) Filter tanggal. 4) Export CSV/Excel.","Rekap sesuai filter; file terunduh",,,,
+TC-SYS-01,Login,Gabungan Sistem,"Akun guru tersedia","1) Buka /login. 2) Isi kredensial valid. 3) Login.","Masuk dashboard",,,,
+TC-SYS-02,Buat Kelas,Kelas,"Guru login","1) Klik Tambah Kelas. 2) Isi form. 3) Simpan.","Kelas muncul di list; API /api/classes sukses",,,,

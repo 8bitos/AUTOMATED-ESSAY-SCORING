@@ -16,6 +16,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build-and-push:
@@ -67,6 +68,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           images: ${{ matrix.image }}
           tags: |
             type=sha,format=short
