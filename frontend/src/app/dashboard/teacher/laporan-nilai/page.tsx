@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiBarChart2, FiDownload, FiSearch } from "react-icons/fi";
 
@@ -18,6 +19,12 @@ interface StudentSummary {
   pending_submissions: number;
   average_final_score?: number | null;
   latest_submitted_at?: string | null;
+}
+
+interface MaterialItem {
+  id: string;
+  judul: string;
+  material_type?: "materi" | "soal" | "tugas";
 }
 
 interface SummaryResponse {
@@ -70,10 +77,15 @@ const formatScore = (value?: number | null) => {
 export default function TeacherLaporanNilaiPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState("");
+  const [materials, setMaterials] = useState<MaterialItem[]>([]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState("");
+  const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
@@ -102,6 +114,24 @@ export default function TeacherLaporanNilaiPage() {
     }
   }, [selectedClassId]);
 
+  const fetchMaterials = useCallback(async () => {
+    if (!selectedClassId) {
+      setMaterials([]);
+      return;
+    }
+    setLoadingMaterials(true);
+    try {
+      const res = await fetch(`${API_URL}/classes/${selectedClassId}/materials`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Gagal memuat konten kelas.");
+      setMaterials(Array.isArray(data) ? data : []);
+    } catch {
+      setMaterials([]);
+    } finally {
+      setLoadingMaterials(false);
+    }
+  }, [selectedClassId]);
+
   const fetchSummary = useCallback(async () => {
     if (!selectedClassId) return;
     setLoadingSummary(true);
@@ -109,6 +139,9 @@ export default function TeacherLaporanNilaiPage() {
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
+      if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
       if (sortBy) params.set("sort", sortBy);
       params.set("page", String(page));
       params.set("limit", String(limit));
@@ -130,7 +163,12 @@ export default function TeacherLaporanNilaiPage() {
     if (!selectedClassId) return;
     setLoadingDistribution(true);
     try {
-      const res = await fetch(`${API_URL}/reports/classes/${selectedClassId}/distribution`, {
+      const params = new URLSearchParams();
+      if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      const url = `${API_URL}/reports/classes/${selectedClassId}/distribution?${params.toString()}`;
+      const res = await fetch(url, {
         credentials: "include",
       });
       const data = await res.json();
@@ -143,14 +181,17 @@ export default function TeacherLaporanNilaiPage() {
     }
   }, [selectedClassId]);
 
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(async (format: "csv" | "xlsx") => {
     if (!selectedClassId) return;
     setExporting(true);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
+      if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
       if (sortBy) params.set("sort", sortBy);
-      params.set("format", "csv");
+      params.set("format", format);
       const res = await fetch(`${API_URL}/reports/classes/${selectedClassId}/export?${params.toString()}`, {
         credentials: "include",
       });
@@ -162,7 +203,7 @@ export default function TeacherLaporanNilaiPage() {
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `laporan-nilai-${selectedClassId}.csv`;
+      anchor.download = `laporan-nilai-${selectedClassId}.${format}`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -172,7 +213,7 @@ export default function TeacherLaporanNilaiPage() {
     } finally {
       setExporting(false);
     }
-  }, [query, selectedClassId, sortBy]);
+  }, [dateFrom, dateTo, query, selectedClassId, selectedMaterialId, sortBy]);
 
   useEffect(() => {
     fetchClasses();
@@ -189,8 +230,14 @@ export default function TeacherLaporanNilaiPage() {
   }, [fetchDistribution, selectedClassId]);
 
   useEffect(() => {
+    if (!selectedClassId) return;
+    fetchMaterials();
+    setSelectedMaterialId("");
+  }, [fetchMaterials, selectedClassId]);
+
+  useEffect(() => {
     setPage(1);
-  }, [query, sortBy, selectedClassId, limit]);
+  }, [query, sortBy, selectedClassId, selectedMaterialId, dateFrom, dateTo, limit]);
 
   const maxBucket = useMemo(() => {
     if (!distribution?.buckets?.length) return 0;
@@ -205,7 +252,7 @@ export default function TeacherLaporanNilaiPage() {
       </div>
 
       <div className="sage-panel p-5 space-y-4">
-        <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_auto] md:items-end">
+        <div className="grid gap-3 lg:grid-cols-[1.2fr_1.2fr_1fr_1fr_1fr_auto_auto] lg:items-end">
           <div>
             <label className="text-xs uppercase tracking-wide text-slate-500">Pilih Kelas</label>
             <select
@@ -220,6 +267,40 @@ export default function TeacherLaporanNilaiPage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-slate-500">Konten / Section</label>
+            <select
+              value={selectedMaterialId}
+              onChange={(e) => setSelectedMaterialId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              disabled={!selectedClassId || loadingMaterials}
+            >
+              <option value="">Semua konten</option>
+              {materials.map((mat) => (
+                <option key={mat.id} value={mat.id}>
+                  {mat.judul}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-slate-500">Dari</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-slate-500">Sampai</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            />
           </div>
           <div>
             <label className="text-xs uppercase tracking-wide text-slate-500">Cari Siswa</label>
@@ -248,12 +329,21 @@ export default function TeacherLaporanNilaiPage() {
           </div>
           <button
             type="button"
-            onClick={handleExport}
+            onClick={() => handleExport("csv")}
             disabled={!selectedClassId || exporting}
             className="sage-button inline-flex items-center gap-2"
           >
             <FiDownload />
             {exporting ? "Exporting..." : "Export CSV"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExport("xlsx")}
+            disabled={!selectedClassId || exporting}
+            className="sage-button-outline inline-flex items-center gap-2"
+          >
+            <FiDownload />
+            {exporting ? "Exporting..." : "Export Excel"}
           </button>
         </div>
 
@@ -341,12 +431,13 @@ export default function TeacherLaporanNilaiPage() {
                 <th className="px-3 py-2 text-right">Reviewed</th>
                 <th className="px-3 py-2 text-right">Pending</th>
                 <th className="px-3 py-2 text-left">Terakhir Submit</th>
+                <th className="px-3 py-2 text-left">Detail</th>
               </tr>
             </thead>
             <tbody>
               {loadingSummary ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Memuat data...
                   </td>
                 </tr>
@@ -360,11 +451,19 @@ export default function TeacherLaporanNilaiPage() {
                     <td className="px-3 py-2 text-right">{item.reviewed_submissions}</td>
                     <td className="px-3 py-2 text-right">{item.pending_submissions}</td>
                     <td className="px-3 py-2 text-slate-600">{formatDate(item.latest_submitted_at)}</td>
+                    <td className="px-3 py-2">
+                      <Link
+                        href={`/dashboard/teacher/penilaian?classId=${selectedClassId}`}
+                        className="text-xs text-[color:var(--sage-700)] hover:underline"
+                      >
+                        Buka
+                      </Link>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Belum ada data siswa untuk kelas ini.
                   </td>
                 </tr>

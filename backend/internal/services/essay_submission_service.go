@@ -1251,7 +1251,7 @@ func (s *EssaySubmissionService) ListMaterialStudentSubmissionSummaries(material
 	return result, nil
 }
 
-func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, teacherID, query, sortBy string, page, size int) (*models.ClassStudentSubmissionSummaryListResponse, error) {
+func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, teacherID, materialID string, from, to *time.Time, query, sortBy string, page, size int) (*models.ClassStudentSubmissionSummaryListResponse, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -1266,6 +1266,21 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, te
 	args := []interface{}{classID, teacherID}
 	argPos := 3
 
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if from != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
+		args = append(args, *from)
+		argPos++
+	}
+	if to != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at <= $%d", argPos))
+		args = append(args, *to)
+		argPos++
+	}
 	if trimmed := strings.TrimSpace(query); trimmed != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
 		args = append(args, "%"+trimmed+"%")
@@ -1377,11 +1392,26 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, te
 	return result, nil
 }
 
-func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID, teacherID, query, sortBy string) ([]models.ClassStudentSubmissionSummary, error) {
+func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID, teacherID, materialID string, from, to *time.Time, query, sortBy string) ([]models.ClassStudentSubmissionSummary, error) {
 	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
 	args := []interface{}{classID, teacherID}
 	argPos := 3
 
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if from != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
+		args = append(args, *from)
+		argPos++
+	}
+	if to != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at <= $%d", argPos))
+		args = append(args, *to)
+		argPos++
+	}
 	if trimmed := strings.TrimSpace(query); trimmed != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
 		args = append(args, "%"+trimmed+"%")
@@ -1472,7 +1502,28 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID,
 	return items, nil
 }
 
-func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID string) (*models.ClassScoreDistributionResponse, error) {
+func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID, materialID string, from, to *time.Time) (*models.ClassScoreDistributionResponse, error) {
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if from != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
+		args = append(args, *from)
+		argPos++
+	}
+	if to != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at <= $%d", argPos))
+		args = append(args, *to)
+		argPos++
+	}
+
+	whereSQL := strings.Join(whereClauses, " AND ")
+
 	var totalSubmissions, reviewedSubmissions int
 	if err := s.db.QueryRow(`
 		SELECT
@@ -1483,8 +1534,8 @@ func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID st
 		JOIN materials m ON m.id = eq.material_id
 		JOIN classes c ON c.id = m.class_id
 		LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
-		WHERE c.id = $1 AND c.teacher_id = $2
-	`, classID, teacherID).Scan(&totalSubmissions, &reviewedSubmissions); err != nil {
+		WHERE `+whereSQL+`
+	`, args...).Scan(&totalSubmissions, &reviewedSubmissions); err != nil {
 		return nil, fmt.Errorf("failed to load class submission summary: %w", err)
 	}
 
@@ -1509,7 +1560,7 @@ func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID st
 			JOIN classes c ON c.id = m.class_id
 			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
 			LEFT JOIN ai_results ar ON ar.submission_id = es.id
-			WHERE c.id = $1 AND c.teacher_id = $2 AND COALESCE(tr.revised_score, ar.skor_ai) IS NOT NULL
+			WHERE `+whereSQL+` AND COALESCE(tr.revised_score, ar.skor_ai) IS NOT NULL
 		)
 		SELECT
 			COUNT(*)::int AS total,
@@ -1522,7 +1573,7 @@ func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID st
 			SUM(CASE WHEN score >= 80 AND score < 90 THEN 1 ELSE 0 END)::int AS b80_89,
 			SUM(CASE WHEN score >= 90 THEN 1 ELSE 0 END)::int AS b90_100
 		FROM scored
-	`, classID, teacherID).Scan(&row.Total, &row.Avg, &row.Min, &row.Max, &row.B0_59, &row.B60_69, &row.B70_79, &row.B80_89, &row.B90_100); err != nil {
+	`, args...).Scan(&row.Total, &row.Avg, &row.Min, &row.Max, &row.B0_59, &row.B60_69, &row.B70_79, &row.B80_89, &row.B90_100); err != nil {
 		return nil, fmt.Errorf("failed to load class score distribution: %w", err)
 	}
 

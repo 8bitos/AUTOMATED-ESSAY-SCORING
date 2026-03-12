@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/xuri/excelize/v2"
 )
 
 // EssaySubmissionHandlers holds dependencies for essay submission-related handlers.
@@ -24,6 +26,29 @@ type EssaySubmissionHandlers struct {
 // NewEssaySubmissionHandlers creates a new instance of EssaySubmissionHandlers.
 func NewEssaySubmissionHandlers(s *services.EssaySubmissionService, ars *services.AIResultService) *EssaySubmissionHandlers {
 	return &EssaySubmissionHandlers{Service: s, AIResultService: ars}
+}
+
+func parseReportDate(raw string, isEnd bool) (*time.Time, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	layouts := []string{"2006-01-02", "2006-01-02T15:04", time.RFC3339}
+	var parsed time.Time
+	var err error
+	for _, layout := range layouts {
+		parsed, err = time.Parse(layout, trimmed)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("invalid date format")
+	}
+	if isEnd && len(trimmed) == 10 {
+		parsed = parsed.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+	}
+	return &parsed, nil
 }
 
 // ----------------------------
@@ -237,7 +262,18 @@ func (h *EssaySubmissionHandlers) GetClassStudentSubmissionSummariesHandler(w ht
 	}
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	materialID := strings.TrimSpace(r.URL.Query().Get("materialId"))
 	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
+	dateFrom, err := parseReportDate(r.URL.Query().Get("dateFrom"), false)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid dateFrom format")
+		return
+	}
+	dateTo, err := parseReportDate(r.URL.Query().Get("dateTo"), true)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid dateTo format")
+		return
+	}
 	page := 1
 	size := 10
 	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
@@ -251,7 +287,7 @@ func (h *EssaySubmissionHandlers) GetClassStudentSubmissionSummariesHandler(w ht
 		}
 	}
 
-	result, err := h.Service.ListClassStudentSubmissionSummaries(classID, teacherID, q, sortBy, page, size)
+	result, err := h.Service.ListClassStudentSubmissionSummaries(classID, teacherID, materialID, dateFrom, dateTo, q, sortBy, page, size)
 	if err != nil {
 		log.Printf("ERROR: Failed to list student submission summaries for class %s: %v", classID, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve student submission summaries")
@@ -273,7 +309,19 @@ func (h *EssaySubmissionHandlers) GetClassScoreDistributionHandler(w http.Respon
 		return
 	}
 
-	result, err := h.Service.GetClassScoreDistribution(classID, teacherID)
+	materialID := strings.TrimSpace(r.URL.Query().Get("materialId"))
+	dateFrom, err := parseReportDate(r.URL.Query().Get("dateFrom"), false)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid dateFrom format")
+		return
+	}
+	dateTo, err := parseReportDate(r.URL.Query().Get("dateTo"), true)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid dateTo format")
+		return
+	}
+
+	result, err := h.Service.GetClassScoreDistribution(classID, teacherID, materialID, dateFrom, dateTo)
 	if err != nil {
 		log.Printf("ERROR: Failed to load score distribution for class %s: %v", classID, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to load score distribution")
@@ -296,12 +344,72 @@ func (h *EssaySubmissionHandlers) ExportClassStudentSummariesHandler(w http.Resp
 	}
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	materialID := strings.TrimSpace(r.URL.Query().Get("materialId"))
 	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	dateFrom, err := parseReportDate(r.URL.Query().Get("dateFrom"), false)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid dateFrom format")
+		return
+	}
+	dateTo, err := parseReportDate(r.URL.Query().Get("dateTo"), true)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid dateTo format")
+		return
+	}
 
-	items, err := h.Service.ListClassStudentSubmissionSummariesAll(classID, teacherID, q, sortBy)
+	items, err := h.Service.ListClassStudentSubmissionSummariesAll(classID, teacherID, materialID, dateFrom, dateTo, q, sortBy)
 	if err != nil {
 		log.Printf("ERROR: Failed to export student submission summaries for class %s: %v", classID, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to export student submission summaries")
+		return
+	}
+
+	if format == "xlsx" {
+		file := excelize.NewFile()
+		sheet := file.GetSheetName(0)
+		headers := []string{
+			"student_id",
+			"student_name",
+			"student_email",
+			"total_submissions",
+			"reviewed_submissions",
+			"pending_submissions",
+			"average_final_score",
+			"latest_submitted_at",
+		}
+		for idx, header := range headers {
+			cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
+			_ = file.SetCellValue(sheet, cell, header)
+		}
+		for rowIdx, item := range items {
+			row := rowIdx + 2
+			avg := ""
+			if item.AverageFinalScore != nil {
+				avg = fmt.Sprintf("%.2f", *item.AverageFinalScore)
+			}
+			latest := ""
+			if item.LatestSubmittedAt != nil {
+				latest = item.LatestSubmittedAt.Format("2006-01-02 15:04:05")
+			}
+			values := []interface{}{
+				item.StudentID,
+				item.StudentName,
+				item.StudentEmail,
+				item.TotalSubmissions,
+				item.ReviewedSubmissions,
+				item.PendingSubmissions,
+				avg,
+				latest,
+			}
+			for colIdx, value := range values {
+				cell, _ := excelize.CoordinatesToCellName(colIdx+1, row)
+				_ = file.SetCellValue(sheet, cell, value)
+			}
+		}
+		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"laporan-nilai-%s.xlsx\"", classID))
+		_ = file.Write(w)
 		return
 	}
 
