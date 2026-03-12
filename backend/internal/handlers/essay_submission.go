@@ -3,8 +3,10 @@ package handlers
 import (
 	"api-backend/internal/models"
 	"api-backend/internal/services"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -219,6 +221,126 @@ func (h *EssaySubmissionHandlers) GetMaterialSubmissionsByStudentHandler(w http.
 		return
 	}
 	respondWithJSON(w, http.StatusOK, submissions)
+}
+
+func (h *EssaySubmissionHandlers) GetClassStudentSubmissionSummariesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	classID, ok := vars["classId"]
+	if !ok || strings.TrimSpace(classID) == "" {
+		respondWithError(w, http.StatusBadRequest, "Class ID is missing")
+		return
+	}
+	teacherID, ok := r.Context().Value("userID").(string)
+	if !ok || strings.TrimSpace(teacherID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
+	page := 1
+	size := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			page = parsed
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			size = parsed
+		}
+	}
+
+	result, err := h.Service.ListClassStudentSubmissionSummaries(classID, teacherID, q, sortBy, page, size)
+	if err != nil {
+		log.Printf("ERROR: Failed to list student submission summaries for class %s: %v", classID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve student submission summaries")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, result)
+}
+
+func (h *EssaySubmissionHandlers) GetClassScoreDistributionHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	classID, ok := vars["classId"]
+	if !ok || strings.TrimSpace(classID) == "" {
+		respondWithError(w, http.StatusBadRequest, "Class ID is missing")
+		return
+	}
+	teacherID, ok := r.Context().Value("userID").(string)
+	if !ok || strings.TrimSpace(teacherID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	result, err := h.Service.GetClassScoreDistribution(classID, teacherID)
+	if err != nil {
+		log.Printf("ERROR: Failed to load score distribution for class %s: %v", classID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to load score distribution")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, result)
+}
+
+func (h *EssaySubmissionHandlers) ExportClassStudentSummariesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	classID, ok := vars["classId"]
+	if !ok || strings.TrimSpace(classID) == "" {
+		respondWithError(w, http.StatusBadRequest, "Class ID is missing")
+		return
+	}
+	teacherID, ok := r.Context().Value("userID").(string)
+	if !ok || strings.TrimSpace(teacherID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
+
+	items, err := h.Service.ListClassStudentSubmissionSummariesAll(classID, teacherID, q, sortBy)
+	if err != nil {
+		log.Printf("ERROR: Failed to export student submission summaries for class %s: %v", classID, err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to export student submission summaries")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"laporan-nilai-%s.csv\"", classID))
+
+	writer := csv.NewWriter(w)
+	_ = writer.Write([]string{
+		"student_id",
+		"student_name",
+		"student_email",
+		"total_submissions",
+		"reviewed_submissions",
+		"pending_submissions",
+		"average_final_score",
+		"latest_submitted_at",
+	})
+
+	for _, item := range items {
+		avg := ""
+		if item.AverageFinalScore != nil {
+			avg = fmt.Sprintf("%.2f", *item.AverageFinalScore)
+		}
+		latest := ""
+		if item.LatestSubmittedAt != nil {
+			latest = item.LatestSubmittedAt.Format("2006-01-02 15:04:05")
+		}
+		_ = writer.Write([]string{
+			item.StudentID,
+			item.StudentName,
+			item.StudentEmail,
+			strconv.Itoa(item.TotalSubmissions),
+			strconv.Itoa(item.ReviewedSubmissions),
+			strconv.Itoa(item.PendingSubmissions),
+			avg,
+			latest,
+		})
+	}
+	writer.Flush()
 }
 
 // ----------------------------

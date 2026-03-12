@@ -1251,6 +1251,308 @@ func (s *EssaySubmissionService) ListMaterialStudentSubmissionSummaries(material
 	return result, nil
 }
 
+func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, teacherID, query, sortBy string, page, size int) (*models.ClassStudentSubmissionSummaryListResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 10
+	}
+	if size > 50 {
+		size = 50
+	}
+
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+
+	if trimmed := strings.TrimSpace(query); trimmed != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
+		args = append(args, "%"+trimmed+"%")
+		argPos++
+	}
+
+	baseCTE := `
+		WITH grouped AS (
+			SELECT
+				es.siswa_id AS student_id,
+				u.nama_lengkap AS student_name,
+				u.email AS student_email,
+				COUNT(es.id)::int AS total_submissions,
+				SUM(CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END)::int AS reviewed_submissions,
+				MAX(es.submitted_at) AS latest_submitted_at,
+				AVG(COALESCE(tr.revised_score, ar.skor_ai)) AS average_final_score
+			FROM essay_submissions es
+			JOIN essay_questions eq ON eq.id = es.soal_id
+			JOIN materials m ON m.id = eq.material_id
+			JOIN classes c ON c.id = m.class_id
+			JOIN users u ON u.id = es.siswa_id
+			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+			LEFT JOIN ai_results ar ON ar.submission_id = es.id
+			WHERE ` + strings.Join(whereClauses, " AND ") + `
+			GROUP BY es.siswa_id, u.nama_lengkap, u.email
+		)
+	`
+
+	countQuery := baseCTE + `SELECT COUNT(*) FROM grouped`
+	var total int64
+	if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count class student summaries: %w", err)
+	}
+
+	totalSubmissionsQuery := baseCTE + `SELECT COALESCE(SUM(total_submissions), 0) FROM grouped`
+	var totalSubmissions int64
+	if err := s.db.QueryRow(totalSubmissionsQuery, args...).Scan(&totalSubmissions); err != nil {
+		return nil, fmt.Errorf("failed to sum class submissions: %w", err)
+	}
+
+	orderBy := "latest_submitted_at DESC, student_name ASC"
+	switch strings.TrimSpace(sortBy) {
+	case "alpha":
+		orderBy = "student_name ASC"
+	case "pending_desc":
+		orderBy = "(total_submissions - reviewed_submissions) DESC, latest_submitted_at DESC"
+	case "pending_asc":
+		orderBy = "(total_submissions - reviewed_submissions) ASC, latest_submitted_at DESC"
+	}
+
+	offset := (page - 1) * size
+	dataQuery := baseCTE + fmt.Sprintf(`
+		SELECT
+			student_id,
+			student_name,
+			student_email,
+			total_submissions,
+			reviewed_submissions,
+			(total_submissions - reviewed_submissions) AS pending_submissions,
+			average_final_score,
+			latest_submitted_at
+		FROM grouped
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d
+	`, orderBy, argPos, argPos+1)
+
+	queryArgs := append(args, size, offset)
+	rows, err := s.db.Query(dataQuery, queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query class student summaries: %w", err)
+	}
+	defer rows.Close()
+
+	result := &models.ClassStudentSubmissionSummaryListResponse{
+		Items:            []models.ClassStudentSubmissionSummary{},
+		Total:            total,
+		Page:             page,
+		Size:             size,
+		TotalSubmissions: totalSubmissions,
+	}
+	for rows.Next() {
+		var item models.ClassStudentSubmissionSummary
+		var avgScore sql.NullFloat64
+		var latestSubmitted sql.NullTime
+		if err := rows.Scan(
+			&item.StudentID,
+			&item.StudentName,
+			&item.StudentEmail,
+			&item.TotalSubmissions,
+			&item.ReviewedSubmissions,
+			&item.PendingSubmissions,
+			&avgScore,
+			&latestSubmitted,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan class student summary: %w", err)
+		}
+		if avgScore.Valid {
+			item.AverageFinalScore = &avgScore.Float64
+		}
+		if latestSubmitted.Valid {
+			ts := latestSubmitted.Time
+			item.LatestSubmittedAt = &ts
+		}
+		result.Items = append(result.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during class student summaries iteration: %w", err)
+	}
+	return result, nil
+}
+
+func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID, teacherID, query, sortBy string) ([]models.ClassStudentSubmissionSummary, error) {
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+
+	if trimmed := strings.TrimSpace(query); trimmed != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
+		args = append(args, "%"+trimmed+"%")
+		argPos++
+	}
+
+	baseCTE := `
+		WITH grouped AS (
+			SELECT
+				es.siswa_id AS student_id,
+				u.nama_lengkap AS student_name,
+				u.email AS student_email,
+				COUNT(es.id)::int AS total_submissions,
+				SUM(CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END)::int AS reviewed_submissions,
+				MAX(es.submitted_at) AS latest_submitted_at,
+				AVG(COALESCE(tr.revised_score, ar.skor_ai)) AS average_final_score
+			FROM essay_submissions es
+			JOIN essay_questions eq ON eq.id = es.soal_id
+			JOIN materials m ON m.id = eq.material_id
+			JOIN classes c ON c.id = m.class_id
+			JOIN users u ON u.id = es.siswa_id
+			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+			LEFT JOIN ai_results ar ON ar.submission_id = es.id
+			WHERE ` + strings.Join(whereClauses, " AND ") + `
+			GROUP BY es.siswa_id, u.nama_lengkap, u.email
+		)
+	`
+
+	orderBy := "latest_submitted_at DESC, student_name ASC"
+	switch strings.TrimSpace(sortBy) {
+	case "alpha":
+		orderBy = "student_name ASC"
+	case "pending_desc":
+		orderBy = "(total_submissions - reviewed_submissions) DESC, latest_submitted_at DESC"
+	case "pending_asc":
+		orderBy = "(total_submissions - reviewed_submissions) ASC, latest_submitted_at DESC"
+	}
+
+	dataQuery := baseCTE + fmt.Sprintf(`
+		SELECT
+			student_id,
+			student_name,
+			student_email,
+			total_submissions,
+			reviewed_submissions,
+			(total_submissions - reviewed_submissions) AS pending_submissions,
+			average_final_score,
+			latest_submitted_at
+		FROM grouped
+		ORDER BY %s
+	`, orderBy)
+
+	rows, err := s.db.Query(dataQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query class student summaries export: %w", err)
+	}
+	defer rows.Close()
+
+	items := []models.ClassStudentSubmissionSummary{}
+	for rows.Next() {
+		var item models.ClassStudentSubmissionSummary
+		var avgScore sql.NullFloat64
+		var latestSubmitted sql.NullTime
+		if err := rows.Scan(
+			&item.StudentID,
+			&item.StudentName,
+			&item.StudentEmail,
+			&item.TotalSubmissions,
+			&item.ReviewedSubmissions,
+			&item.PendingSubmissions,
+			&avgScore,
+			&latestSubmitted,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan class student summary export: %w", err)
+		}
+		if avgScore.Valid {
+			item.AverageFinalScore = &avgScore.Float64
+		}
+		if latestSubmitted.Valid {
+			ts := latestSubmitted.Time
+			item.LatestSubmittedAt = &ts
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during class student summaries export iteration: %w", err)
+	}
+	return items, nil
+}
+
+func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID string) (*models.ClassScoreDistributionResponse, error) {
+	var totalSubmissions, reviewedSubmissions int
+	if err := s.db.QueryRow(`
+		SELECT
+			COUNT(es.id)::int AS total_submissions,
+			COALESCE(SUM(CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END), 0)::int AS reviewed_submissions
+		FROM essay_submissions es
+		JOIN essay_questions eq ON eq.id = es.soal_id
+		JOIN materials m ON m.id = eq.material_id
+		JOIN classes c ON c.id = m.class_id
+		LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+		WHERE c.id = $1 AND c.teacher_id = $2
+	`, classID, teacherID).Scan(&totalSubmissions, &reviewedSubmissions); err != nil {
+		return nil, fmt.Errorf("failed to load class submission summary: %w", err)
+	}
+
+	type distRow struct {
+		Total  int
+		Avg    sql.NullFloat64
+		Min    sql.NullFloat64
+		Max    sql.NullFloat64
+		B0_59  int
+		B60_69 int
+		B70_79 int
+		B80_89 int
+		B90_100 int
+	}
+	var row distRow
+	if err := s.db.QueryRow(`
+		WITH scored AS (
+			SELECT COALESCE(tr.revised_score, ar.skor_ai) AS score
+			FROM essay_submissions es
+			JOIN essay_questions eq ON eq.id = es.soal_id
+			JOIN materials m ON m.id = eq.material_id
+			JOIN classes c ON c.id = m.class_id
+			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+			LEFT JOIN ai_results ar ON ar.submission_id = es.id
+			WHERE c.id = $1 AND c.teacher_id = $2 AND COALESCE(tr.revised_score, ar.skor_ai) IS NOT NULL
+		)
+		SELECT
+			COUNT(*)::int AS total,
+			AVG(score) AS avg,
+			MIN(score) AS min,
+			MAX(score) AS max,
+			SUM(CASE WHEN score < 60 THEN 1 ELSE 0 END)::int AS b0_59,
+			SUM(CASE WHEN score >= 60 AND score < 70 THEN 1 ELSE 0 END)::int AS b60_69,
+			SUM(CASE WHEN score >= 70 AND score < 80 THEN 1 ELSE 0 END)::int AS b70_79,
+			SUM(CASE WHEN score >= 80 AND score < 90 THEN 1 ELSE 0 END)::int AS b80_89,
+			SUM(CASE WHEN score >= 90 THEN 1 ELSE 0 END)::int AS b90_100
+		FROM scored
+	`, classID, teacherID).Scan(&row.Total, &row.Avg, &row.Min, &row.Max, &row.B0_59, &row.B60_69, &row.B70_79, &row.B80_89, &row.B90_100); err != nil {
+		return nil, fmt.Errorf("failed to load class score distribution: %w", err)
+	}
+
+	resp := &models.ClassScoreDistributionResponse{
+		Buckets: []models.ClassScoreDistributionBucket{
+			{Label: "< 60", Min: 0, Max: 59, Count: row.B0_59},
+			{Label: "60-69", Min: 60, Max: 69, Count: row.B60_69},
+			{Label: "70-79", Min: 70, Max: 79, Count: row.B70_79},
+			{Label: "80-89", Min: 80, Max: 89, Count: row.B80_89},
+			{Label: ">= 90", Min: 90, Max: 100, Count: row.B90_100},
+		},
+		Total:            row.Total,
+		Reviewed:         reviewedSubmissions,
+		Pending:          totalSubmissions - reviewedSubmissions,
+		TotalSubmissions: totalSubmissions,
+	}
+
+	if row.Avg.Valid {
+		resp.Average = &row.Avg.Float64
+	}
+	if row.Min.Valid {
+		resp.Min = &row.Min.Float64
+	}
+	if row.Max.Valid {
+		resp.Max = &row.Max.Float64
+	}
+
+	return resp, nil
+}
+
 func (s *EssaySubmissionService) GetMaterialSubmissionsByStudent(materialID, teacherID, studentID string) ([]models.EssaySubmission, error) {
 	query := `
 		SELECT

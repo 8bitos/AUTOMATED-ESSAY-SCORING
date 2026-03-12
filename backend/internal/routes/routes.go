@@ -210,6 +210,9 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	teacherRouter.HandleFunc("/essay-questions/{questionId}/submissions", essaySubmissionHandlers.GetEssaySubmissionsByQuestionIDHandler).Methods("GET") // Mendapatkan submission esai berdasarkan pertanyaan.
 	teacherRouter.HandleFunc("/materials/{materialId}/student-submission-summaries", essaySubmissionHandlers.GetMaterialStudentSubmissionSummariesHandler).Methods("GET")
 	teacherRouter.HandleFunc("/materials/{materialId}/students/{studentId}/submissions", essaySubmissionHandlers.GetMaterialSubmissionsByStudentHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/students", essaySubmissionHandlers.GetClassStudentSubmissionSummariesHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/distribution", essaySubmissionHandlers.GetClassScoreDistributionHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/export", essaySubmissionHandlers.ExportClassStudentSummariesHandler).Methods("GET")
 
 	// --- Rute Khusus Superadmin ---
 	adminRouter := protectedRouter.PathPrefix("/admin").Subrouter()

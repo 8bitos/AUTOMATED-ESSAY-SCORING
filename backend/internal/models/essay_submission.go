@@ -58,3 +58,6 @@ type MaterialStudentSubmissionSummaryListResponse struct {
 	Size             int                                `json:"size"`
 	TotalSubmissions int64                              `json:"total_submissions"`
 }
+
+type ClassStudentSubmissionSummary = MaterialStudentSubmissionSummary
+type ClassStudentSubmissionSummaryListResponse = MaterialStudentSubmissionSummaryListResponse
