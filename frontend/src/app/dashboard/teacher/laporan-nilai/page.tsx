@@ -252,8 +252,8 @@ export default function TeacherLaporanNilaiPage() {
       </div>
 
       <div className="sage-panel p-5 space-y-4">
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_1.2fr_1fr_1fr_1fr_auto_auto] lg:items-end">
-          <div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
             <label className="text-xs uppercase tracking-wide text-slate-500">Pilih Kelas</label>
             <select
               value={selectedClassId}
@@ -268,7 +268,7 @@ export default function TeacherLaporanNilaiPage() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="min-w-[220px] flex-1">
             <label className="text-xs uppercase tracking-wide text-slate-500">Konten / Section</label>
             <select
               value={selectedMaterialId}
@@ -284,7 +284,7 @@ export default function TeacherLaporanNilaiPage() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="min-w-[160px]">
             <label className="text-xs uppercase tracking-wide text-slate-500">Dari</label>
             <input
               type="date"
@@ -293,7 +293,7 @@ export default function TeacherLaporanNilaiPage() {
               className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
             />
           </div>
-          <div>
+          <div className="min-w-[160px]">
             <label className="text-xs uppercase tracking-wide text-slate-500">Sampai</label>
             <input
               type="date"
@@ -302,7 +302,7 @@ export default function TeacherLaporanNilaiPage() {
               className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
             />
           </div>
-          <div>
+          <div className="min-w-[200px] flex-1">
             <label className="text-xs uppercase tracking-wide text-slate-500">Cari Siswa</label>
             <div className="mt-1 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
               <FiSearch className="text-slate-400" />
@@ -314,7 +314,7 @@ export default function TeacherLaporanNilaiPage() {
               />
             </div>
           </div>
-          <div>
+          <div className="min-w-[180px]">
             <label className="text-xs uppercase tracking-wide text-slate-500">Urutkan</label>
             <select
               value={sortBy}
@@ -327,24 +327,26 @@ export default function TeacherLaporanNilaiPage() {
               <option value="pending_asc">Pending Terendah</option>
             </select>
           </div>
-          <button
-            type="button"
-            onClick={() => handleExport("csv")}
-            disabled={!selectedClassId || exporting}
-            className="sage-button inline-flex items-center gap-2"
-          >
-            <FiDownload />
-            {exporting ? "Exporting..." : "Export CSV"}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleExport("xlsx")}
-            disabled={!selectedClassId || exporting}
-            className="sage-button-outline inline-flex items-center gap-2"
-          >
-            <FiDownload />
-            {exporting ? "Exporting..." : "Export Excel"}
-          </button>
+          <div className="ml-auto flex flex-wrap items-end gap-2">
+            <button
+              type="button"
+              onClick={() => handleExport("csv")}
+              disabled={!selectedClassId || exporting}
+              className="sage-button inline-flex items-center gap-2"
+            >
+              <FiDownload />
+              {exporting ? "Exporting..." : "Export CSV"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExport("xlsx")}
+              disabled={!selectedClassId || exporting}
+              className="sage-button-outline inline-flex items-center gap-2"
+            >
+              <FiDownload />
+              {exporting ? "Exporting..." : "Export Excel"}
+            </button>
+          </div>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
