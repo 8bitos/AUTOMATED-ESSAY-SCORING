@@ -28,7 +28,7 @@ func NewEssaySubmissionHandlers(s *services.EssaySubmissionService, ars *service
 	return &EssaySubmissionHandlers{Service: s, AIResultService: ars}
 }
 
-func parseReportDate(raw string, isEnd bool) (*time.Time, error) {
+func parseSubmissionReportDate(raw string, isEnd bool) (*time.Time, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return nil, nil
@@ -264,12 +264,12 @@ func (h *EssaySubmissionHandlers) GetClassStudentSubmissionSummariesHandler(w ht
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	materialID := strings.TrimSpace(r.URL.Query().Get("materialId"))
 	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
-	dateFrom, err := parseReportDate(r.URL.Query().Get("dateFrom"), false)
+	dateFrom, err := parseSubmissionReportDate(r.URL.Query().Get("dateFrom"), false)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid dateFrom format")
 		return
 	}
-	dateTo, err := parseReportDate(r.URL.Query().Get("dateTo"), true)
+	dateTo, err := parseSubmissionReportDate(r.URL.Query().Get("dateTo"), true)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid dateTo format")
 		return
@@ -310,12 +310,12 @@ func (h *EssaySubmissionHandlers) GetClassScoreDistributionHandler(w http.Respon
 	}
 
 	materialID := strings.TrimSpace(r.URL.Query().Get("materialId"))
-	dateFrom, err := parseReportDate(r.URL.Query().Get("dateFrom"), false)
+	dateFrom, err := parseSubmissionReportDate(r.URL.Query().Get("dateFrom"), false)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid dateFrom format")
 		return
 	}
-	dateTo, err := parseReportDate(r.URL.Query().Get("dateTo"), true)
+	dateTo, err := parseSubmissionReportDate(r.URL.Query().Get("dateTo"), true)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid dateTo format")
 		return
@@ -347,12 +347,12 @@ func (h *EssaySubmissionHandlers) ExportClassStudentSummariesHandler(w http.Resp
 	materialID := strings.TrimSpace(r.URL.Query().Get("materialId"))
 	sortBy := strings.TrimSpace(r.URL.Query().Get("sort"))
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
-	dateFrom, err := parseReportDate(r.URL.Query().Get("dateFrom"), false)
+	dateFrom, err := parseSubmissionReportDate(r.URL.Query().Get("dateFrom"), false)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid dateFrom format")
 		return
 	}
-	dateTo, err := parseReportDate(r.URL.Query().Get("dateTo"), true)
+	dateTo, err := parseSubmissionReportDate(r.URL.Query().Get("dateTo"), true)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid dateTo format")
 		return
