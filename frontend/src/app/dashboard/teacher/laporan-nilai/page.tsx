@@ -86,6 +86,7 @@ export default function TeacherLaporanNilaiPage() {
   const [limit, setLimit] = useState(10);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [exportScope, setExportScope] = useState<"all" | "page">("all");
 
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
@@ -181,10 +182,124 @@ export default function TeacherLaporanNilaiPage() {
     }
   }, [selectedClassId]);
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const buildCsvContent = (rows: StudentSummary[]) => {
+    const header = [
+      "student_id",
+      "student_name",
+      "student_email",
+      "total_submissions",
+      "reviewed_submissions",
+      "pending_submissions",
+      "average_final_score",
+      "latest_submitted_at",
+    ];
+    const escapeCsv = (value: string) => {
+      const needsQuote = /[",\n]/.test(value);
+      const escaped = value.replace(/"/g, "\"\"");
+      return needsQuote ? `"${escaped}"` : escaped;
+    };
+    const lines = [header.join(",")];
+    rows.forEach((item) => {
+      const avg = item.average_final_score == null ? "" : String(Math.round(item.average_final_score * 100) / 100);
+      const latest = item.latest_submitted_at ? item.latest_submitted_at : "";
+      const row = [
+        item.student_id,
+        item.student_name,
+        item.student_email,
+        String(item.total_submissions),
+        String(item.reviewed_submissions),
+        String(item.pending_submissions),
+        avg,
+        latest,
+      ];
+      lines.push(row.map((v) => escapeCsv(v ?? "")).join(","));
+    });
+    return lines.join("\n");
+  };
+
+  const buildExcelXml = (rows: StudentSummary[]) => {
+    const header = [
+      "student_id",
+      "student_name",
+      "student_email",
+      "total_submissions",
+      "reviewed_submissions",
+      "pending_submissions",
+      "average_final_score",
+      "latest_submitted_at",
+    ];
+    const escapeXml = (value: string) =>
+      value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+
+    const buildRow = (cells: string[]) =>
+      `<Row>${cells
+        .map((cell) => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`)
+        .join("")}</Row>`;
+
+    const rowsXml = [buildRow(header)];
+    rows.forEach((item) => {
+      const avg = item.average_final_score == null ? "" : String(Math.round(item.average_final_score * 100) / 100);
+      const latest = item.latest_submitted_at ? item.latest_submitted_at : "";
+      rowsXml.push(
+        buildRow([
+          item.student_id,
+          item.student_name,
+          item.student_email,
+          String(item.total_submissions),
+          String(item.reviewed_submissions),
+          String(item.pending_submissions),
+          avg,
+          latest,
+        ])
+      );
+    });
+
+    return `<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:x="urn:schemas-microsoft-com:office:excel"
+xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="Laporan">
+<Table>
+${rowsXml.join("")}
+</Table>
+</Worksheet>
+</Workbook>`;
+  };
+
   const handleExport = useCallback(async (format: "csv" | "xlsx") => {
     if (!selectedClassId) return;
     setExporting(true);
     try {
+      if (exportScope === "page") {
+        const rows = summary?.items || [];
+        if (format === "csv") {
+          const csv = buildCsvContent(rows);
+          const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+          downloadBlob(blob, `laporan-nilai-${selectedClassId}-page.csv`);
+        } else {
+          const xml = buildExcelXml(rows);
+          const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+          downloadBlob(blob, `laporan-nilai-${selectedClassId}-page.xls`);
+        }
+        return;
+      }
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
       if (selectedMaterialId) params.set("materialId", selectedMaterialId);
@@ -200,20 +315,13 @@ export default function TeacherLaporanNilaiPage() {
         throw new Error(body?.message || "Gagal export laporan.");
       }
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `laporan-nilai-${selectedClassId}.${format}`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
+      downloadBlob(blob, `laporan-nilai-${selectedClassId}.${format}`);
     } catch (err: any) {
       setError(err?.message || "Gagal export laporan.");
     } finally {
       setExporting(false);
     }
-  }, [dateFrom, dateTo, query, selectedClassId, selectedMaterialId, sortBy]);
+  }, [dateFrom, dateTo, exportScope, query, selectedClassId, selectedMaterialId, sortBy, summary?.items]);
 
   useEffect(() => {
     fetchClasses();
@@ -328,6 +436,17 @@ export default function TeacherLaporanNilaiPage() {
             </select>
           </div>
           <div className="ml-auto flex flex-wrap items-end gap-2">
+            <div className="min-w-[170px]">
+              <label className="text-xs uppercase tracking-wide text-slate-500">Scope Export</label>
+              <select
+                value={exportScope}
+                onChange={(e) => setExportScope(e.target.value as "all" | "page")}
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              >
+                <option value="all">Semua data</option>
+                <option value="page">Halaman ini</option>
+              </select>
+            </div>
             <button
               type="button"
               onClick={() => handleExport("csv")}
