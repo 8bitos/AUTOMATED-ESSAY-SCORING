@@ -32,8 +32,11 @@ export const subscribeNotificationStream = (
   const handleInvalidate = () => onInvalidate();
 
   source.addEventListener("invalidate", handleInvalidate);
-  source.onerror = () => {
+  source.onerror = (e) => {
     // Native EventSource reconnects automatically.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[SSE] notification stream error, will reconnect:', e);
+    }
   };
 
   return () => {

@@ -36,7 +36,7 @@ const StudentDashboardLayout = ({ children }: { children: React.ReactNode }) => 
   }
 
   return (
-    <div className="flex h-screen bg-[color:var(--sand-100)] antialiased dark:bg-slate-950">
+    <div className="flex min-h-screen h-[100dvh] bg-[color:var(--sand-100)] antialiased dark:bg-slate-950">
       {/* Sidebar - Conditional rendering for student-specific or generic */}
       <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} user={user} />
 

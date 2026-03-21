@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 export interface User {
   id: string;
@@ -27,18 +27,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isPopupOnlyMateri, setIsPopupOnlyMateri] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const qs = new URLSearchParams(window.location.search);
-    const popupOnly =
-      (pathname || "").includes("/dashboard/teacher/materi/") &&
-      (qs.get("popupOnly") === "1" || qs.get("openEditMaterial") === "1");
-    setIsPopupOnlyMateri(popupOnly);
-  }, [pathname]);
 
   const checkUserLoggedIn = async () => {
     setLoading(true);
@@ -65,11 +54,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const login = async (newUser: User) => {
-    // The /login endpoint response will give us the user data directly.
     // The HttpOnly cookie is set by the server. We just set the user in the context.
-    setLoading(true);
     setUser(newUser);
-    setLoading(false);
   };
 
   const logout = async () => {
@@ -88,7 +74,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Render a loading state while we check for an active session
   if (loading) {
-    if (isPopupOnlyMateri) return null;
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-700 shadow-sm">

@@ -12,6 +12,7 @@ interface QuestionBankEntry {
   class_id: string;
   class_name?: string;
   subject?: string;
+  tags?: string[];
   source_material_id?: string;
   material_title?: string;
   source_question_id?: string;
@@ -45,6 +46,7 @@ interface EditableRubric {
 interface EditorState {
   classId: string;
   subject: string;
+  tags: string;
   teksSoal: string;
   levelKognitif: string;
   keywords: string;
@@ -59,6 +61,7 @@ interface EditorState {
 const createInitialEditorState = (): EditorState => ({
   classId: "",
   subject: "Sejarah",
+  tags: "",
   teksSoal: "",
   levelKognitif: "",
   keywords: "",
@@ -239,6 +242,10 @@ const FormModal = ({
           <div>
             <label className="text-sm font-medium">Kata Kunci (pisahkan koma)</label>
             <input className="sage-input mt-1" value={editor.keywords} onChange={(e) => onChange({ ...editor, keywords: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Tag Soal (pisahkan koma)</label>
+            <input className="sage-input mt-1" value={editor.tags} onChange={(e) => onChange({ ...editor, tags: e.target.value })} />
           </div>
 
           <div>
@@ -448,6 +455,7 @@ export default function TeacherBankSoalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [tagQuery, setTagQuery] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
@@ -459,13 +467,15 @@ export default function TeacherBankSoalPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const fetchEntries = useCallback(async (searchText?: string) => {
+  const fetchEntries = useCallback(async (searchText?: string, tagText?: string) => {
     setLoading(true);
     setError(null);
     try {
       const q = (searchText ?? query).trim();
+      const tags = (tagText ?? tagQuery).trim();
       const qs = new URLSearchParams();
       if (q) qs.set("q", q);
+      if (tags) qs.set("tags", tags);
       const url = qs.toString() ? `/api/question-bank?${qs.toString()}` : "/api/question-bank";
       const res = await fetch(url, { credentials: "include" });
       const body = await res.json().catch(() => []);
@@ -476,7 +486,7 @@ export default function TeacherBankSoalPage() {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, tagQuery]);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -513,6 +523,7 @@ export default function TeacherBankSoalPage() {
     setEditor({
       classId: entry.class_id || "",
       subject: entry.subject || "Sejarah",
+      tags: Array.isArray(entry.tags) ? entry.tags.join(", ") : "",
       teksSoal: entry.teks_soal || "",
       levelKognitif: entry.level_kognitif || "",
       keywords: Array.isArray(entry.keywords) ? entry.keywords.join(", ") : "",
@@ -555,10 +566,15 @@ export default function TeacherBankSoalPage() {
         .split(",")
         .map((k) => k.trim())
         .filter(Boolean);
+      const parsedTags = editor.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
       const parsedWeight = editor.weight === "" ? null : Number(editor.weight);
       const payload = {
         class_id: editor.classId,
         subject: editor.subject.trim(),
+        tags: parsedTags.length ? parsedTags : null,
         teks_soal: editor.teksSoal.trim(),
         level_kognitif: editor.levelKognitif || null,
         keywords: parsedKeywords.length ? parsedKeywords : null,
@@ -649,7 +665,13 @@ export default function TeacherBankSoalPage() {
             placeholder="Cari teks soal, kelas, materi, atau mata pelajaran"
             className="sage-input flex-1"
           />
-          <button type="button" className="sage-button-outline inline-flex items-center gap-2" onClick={() => fetchEntries(query)}>
+          <input
+            value={tagQuery}
+            onChange={(e) => setTagQuery(e.target.value)}
+            placeholder="Filter tag (contoh: HOTS, essay, bab1)"
+            className="sage-input md:w-72"
+          />
+          <button type="button" className="sage-button-outline inline-flex items-center gap-2" onClick={() => fetchEntries(query, tagQuery)}>
             <FiRefreshCw size={14} /> Cari / Refresh
           </button>
         </div>
@@ -669,6 +691,7 @@ export default function TeacherBankSoalPage() {
                 <span className="sage-pill inline-flex items-center gap-1"><FiBookOpen size={12} /> {item.material_title || "-"}</span>
                 <span className="sage-pill">Dibuat oleh: {item.created_by_name || item.created_by || "-"}</span>
                 {item.subject && <span className="sage-pill">Mapel: {item.subject}</span>}
+                {Array.isArray(item.tags) && item.tags.length > 0 && <span className="sage-pill">Tag: {item.tags.join(", ")}</span>}
                 {item.level_kognitif && <span className="sage-pill">Level: {item.level_kognitif}</span>}
                 {typeof item.weight === "number" && <span className="sage-pill">Bobot: {item.weight}</span>}
                 <span className="sage-pill">Rubrik: {Array.isArray(item.rubrics) ? item.rubrics.length : 0}</span>

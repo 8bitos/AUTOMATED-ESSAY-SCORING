@@ -31,6 +31,7 @@ import {
   FiAlignJustify,
   FiRotateCcw,
   FiRotateCw,
+  FiRefreshCw,
   FiImage,
   FiGrid,
   FiMinusSquare,
@@ -43,6 +44,8 @@ import {
   FiShield,
   FiShuffle,
   FiCalendar,
+  FiBookmark,
+  FiSave,
 } from 'react-icons/fi';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import NoticeDialog from '@/components/ui/NoticeDialog';
@@ -253,6 +256,15 @@ interface QuestionBankEntry {
   round_score_to_5?: boolean;
   round_score_step?: number;
   rubrics?: Rubric[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface RubricTemplate {
+  id: string;
+  title: string;
+  rubric_type: RubricType;
+  rubrics: Rubric[];
   created_at?: string;
   updated_at?: string;
 }
@@ -1489,6 +1501,13 @@ const EssayQuestionFormModal = ({
   const [bankLoading, setBankLoading] = useState(false);
   const [bankNotice, setBankNotice] = useState('');
   const [lastSavedBankSignature, setLastSavedBankSignature] = useState<string>('');
+  const [rubricTemplates, setRubricTemplates] = useState<RubricTemplate[]>([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState('');
+  const [templateNotice, setTemplateNotice] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateTitle, setTemplateTitle] = useState('');
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [generatedSourceMeta, setGeneratedSourceMeta] = useState<{ label: string; chars: number; preview: string; forcedHolisticC1: boolean } | null>(null);
   const [rubricTooltip, setRubricTooltip] = useState<RubricType | null>(null);
   const wasEditingExistingRef = useRef(false);
@@ -1522,8 +1541,30 @@ const EssayQuestionFormModal = ({
     setBankLoading(false);
     setBankNotice('');
     setLastSavedBankSignature('');
+    setRubricTemplates([]);
+    setTemplateLoading(false);
+    setTemplateError('');
+    setTemplateNotice('');
+    setSelectedTemplateId('');
+    setTemplateTitle('');
+    setTemplateSaving(false);
     setGeneratedSourceMeta(null);
   }, [materialId]);
+
+  const loadRubricTemplates = useCallback(async () => {
+    setTemplateLoading(true);
+    setTemplateError('');
+    try {
+      const res = await fetch('/api/rubric-templates', { credentials: 'include' });
+      const body = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(getBodyMessage(body) || 'Gagal memuat template rubrik.');
+      setRubricTemplates(Array.isArray(body) ? body : []);
+    } catch (err: unknown) {
+      setTemplateError(getErrorMessage(err, 'Gagal memuat template rubrik.'));
+    } finally {
+      setTemplateLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen && existingQuestion) {
@@ -1586,6 +1627,20 @@ const EssayQuestionFormModal = ({
     }
 
   }, [isOpen, existingQuestion, materialId, resetQuestionForm]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadRubricTemplates();
+    }
+  }, [isOpen, loadRubricTemplates]);
+
+  useEffect(() => {
+    if (!selectedTemplateId) return;
+    const found = rubricTemplates.find((t) => t.id === selectedTemplateId);
+    if (found) {
+      setTemplateTitle(found.title);
+    }
+  }, [selectedTemplateId, rubricTemplates]);
 
   const activeRoundingStep = (() => {
     if (roundingPreset === "custom") return normalizeRoundingStep(customRoundingStep);
@@ -1816,6 +1871,108 @@ const EssayQuestionFormModal = ({
       setBankError(getErrorMessage(err, 'Gagal memuat bank soal.'));
     } finally {
       setBankLoading(false);
+    }
+  };
+
+  const applyRubricTemplate = (templateId: string) => {
+    const selected = rubricTemplates.find((t) => t.id === templateId);
+    if (!selected) return;
+    const rubricsArray = Array.isArray(selected.rubrics) ? selected.rubrics : [];
+    const resolvedType: RubricType = selected.rubric_type === 'holistik' || selected.rubric_type === 'analitik' ? selected.rubric_type : 'analitik';
+    setRubricType(resolvedType);
+
+    const normalizedRubrics = rubricsArray.map((r) => ({
+      ...r,
+      descriptors: Object.entries(r?.descriptors || {}).map(([score, description]) => ({
+        score: String(score),
+        description: formatDescriptor(description),
+      })),
+    }));
+
+    if (resolvedType === 'analitik') {
+      setAnalyticRubrics(
+        normalizedRubrics.length
+          ? normalizedRubrics.map((r) => ({
+              ...r,
+              rubric_type: 'analitik',
+              nama_aspek: (r.nama_aspek || '').trim(),
+              descriptors: r.descriptors?.length ? r.descriptors : [{ score: '', description: '' }],
+            }))
+          : [{ nama_aspek: '', rubric_type: 'analitik', descriptors: [{ score: '', description: '' }] }]
+      );
+    } else {
+      const first = normalizedRubrics[0];
+      setHolisticAspectName((first?.nama_aspek || '').trim() || 'Penilaian Holistik');
+      setHolisticDescriptors(first?.descriptors?.length ? first.descriptors : [{ score: '', description: '' }]);
+    }
+    setTemplateNotice(`Template "${selected.title}" diterapkan.`);
+  };
+
+  const handleSaveRubricTemplate = async (mode: 'create' | 'update') => {
+    const title = templateTitle.trim();
+    if (!title) {
+      setTemplateError('Nama template wajib diisi.');
+      return;
+    }
+    const rubricsPayload = transformRubricsForSave();
+    if (!rubricsPayload.length) {
+      setTemplateError('Rubrik belum tersedia untuk disimpan sebagai template.');
+      return;
+    }
+    setTemplateSaving(true);
+    setTemplateError('');
+    setTemplateNotice('');
+    try {
+      const payload = {
+        title,
+        rubric_type: effectiveRubricType,
+        rubrics: rubricsPayload,
+      };
+      const isUpdate = mode === 'update' && selectedTemplateId;
+      const url = isUpdate ? `/api/rubric-templates/${selectedTemplateId}` : '/api/rubric-templates';
+      const method = isUpdate ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(getBodyMessage(body) || 'Gagal menyimpan template rubrik.');
+      await loadRubricTemplates();
+      if (!isUpdate) {
+        setSelectedTemplateId(body?.id ? String(body.id) : '');
+      }
+      setTemplateNotice(isUpdate ? 'Template rubrik diperbarui.' : 'Template rubrik tersimpan.');
+    } catch (err: unknown) {
+      setTemplateError(getErrorMessage(err, 'Gagal menyimpan template rubrik.'));
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const handleDeleteRubricTemplate = async () => {
+    if (!selectedTemplateId) return;
+    setTemplateSaving(true);
+    setTemplateError('');
+    setTemplateNotice('');
+    try {
+      const res = await fetch(`/api/rubric-templates/${selectedTemplateId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(getBodyMessage(body) || 'Gagal menghapus template rubrik.');
+      }
+      setSelectedTemplateId('');
+      setTemplateTitle('');
+      await loadRubricTemplates();
+      setTemplateNotice('Template rubrik dihapus.');
+    } catch (err: unknown) {
+      setTemplateError(getErrorMessage(err, 'Gagal menghapus template rubrik.'));
+    } finally {
+      setTemplateSaving(false);
     }
   };
 
@@ -2572,6 +2729,95 @@ const EssayQuestionFormModal = ({
                     </div>
 
                     <div className="w-full space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="flex items-center gap-1 text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">
+                            <FiBookmark size={12} /> Template Rubrik
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={loadRubricTemplates}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                          >
+                            <FiRefreshCw size={12} /> Refresh
+                          </button>
+                        </div>
+                        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto]">
+                          <select
+                            value={selectedTemplateId}
+                            onChange={(e) => {
+                              const nextId = e.target.value;
+                              setSelectedTemplateId(nextId);
+                              setTemplateNotice('');
+                              setTemplateError('');
+                              if (!nextId) {
+                                setTemplateTitle('');
+                              }
+                            }}
+                            className="sage-input !py-1.5 text-[11px]"
+                          >
+                            <option value="">Pilih template rubrik</option>
+                            {rubricTemplates.map((template) => (
+                              <option key={template.id} value={template.id}>
+                                {template.title} ({template.rubric_type === 'holistik' ? 'Holistik' : 'Analitik'})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => applyRubricTemplate(selectedTemplateId)}
+                            disabled={!selectedTemplateId || usesGlobalRubric}
+                            className="sage-button-outline !px-2 !py-1 text-[10px]"
+                            title={usesGlobalRubric ? 'Mode global aktif. Rubrik diambil dari card.' : 'Terapkan template ke rubrik soal ini.'}
+                          >
+                            Gunakan
+                          </button>
+                        </div>
+                        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                          <input
+                            value={templateTitle}
+                            onChange={(e) => setTemplateTitle(e.target.value)}
+                            placeholder="Nama template baru"
+                            className="sage-input !py-1.5 text-[11px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRubricTemplate('create')}
+                            disabled={templateSaving}
+                            className="sage-button-outline !px-2 !py-1 text-[10px]"
+                            title="Simpan rubrik saat ini sebagai template baru."
+                          >
+                            <FiSave size={12} /> Simpan Baru
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRubricTemplate('update')}
+                            disabled={!selectedTemplateId || templateSaving}
+                            className="sage-button-outline !px-2 !py-1 text-[10px]"
+                            title="Timpa template terpilih dengan rubrik saat ini."
+                          >
+                            Timpa
+                          </button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
+                          <button
+                            type="button"
+                            onClick={handleDeleteRubricTemplate}
+                            disabled={!selectedTemplateId || templateSaving}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50"
+                          >
+                            <FiTrash2 size={12} /> Hapus Template
+                          </button>
+                          <span>{templateLoading ? 'Memuat template...' : `${rubricTemplates.length} template tersedia`}</span>
+                        </div>
+                        {templateError && <p className="mt-2 text-[11px] text-red-600">{templateError}</p>}
+                        {templateNotice && <p className="mt-2 text-[11px] text-emerald-700">{templateNotice}</p>}
+                        {usesGlobalRubric && (
+                          <p className="mt-2 text-[10px] text-slate-500">
+                            Mode global aktif. Rubrik soal mengikuti rubrik card, template hanya bisa disimpan untuk dipakai nanti.
+                          </p>
+                        )}
+                      </div>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <h3 className="text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Rubrik Penilaian</h3>
                         {rubricType === 'analitik' ? (

@@ -20,6 +20,7 @@ import {
   FiTrendingUp,
 } from "react-icons/fi";
 import { fetchStudentNotifications, loadStudentNotificationPrefs, type StudentNotificationItem } from "@/lib/studentNotifications";
+import { loadNotificationPollIntervalMs } from "@/lib/notificationRealtime";
 
 interface AnnouncementItem {
   id: string;
@@ -203,11 +204,12 @@ export default function StudentDashboardOverviewPage() {
   }, []);
 
   useEffect(() => {
+    let timer: number | undefined;
     void loadOverview();
-    const timer = window.setInterval(() => {
-      void loadOverview();
-    }, 45000);
-    return () => window.clearInterval(timer);
+    void loadNotificationPollIntervalMs().then((ms) => {
+      timer = window.setInterval(() => void loadOverview(), ms);
+    });
+    return () => { if (timer) window.clearInterval(timer); };
   }, [loadOverview]);
 
   useEffect(() => {
@@ -540,8 +542,8 @@ export default function StudentDashboardOverviewPage() {
               {new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(monthCursor)}
             </p>
             <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-slate-500">
-              {["S", "S", "R", "K", "J", "S", "M"].map((d, idx) => (
-                <span key={`${d}-${idx}`}>{d}</span>
+              {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((d) => (
+                <span key={d}>{d[0]}</span>
               ))}
               {monthCells.map((cell) => {
                 const key = toDateKey(cell.date.toISOString());
