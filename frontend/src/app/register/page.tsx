@@ -87,9 +87,9 @@ export default function RegisterPage() {
           <div className="sage-card p-6">
             <p className="text-sm font-semibold text-[color:var(--ink-900)]">Kenapa SAGE</p>
             <div className="mt-3 space-y-2 text-sm text-[color:var(--ink-500)]">
-              <p>• LMS akademik dengan grading berbasis rubrik</p>
-              <p>• Kontrol penuh guru atas nilai akhir</p>
-              <p>• Pelacakan progres belajar per siswa</p>
+              <p>- LMS akademik dengan grading berbasis rubrik</p>
+              <p>- Kontrol penuh guru atas nilai akhir</p>
+              <p>- Pelacakan progres belajar per siswa</p>
             </div>
           </div>
         </section>
@@ -156,7 +156,7 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="sage-input pr-12"
-                  placeholder="••••••••"
+                  placeholder="--------"
                   required
                 />
                 <button
@@ -219,3 +219,4 @@ function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+

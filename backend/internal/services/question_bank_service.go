@@ -27,6 +27,10 @@ func (s *QuestionBankService) CreateQuestionBankEntry(req models.CreateQuestionB
 	if req.Keywords != nil && len(*req.Keywords) > 0 {
 		keywordsArray = pq.Array(*req.Keywords)
 	}
+	var tagsArray interface{} = pq.Array([]string{})
+	if req.Tags != nil {
+		tagsArray = pq.Array(*req.Tags)
+	}
 
 	rubrics := req.Rubrics
 	if len(rubrics) == 0 || strings.TrimSpace(string(rubrics)) == "null" {
@@ -43,21 +47,23 @@ func (s *QuestionBankService) CreateQuestionBankEntry(req models.CreateQuestionB
 
 	query := `
 		INSERT INTO question_bank_entries (
-			created_by, class_id, subject, source_material_id, source_question_id, teks_soal,
+			created_by, class_id, subject, tags, source_material_id, source_question_id, teks_soal,
 			level_kognitif, keywords, ideal_answer, weight, rubrics, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
-		RETURNING id, created_by, class_id, subject, source_material_id, source_question_id, teks_soal,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+		RETURNING id, created_by, class_id, subject, tags, source_material_id, source_question_id, teks_soal,
 			level_kognitif, keywords, ideal_answer, weight, rubrics, created_at, updated_at
 	`
 	var created models.QuestionBankEntry
 	var keywords pq.StringArray
+	var tags pq.StringArray
 	if err := s.db.QueryRowContext(
 		context.Background(),
 		query,
 		createdBy,
 		classID,
 		strings.TrimSpace(req.Subject),
+		tagsArray,
 		sourceMaterialID,
 		sourceQuestionID,
 		req.TeksSoal,
@@ -72,6 +78,7 @@ func (s *QuestionBankService) CreateQuestionBankEntry(req models.CreateQuestionB
 		&created.CreatedBy,
 		&created.ClassID,
 		&created.Subject,
+		&tags,
 		&created.SourceMaterialID,
 		&created.SourceQuestionID,
 		&created.TeksSoal,
@@ -86,15 +93,16 @@ func (s *QuestionBankService) CreateQuestionBankEntry(req models.CreateQuestionB
 		return nil, fmt.Errorf("error creating question bank entry: %w", err)
 	}
 	created.Keywords = []string(keywords)
+	created.Tags = []string(tags)
 
 	return &created, nil
 }
 
-func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classID, materialID, q *string) ([]models.QuestionBankEntry, error) {
+func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classID, materialID, q *string, tags *[]string) ([]models.QuestionBankEntry, error) {
 	base := `
 		SELECT
 			qb.id, qb.created_by, COALESCE(u.nama_lengkap, '') as created_by_name, qb.class_id, COALESCE(c.class_name, '') as class_name,
-			COALESCE(qb.subject, '') as subject,
+			COALESCE(qb.subject, '') as subject, qb.tags,
 			qb.source_material_id, COALESCE(m.judul, '') as material_title, qb.source_question_id,
 			qb.teks_soal, qb.level_kognitif, qb.keywords, qb.ideal_answer, qb.weight, qb.rubrics,
 			qb.created_at, qb.updated_at
@@ -115,6 +123,11 @@ func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classI
 	if materialID != nil && strings.TrimSpace(*materialID) != "" {
 		clauses = append(clauses, fmt.Sprintf("qb.source_material_id = $%d", argPos))
 		args = append(args, strings.TrimSpace(*materialID))
+		argPos++
+	}
+	if tags != nil && len(*tags) > 0 {
+		clauses = append(clauses, fmt.Sprintf("qb.tags && $%d", argPos))
+		args = append(args, pq.Array(*tags))
 		argPos++
 	}
 	if q != nil && strings.TrimSpace(*q) != "" {
@@ -139,6 +152,7 @@ func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classI
 	for rows.Next() {
 		var item models.QuestionBankEntry
 		var keywords pq.StringArray
+		var tags pq.StringArray
 		if err := rows.Scan(
 			&item.ID,
 			&item.CreatedBy,
@@ -146,6 +160,7 @@ func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classI
 			&item.ClassID,
 			&item.ClassName,
 			&item.Subject,
+			&tags,
 			&item.SourceMaterialID,
 			&item.MaterialTitle,
 			&item.SourceQuestionID,
@@ -161,6 +176,7 @@ func (s *QuestionBankService) ListQuestionBankEntries(_ string, _ string, classI
 			return nil, fmt.Errorf("error scanning question bank row: %w", err)
 		}
 		item.Keywords = []string(keywords)
+		item.Tags = []string(tags)
 
 		if len(item.Rubrics) == 0 || string(item.Rubrics) == "null" {
 			emptyRubrics, _ := json.Marshal([]interface{}{})
@@ -188,6 +204,11 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 	if req.Subject != nil {
 		updates = append(updates, fmt.Sprintf("subject = $%d", argPos))
 		args = append(args, strings.TrimSpace(*req.Subject))
+		argPos++
+	}
+	if req.Tags != nil {
+		updates = append(updates, fmt.Sprintf("tags = $%d", argPos))
+		args = append(args, pq.Array(*req.Tags))
 		argPos++
 	}
 	if req.MaterialID != nil {
@@ -264,7 +285,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 	getQuery := `
 		SELECT
 			qb.id, qb.created_by, COALESCE(u.nama_lengkap, '') as created_by_name, qb.class_id, COALESCE(c.class_name, '') as class_name,
-			COALESCE(qb.subject, '') as subject,
+			COALESCE(qb.subject, '') as subject, qb.tags,
 			qb.source_material_id, COALESCE(m.judul, '') as material_title, qb.source_question_id,
 			qb.teks_soal, qb.level_kognitif, qb.keywords, qb.ideal_answer, qb.weight, qb.rubrics,
 			qb.created_at, qb.updated_at
@@ -276,6 +297,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 	`
 	var item models.QuestionBankEntry
 	var keywords pq.StringArray
+	var tags pq.StringArray
 	if err := s.db.QueryRowContext(context.Background(), getQuery, entryID).Scan(
 		&item.ID,
 		&item.CreatedBy,
@@ -283,6 +305,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 		&item.ClassID,
 		&item.ClassName,
 		&item.Subject,
+		&tags,
 		&item.SourceMaterialID,
 		&item.MaterialTitle,
 		&item.SourceQuestionID,
@@ -298,6 +321,7 @@ func (s *QuestionBankService) UpdateQuestionBankEntry(entryID string, req models
 		return nil, fmt.Errorf("error reading updated question bank entry: %w", err)
 	}
 	item.Keywords = []string(keywords)
+	item.Tags = []string(tags)
 	if len(item.Rubrics) == 0 || string(item.Rubrics) == "null" {
 		emptyRubrics, _ := json.Marshal([]interface{}{})
 		item.Rubrics = emptyRubrics

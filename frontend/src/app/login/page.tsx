@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
@@ -32,6 +32,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { login } = useAuth();
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey) return;
+      if (e.key === "\\" || e.code === "Backslash") {
+        e.preventDefault();
+        router.push("/register-admin");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,9 +97,9 @@ export default function LoginPage() {
           <div className="sage-card p-6">
             <p className="text-sm font-semibold text-[color:var(--ink-900)]">Yang bisa kamu lakukan</p>
             <div className="mt-3 space-y-2 text-sm text-[color:var(--ink-500)]">
-              <p>• Menilai esai secara otomatis dan transparan</p>
-              <p>• Mengelola materi, modul, dan pertanyaan</p>
-              <p>• Memberi review guru untuk validasi nilai</p>
+              <p>- Menilai esai secara otomatis dan transparan</p>
+              <p>- Mengelola materi, modul, dan pertanyaan</p>
+              <p>- Memberi review guru untuk validasi nilai</p>
             </div>
           </div>
         </section>
@@ -126,7 +138,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="sage-input pr-12"
-                  placeholder="••••••••"
+                  placeholder="--------"
                   required
                 />
                 <button
@@ -166,3 +178,4 @@ function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+

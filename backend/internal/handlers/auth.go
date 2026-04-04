@@ -12,6 +12,7 @@ import (
 	"time" // Import time for cookie expiration
 
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // AuthHandlers holds dependencies for authentication handlers.
@@ -114,6 +115,46 @@ func (h *AuthHandlers) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the newly created user (without password)
+	respondWithJSON(w, http.StatusCreated, registeredUser)
+}
+
+// RegisterAdminHandler handles secret superadmin registration.
+func (h *AuthHandlers) RegisterAdminHandler(w http.ResponseWriter, r *http.Request) {
+	var req models.AdminRegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	const adminRegisterPasswordHash = "$2a$10$ohEbb7IXyo3ALapkCpIqaOSXoe6hcAu25VBU1BC8UvJNydP4k.dRe"
+	if strings.TrimSpace(req.AdminPassword) == "" || bcrypt.CompareHashAndPassword([]byte(adminRegisterPasswordHash), []byte(req.AdminPassword)) != nil {
+		respondWithError(w, http.StatusUnauthorized, "Password admin tidak valid")
+		return
+	}
+
+	if req.NamaLengkap == "" || req.Username == "" || req.Email == "" || req.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "All required fields must be provided")
+		return
+	}
+
+	registerReq := models.UserRegisterRequest{
+		NamaLengkap: req.NamaLengkap,
+		Username:    req.Username,
+		Email:       req.Email,
+		Password:    req.Password,
+		Peran:       "superadmin",
+	}
+
+	registeredUser, err := h.AuthService.RegisterUser(registerReq)
+	if err != nil {
+		if err.Error() == "email or username already exists" {
+			respondWithError(w, http.StatusConflict, err.Error())
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Failed to register admin")
+		return
+	}
+
 	respondWithJSON(w, http.StatusCreated, registeredUser)
 }
 

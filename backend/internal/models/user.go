@@ -57,6 +57,15 @@ type UserRegisterRequest struct {
 	Username       string `json:"username"`                  // Field opsional.
 }
 
+// AdminRegisterRequest digunakan untuk pendaftaran superadmin dengan secret.
+type AdminRegisterRequest struct {
+	NamaLengkap string `json:"nama_lengkap"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	Username    string `json:"username"`
+	AdminPassword string `json:"admin_password"`
+}
+
 // UserLoginRequest mendefinisikan struktur data untuk permintaan login pengguna.
 // Field 'identifier' dapat berupa username atau email pengguna.
 type UserLoginRequest struct {

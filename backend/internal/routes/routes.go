@@ -52,6 +52,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	moduleService := services.NewModuleService(db)
 	classTeachingModuleService := services.NewClassTeachingModuleService(db)
 	questionBankService := services.NewQuestionBankService(db)
+	rubricTemplateService := services.NewRubricTemplateService(db)
 	sectionService := services.NewSectionService(db)
 
 	// --- Inisialisasi Handler ---
@@ -72,6 +73,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	moduleHandlers := handlers.NewModuleHandlers(moduleService)
 	classTeachingModuleHandlers := handlers.NewClassTeachingModuleHandlers(classTeachingModuleService)
 	questionBankHandlers := handlers.NewQuestionBankHandlers(questionBankService, materialService)
+	rubricTemplateHandlers := handlers.NewRubricTemplateHandlers(rubricTemplateService)
 	sectionHandlers := handlers.NewSectionHandlers(sectionService)
 	uploadHandler := handlers.NewUploadHandler()
 	adminOpsHandlers := handlers.NewAdminOpsHandlers(db, authService, essaySubmissionService, aiService, systemSettingService, adminAuditService, questionBankService)
@@ -92,6 +94,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	// Rute-rute ini dapat diakses oleh siapa saja.
 	api.HandleFunc("/login", authHandlers.LoginHandler).Methods("POST")
 	api.HandleFunc("/register", authHandlers.RegisterHandler).Methods("POST")
+	api.HandleFunc("/register-admin", authHandlers.RegisterAdminHandler).Methods("POST")
 	api.HandleFunc("/logout", authHandlers.LogoutHandler).Methods("POST")
 	api.HandleFunc("/grade-essay", gradeEssayHandlers.GradeEssayHandler).Methods("POST") // Untuk menilai esai secara publik (tanpa login).
 	api.HandleFunc("/classes-public", classHandlers.GetAllClassesHandler).Methods("GET") // Untuk mendapatkan daftar kelas secara publik.
@@ -201,6 +204,10 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	teacherRouter.HandleFunc("/question-bank", questionBankHandlers.ListQuestionBankEntriesHandler).Methods("GET")
 	teacherRouter.HandleFunc("/question-bank/{entryId}", questionBankHandlers.UpdateQuestionBankEntryHandler).Methods("PUT")
 	teacherRouter.HandleFunc("/question-bank/{entryId}", questionBankHandlers.DeleteQuestionBankEntryHandler).Methods("DELETE")
+	teacherRouter.HandleFunc("/rubric-templates", rubricTemplateHandlers.ListRubricTemplatesHandler).Methods("GET")
+	teacherRouter.HandleFunc("/rubric-templates", rubricTemplateHandlers.CreateRubricTemplateHandler).Methods("POST")
+	teacherRouter.HandleFunc("/rubric-templates/{templateId}", rubricTemplateHandlers.UpdateRubricTemplateHandler).Methods("PUT")
+	teacherRouter.HandleFunc("/rubric-templates/{templateId}", rubricTemplateHandlers.DeleteRubricTemplateHandler).Methods("DELETE")
 
 	// Rute terkait modul khusus guru.
 	teacherRouter.HandleFunc("/modules", moduleHandlers.CreateModuleHandler).Methods("POST")                                 // Membuat modul baru.

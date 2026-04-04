@@ -44,6 +44,17 @@ func (h *QuestionBankHandlers) CreateQuestionBankEntryHandler(w http.ResponseWri
 		classID := strings.TrimSpace(*req.ClassID)
 		req.ClassID = &classID
 	}
+	if req.Tags != nil {
+		cleaned := make([]string, 0, len(*req.Tags))
+		for _, tag := range *req.Tags {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed == "" {
+				continue
+			}
+			cleaned = append(cleaned, trimmed)
+		}
+		req.Tags = &cleaned
+	}
 	req.Subject = strings.TrimSpace(req.Subject)
 	req.TeksSoal = strings.TrimSpace(req.TeksSoal)
 	if req.TeksSoal == "" {
@@ -93,6 +104,7 @@ func (h *QuestionBankHandlers) ListQuestionBankEntriesHandler(w http.ResponseWri
 	classID := strings.TrimSpace(query.Get("class_id"))
 	materialID := strings.TrimSpace(query.Get("material_id"))
 	search := strings.TrimSpace(query.Get("q"))
+	rawTags := strings.TrimSpace(query.Get("tags"))
 
 	var classIDPtr, materialIDPtr, searchPtr *string
 	if classID != "" {
@@ -104,8 +116,23 @@ func (h *QuestionBankHandlers) ListQuestionBankEntriesHandler(w http.ResponseWri
 	if search != "" {
 		searchPtr = &search
 	}
+	var tagsPtr *[]string
+	if rawTags != "" {
+		parts := strings.Split(rawTags, ",")
+		cleaned := make([]string, 0, len(parts))
+		for _, tag := range parts {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed == "" {
+				continue
+			}
+			cleaned = append(cleaned, trimmed)
+		}
+		if len(cleaned) > 0 {
+			tagsPtr = &cleaned
+		}
+	}
 
-	entries, err := h.Service.ListQuestionBankEntries(userID, userRole, classIDPtr, materialIDPtr, searchPtr)
+	entries, err := h.Service.ListQuestionBankEntries(userID, userRole, classIDPtr, materialIDPtr, searchPtr, tagsPtr)
 	if err != nil {
 		log.Printf("ERROR: Failed to list question bank entries: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve question bank entries")
@@ -142,6 +169,17 @@ func (h *QuestionBankHandlers) UpdateQuestionBankEntryHandler(w http.ResponseWri
 	if req.Subject != nil {
 		subject := strings.TrimSpace(*req.Subject)
 		req.Subject = &subject
+	}
+	if req.Tags != nil {
+		cleaned := make([]string, 0, len(*req.Tags))
+		for _, tag := range *req.Tags {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed == "" {
+				continue
+			}
+			cleaned = append(cleaned, trimmed)
+		}
+		req.Tags = &cleaned
 	}
 	if req.MaterialID != nil {
 		materialID := strings.TrimSpace(*req.MaterialID)

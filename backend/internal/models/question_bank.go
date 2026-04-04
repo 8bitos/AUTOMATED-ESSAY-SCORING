@@ -12,6 +12,7 @@ type QuestionBankEntry struct {
 	ClassID          string          `json:"class_id"`
 	ClassName        string          `json:"class_name,omitempty"`
 	Subject          string          `json:"subject,omitempty"`
+	Tags             []string        `json:"tags,omitempty"`
 	SourceMaterialID *string         `json:"source_material_id,omitempty"`
 	MaterialTitle    string          `json:"material_title,omitempty"`
 	SourceQuestionID *string         `json:"source_question_id,omitempty"`
@@ -28,6 +29,7 @@ type QuestionBankEntry struct {
 type CreateQuestionBankEntryRequest struct {
 	ClassID       *string         `json:"class_id,omitempty"`
 	Subject       string          `json:"subject,omitempty"`
+	Tags          *[]string       `json:"tags,omitempty"`
 	MaterialID    *string         `json:"material_id,omitempty"`
 	QuestionID    *string         `json:"question_id,omitempty"`
 	TeksSoal      string          `json:"teks_soal"`
@@ -41,6 +43,7 @@ type CreateQuestionBankEntryRequest struct {
 type UpdateQuestionBankEntryRequest struct {
 	ClassID       *string          `json:"class_id,omitempty"`
 	Subject       *string          `json:"subject,omitempty"`
+	Tags          *[]string        `json:"tags,omitempty"`
 	MaterialID    *string          `json:"material_id,omitempty"`
 	TeksSoal      *string          `json:"teks_soal,omitempty"`
 	LevelKognitif *string          `json:"level_kognitif,omitempty"`
