@@ -2270,6 +2270,7 @@ const EssayQuestionFormModal = ({
   const hasValidWeight = !(weight === '' || Number.isNaN(Number(weight)) || Number(weight) <= 0);
   const canSubmitQuestion = teksSoal.trim().length > 0 && hasValidWeight && effectiveRubrics.length > 0;
   const [showRAGPreview, setShowRAGPreview] = useState(false);
+  const [showTemplatePanel, setShowTemplatePanel] = useState(false);
   const parameterPanel = (
     <div className="space-y-0">
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -2578,276 +2579,203 @@ const EssayQuestionFormModal = ({
                       </p>
                     </div>
                   ) : (
-                  <div className="grid grid-cols-1 items-start gap-2.5 xl:grid-cols-[minmax(130px,14%)_minmax(0,1fr)]">
-                    <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                      <h3 className="mb-1 text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Tipe Rubrik</h3>
-                      {levelKognitif === "C1" && rubricType === "analitik" && (
-                        <p className="mb-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[9px] leading-tight text-amber-700">
-                          Catatan: C1 biasanya lebih stabil memakai Holistik. Untuk mode Generate AI, C1 akan diproses Holistik otomatis.
-                        </p>
-                      )}
-                      <div className="grid grid-cols-1 gap-1.5">
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => handleRubricTypeChange('analitik')}
-                            className={`w-full rounded-md border px-2 py-1.5 pr-7 text-left transition ${
-                              rubricType === 'analitik'
-                                ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
-                                : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
-                            }`}
-                          >
-                            <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">Analitik</p>
-                            <p className="text-[9px] leading-tight text-slate-600 dark:text-slate-300">Skor per aspek.</p>
-                          </button>
-                          <button
-                            type="button"
-                            onMouseEnter={() => setRubricTooltip('analitik')}
-                            onMouseLeave={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
-                            onFocus={() => setRubricTooltip('analitik')}
-                            onBlur={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
-                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 hover:text-slate-800"
-                            title="Contoh rubrik analitik"
-                          >
-                            <FiHelpCircle size={14} />
-                          </button>
-                          {rubricTooltip === 'analitik' && (
-                            <div
-                              className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,480px)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                  <div className="space-y-3">
+                    {/* ── Tipe Rubrik ── horizontal bar */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Tipe Rubrik</span>
+                        <div className="flex items-center gap-2">
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => handleRubricTypeChange('analitik')}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                                rubricType === 'analitik'
+                                  ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-600 dark:bg-sky-950/40 dark:text-sky-300'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              Analitik
+                              <span className="text-[9px] font-normal opacity-70">Skor per aspek</span>
+                            </button>
+                            <button
+                              type="button"
                               onMouseEnter={() => setRubricTooltip('analitik')}
                               onMouseLeave={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
+                              onFocus={() => setRubricTooltip('analitik')}
+                              onBlur={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
+                              className="absolute -right-1 -top-1 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500"
+                              title="Contoh rubrik analitik"
                             >
-                              <p className="text-xs font-semibold text-slate-700">Contoh Rubrik Analitik</p>
-                              <div className="mt-2 overflow-x-auto">
-                                <table className="min-w-full border-collapse text-[11px]">
-                                  <thead>
-                                    <tr className="bg-slate-50">
-                                      <th className="border border-slate-200 px-2 py-1 text-left">Aspek</th>
-                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor 1</th>
-                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor 2</th>
-                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor 3</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td className="border border-slate-200 px-2 py-1">Relevansi</td>
-                                      <td className="border border-slate-200 px-2 py-1">Tidak sesuai soal</td>
-                                      <td className="border border-slate-200 px-2 py-1">Sebagian sesuai</td>
-                                      <td className="border border-slate-200 px-2 py-1">Sangat sesuai</td>
-                                    </tr>
-                                    <tr>
-                                      <td className="border border-slate-200 px-2 py-1">Argumentasi</td>
-                                      <td className="border border-slate-200 px-2 py-1">Lemah</td>
-                                      <td className="border border-slate-200 px-2 py-1">Cukup jelas</td>
-                                      <td className="border border-slate-200 px-2 py-1">Kuat dan logis</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
+                              <FiHelpCircle size={11} />
+                            </button>
+                            {rubricTooltip === 'analitik' && (
+                              <div
+                                className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,480px)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                                onMouseEnter={() => setRubricTooltip('analitik')}
+                                onMouseLeave={() => setRubricTooltip((prev) => (prev === 'analitik' ? null : prev))}
+                              >
+                                <p className="text-xs font-semibold text-slate-700">Contoh Rubrik Analitik</p>
+                                <div className="mt-2 overflow-x-auto">
+                                  <table className="min-w-full border-collapse text-[11px]">
+                                    <thead>
+                                      <tr className="bg-slate-50">
+                                        <th className="border border-slate-200 px-2 py-1 text-left">Aspek</th>
+                                        <th className="border border-slate-200 px-2 py-1 text-left">Skor 1</th>
+                                        <th className="border border-slate-200 px-2 py-1 text-left">Skor 2</th>
+                                        <th className="border border-slate-200 px-2 py-1 text-left">Skor 3</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr>
+                                        <td className="border border-slate-200 px-2 py-1">Relevansi</td>
+                                        <td className="border border-slate-200 px-2 py-1">Tidak sesuai soal</td>
+                                        <td className="border border-slate-200 px-2 py-1">Sebagian sesuai</td>
+                                        <td className="border border-slate-200 px-2 py-1">Sangat sesuai</td>
+                                      </tr>
+                                      <tr>
+                                        <td className="border border-slate-200 px-2 py-1">Argumentasi</td>
+                                        <td className="border border-slate-200 px-2 py-1">Lemah</td>
+                                        <td className="border border-slate-200 px-2 py-1">Cukup jelas</td>
+                                        <td className="border border-slate-200 px-2 py-1">Kuat dan logis</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => handleRubricTypeChange('holistik')}
-                            className={`w-full rounded-md border px-2 py-1.5 pr-7 text-left transition ${
-                              rubricType === 'holistik'
-                                ? 'border-[color:var(--sage-700)] bg-[color:var(--sage-50)] shadow-sm dark:border-slate-500 dark:bg-slate-800'
-                                : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
-                            }`}
-                          >
-                            <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">Holistik</p>
-                            <p className="text-[9px] leading-tight text-slate-600 dark:text-slate-300">Satu aspek keseluruhan.</p>
-                          </button>
-                          <button
-                            type="button"
-                            onMouseEnter={() => setRubricTooltip('holistik')}
-                            onMouseLeave={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
-                            onFocus={() => setRubricTooltip('holistik')}
-                            onBlur={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
-                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 hover:text-slate-800"
-                            title="Contoh rubrik holistik"
-                          >
-                            <FiHelpCircle size={14} />
-                          </button>
-                          {rubricTooltip === 'holistik' && (
-                            <div
-                              className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,420px)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                            )}
+                          </div>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => handleRubricTypeChange('holistik')}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                                rubricType === 'holistik'
+                                  ? 'border-sky-500 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-600 dark:bg-sky-950/40 dark:text-sky-300'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              Holistik
+                              <span className="text-[9px] font-normal opacity-70">Satu aspek</span>
+                            </button>
+                            <button
+                              type="button"
                               onMouseEnter={() => setRubricTooltip('holistik')}
                               onMouseLeave={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
+                              onFocus={() => setRubricTooltip('holistik')}
+                              onBlur={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
+                              className="absolute -right-1 -top-1 inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500"
+                              title="Contoh rubrik holistik"
                             >
-                              <p className="text-xs font-semibold text-slate-700">Contoh Rubrik Holistik</p>
-                              <div className="mt-2 overflow-x-auto">
-                                <table className="min-w-full border-collapse text-[11px]">
-                                  <thead>
-                                    <tr className="bg-slate-50">
-                                      <th className="border border-slate-200 px-2 py-1 text-left">Skor</th>
-                                      <th className="border border-slate-200 px-2 py-1 text-left">Deskripsi</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td className="border border-slate-200 px-2 py-1">1</td>
-                                      <td className="border border-slate-200 px-2 py-1">Jawaban belum memenuhi inti pertanyaan.</td>
-                                    </tr>
-                                    <tr>
-                                      <td className="border border-slate-200 px-2 py-1">2</td>
-                                      <td className="border border-slate-200 px-2 py-1">Jawaban cukup, namun masih kurang detail/akurasi.</td>
-                                    </tr>
-                                    <tr>
-                                      <td className="border border-slate-200 px-2 py-1">3</td>
-                                      <td className="border border-slate-200 px-2 py-1">Jawaban lengkap, tepat, dan mudah dipahami.</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
+                              <FiHelpCircle size={11} />
+                            </button>
+                            {rubricTooltip === 'holistik' && (
+                              <div
+                                className="absolute left-0 top-full z-30 mt-2 w-[min(90vw,420px)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl"
+                                onMouseEnter={() => setRubricTooltip('holistik')}
+                                onMouseLeave={() => setRubricTooltip((prev) => (prev === 'holistik' ? null : prev))}
+                              >
+                                <p className="text-xs font-semibold text-slate-700">Contoh Rubrik Holistik</p>
+                                <div className="mt-2 overflow-x-auto">
+                                  <table className="min-w-full border-collapse text-[11px]">
+                                    <thead>
+                                      <tr className="bg-slate-50">
+                                        <th className="border border-slate-200 px-2 py-1 text-left">Skor</th>
+                                        <th className="border border-slate-200 px-2 py-1 text-left">Deskripsi</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr>
+                                        <td className="border border-slate-200 px-2 py-1">1</td>
+                                        <td className="border border-slate-200 px-2 py-1">Jawaban belum memenuhi inti pertanyaan.</td>
+                                      </tr>
+                                      <tr>
+                                        <td className="border border-slate-200 px-2 py-1">2</td>
+                                        <td className="border border-slate-200 px-2 py-1">Jawaban cukup, namun masih kurang detail/akurasi.</td>
+                                      </tr>
+                                      <tr>
+                                        <td className="border border-slate-200 px-2 py-1">3</td>
+                                        <td className="border border-slate-200 px-2 py-1">Jawaban lengkap, tepat, dan mudah dipahami.</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
+                        {levelKognitif === "C1" && rubricType === "analitik" && (
+                          <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                            ⚠ C1 → otomatis Holistik saat Generate AI
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="w-full space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                      <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <h3 className="flex items-center gap-1 text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">
-                            <FiBookmark size={12} /> Template Rubrik
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={loadRubricTemplates}
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                          >
-                            <FiRefreshCw size={12} /> Refresh
-                          </button>
+                    {/* ── Template Rubrik ── collapsible */}
+                    <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                      <button
+                        type="button"
+                        onClick={() => setShowTemplatePanel((prev: boolean) => !prev)}
+                        className="flex w-full items-center justify-between px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <span className="flex items-center gap-1.5"><FiBookmark size={12} /> Template Rubrik <span className="font-normal text-slate-400 dark:text-slate-500">({templateLoading ? '...' : rubricTemplates.length})</span></span>
+                        {showTemplatePanel ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+                      </button>
+                      {showTemplatePanel && (
+                        <div className="border-t border-slate-100 px-3 pb-3 pt-2 dark:border-slate-800">
+                          <div className="flex flex-wrap gap-2">
+                            <select
+                              value={selectedTemplateId}
+                              onChange={(e) => {
+                                const nextId = e.target.value;
+                                setSelectedTemplateId(nextId);
+                                setTemplateNotice('');
+                                setTemplateError('');
+                                if (!nextId) setTemplateTitle('');
+                              }}
+                              className="sage-input flex-1 !py-1.5 text-[11px]"
+                            >
+                              <option value="">Pilih template rubrik</option>
+                              {rubricTemplates.map((template) => (
+                                <option key={template.id} value={template.id}>
+                                  {template.title} ({template.rubric_type === 'holistik' ? 'H' : 'A'})
+                                </option>
+                              ))}
+                            </select>
+                            <button type="button" onClick={() => applyRubricTemplate(selectedTemplateId)} disabled={!selectedTemplateId || usesGlobalRubric} className="sage-button !px-2.5 !py-1 text-[10px]" title={usesGlobalRubric ? 'Mode global aktif.' : 'Terapkan template.'}>Gunakan</button>
+                            <button type="button" onClick={loadRubricTemplates} className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400" title="Refresh daftar template"><FiRefreshCw size={12} /></button>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <input value={templateTitle} onChange={(e) => setTemplateTitle(e.target.value)} placeholder="Nama template baru" className="sage-input flex-1 !py-1.5 text-[11px]" />
+                            <button type="button" onClick={() => handleSaveRubricTemplate('create')} disabled={templateSaving} className="sage-button-outline !px-2 !py-1 text-[10px]" title="Simpan rubrik saat ini sebagai template baru."><FiSave size={12} /> Simpan</button>
+                            <button type="button" onClick={() => handleSaveRubricTemplate('update')} disabled={!selectedTemplateId || templateSaving} className="sage-button-outline !px-2 !py-1 text-[10px]" title="Timpa template terpilih.">Timpa</button>
+                            <button type="button" onClick={handleDeleteRubricTemplate} disabled={!selectedTemplateId || templateSaving} className="rounded-md border border-red-200 px-2 py-1 text-[10px] text-red-500 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/40" title="Hapus template terpilih."><FiTrash2 size={12} /></button>
+                          </div>
+                          {templateError && <p className="mt-1.5 text-[10px] text-red-600">{templateError}</p>}
+                          {templateNotice && <p className="mt-1.5 text-[10px] text-emerald-600">{templateNotice}</p>}
+                          {usesGlobalRubric && <p className="mt-1.5 text-[10px] text-slate-400">Mode global aktif. Template hanya bisa disimpan.</p>}
                         </div>
-                        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto]">
-                          <select
-                            value={selectedTemplateId}
-                            onChange={(e) => {
-                              const nextId = e.target.value;
-                              setSelectedTemplateId(nextId);
-                              setTemplateNotice('');
-                              setTemplateError('');
-                              if (!nextId) {
-                                setTemplateTitle('');
-                              }
-                            }}
-                            className="sage-input !py-1.5 text-[11px]"
-                          >
-                            <option value="">Pilih template rubrik</option>
-                            {rubricTemplates.map((template) => (
-                              <option key={template.id} value={template.id}>
-                                {template.title} ({template.rubric_type === 'holistik' ? 'Holistik' : 'Analitik'})
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => applyRubricTemplate(selectedTemplateId)}
-                            disabled={!selectedTemplateId || usesGlobalRubric}
-                            className="sage-button-outline !px-2 !py-1 text-[10px]"
-                            title={usesGlobalRubric ? 'Mode global aktif. Rubrik diambil dari card.' : 'Terapkan template ke rubrik soal ini.'}
-                          >
-                            Gunakan
-                          </button>
-                        </div>
-                        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto_auto]">
-                          <input
-                            value={templateTitle}
-                            onChange={(e) => setTemplateTitle(e.target.value)}
-                            placeholder="Nama template baru"
-                            className="sage-input !py-1.5 text-[11px]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleSaveRubricTemplate('create')}
-                            disabled={templateSaving}
-                            className="sage-button-outline !px-2 !py-1 text-[10px]"
-                            title="Simpan rubrik saat ini sebagai template baru."
-                          >
-                            <FiSave size={12} /> Simpan Baru
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveRubricTemplate('update')}
-                            disabled={!selectedTemplateId || templateSaving}
-                            className="sage-button-outline !px-2 !py-1 text-[10px]"
-                            title="Timpa template terpilih dengan rubrik saat ini."
-                          >
-                            Timpa
-                          </button>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
-                          <button
-                            type="button"
-                            onClick={handleDeleteRubricTemplate}
-                            disabled={!selectedTemplateId || templateSaving}
-                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50"
-                          >
-                            <FiTrash2 size={12} /> Hapus Template
-                          </button>
-                          <span>{templateLoading ? 'Memuat template...' : `${rubricTemplates.length} template tersedia`}</span>
-                        </div>
-                        {templateError && <p className="mt-2 text-[11px] text-red-600">{templateError}</p>}
-                        {templateNotice && <p className="mt-2 text-[11px] text-emerald-700">{templateNotice}</p>}
-                        {usesGlobalRubric && (
-                          <p className="mt-2 text-[10px] text-slate-500">
-                            Mode global aktif. Rubrik soal mengikuti rubrik card, template hanya bisa disimpan untuk dipakai nanti.
-                          </p>
-                        )}
-                      </div>
+                      )}
+                    </div>
+
+                    {/* ── Rubrik Penilaian ── */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="text-[11px] font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Rubrik Penilaian</h3>
+                        <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-100">Rubrik Penilaian</h3>
                         {rubricType === 'analitik' ? (
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 text-[10px] dark:border-slate-700 dark:bg-slate-800">
-                              <button
-                                type="button"
-                                onClick={() => switchAnalyticInputMode('card')}
-                                className={`rounded px-2 py-1 ${analyticInputMode === 'card' ? 'bg-slate-100 font-semibold text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
-                                title="Input rubrik per aspek dalam format kartu."
-                              >
-                                Kartu
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => switchAnalyticInputMode('table')}
-                                className={`rounded px-2 py-1 ${analyticInputMode === 'table' ? 'bg-slate-100 font-semibold text-slate-900 dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
-                                title="Input rubrik per aspek dalam format tabel seperti contoh tooltip."
-                              >
-                                Tabel
-                              </button>
+                            <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 text-[10px] dark:border-slate-700 dark:bg-slate-800">
+                              <button type="button" onClick={() => switchAnalyticInputMode('card')} className={`rounded px-2 py-1 font-medium ${analyticInputMode === 'card' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`} title="Format kartu.">Kartu</button>
+                              <button type="button" onClick={() => switchAnalyticInputMode('table')} className={`rounded px-2 py-1 font-medium ${analyticInputMode === 'table' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`} title="Format tabel.">Tabel</button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={addAnalyticAspect}
-                              title="Tambah aspek baru pada rubrik analitik."
-                              className="sage-button-outline !px-2 !py-1 text-[10px]"
-                            >
-                              + Tambah Aspek
-                            </button>
+                            <button type="button" onClick={addAnalyticAspect} title="Tambah aspek baru." className="rounded-md border border-dashed border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800">+ Aspek</button>
                             {analyticInputMode === 'table' && (
-                              <button
-                                type="button"
-                                onClick={addAnalyticTableColumn}
-                                title="Tambah kolom skor baru pada tabel rubrik."
-                                className="sage-button-outline !px-2 !py-1 text-[10px]"
-                              >
-                                + Kolom Skor
-                              </button>
+                              <button type="button" onClick={addAnalyticTableColumn} title="Tambah kolom skor." className="rounded-md border border-dashed border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800">+ Kolom</button>
                             )}
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={addHolisticScoreRow}
-                            title="Tambah baris skor pada rubrik holistik."
-                            className="sage-button-outline !px-2 !py-1 text-[10px]"
-                          >
-                            + Tambah Skor
-                          </button>
+                          <button type="button" onClick={addHolisticScoreRow} title="Tambah baris skor." className="rounded-md border border-dashed border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800">+ Tambah Skor</button>
                         )}
                       </div>
 
