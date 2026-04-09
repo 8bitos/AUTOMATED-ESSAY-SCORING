@@ -2269,155 +2269,166 @@ const EssayQuestionFormModal = ({
   const stepLabel = step === 1 ? 'Soal Inti' : step === 2 ? 'Rubrik' : 'Preview';
   const hasValidWeight = !(weight === '' || Number.isNaN(Number(weight)) || Number(weight) <= 0);
   const canSubmitQuestion = teksSoal.trim().length > 0 && hasValidWeight && effectiveRubrics.length > 0;
+  const [showRAGPreview, setShowRAGPreview] = useState(false);
   const parameterPanel = (
-    <div className="space-y-4">
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-semibold text-[color:var(--ink-700)] dark:text-slate-100">Parameter Soal</h3>
-          <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">Global</span>
+    <div className="space-y-0">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Parameter Soal</h3>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">Global</span>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
+        {/* Materi Acuan RAG */}
+        <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
             Materi Acuan RAG
             <span
-              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-600 dark:border-slate-600 dark:text-slate-300 cursor-help"
+              className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 text-[9px] text-slate-500 dark:border-slate-600 dark:text-slate-400 cursor-help"
               title="Pilih acuan RAG: seluruh SECTION atau card materi tertentu di dalam section ini."
-            >
-              ?
-            </span>
+            >?</span>
           </label>
-          <select value={selectedRAGReference} onChange={(e) => setSelectedRAGReference(e.target.value)} className="sage-input mt-1">
+          <select value={selectedRAGReference} onChange={(e) => setSelectedRAGReference(e.target.value)} className="sage-input mt-1.5 !text-xs">
             {ragReferenceOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
           {localRAGPreview && (
-            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-              <p className="text-[11px] font-medium text-slate-600">Preview acuan (lokal)</p>
-              <p className="mt-1 text-xs text-slate-700 line-clamp-4 whitespace-pre-wrap">{localRAGPreview}</p>
-            </div>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowRAGPreview((p) => !p)}
+                className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
+              >
+                {showRAGPreview ? <FiChevronUp size={10} /> : <FiChevronDown size={10} />}
+                {showRAGPreview ? 'Sembunyikan preview' : 'Lihat preview acuan'}
+              </button>
+              {showRAGPreview && (
+                <p className="mt-1 rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600 line-clamp-4 whitespace-pre-wrap dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{localRAGPreview}</p>
+              )}
+            </>
           )}
           {ragReferenceOptions.length === 0 && (
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Acuan RAG belum tersedia. Default tetap section saat ini.</p>
+            <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Acuan RAG belum tersedia. Default: section saat ini.</p>
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Level Kognitif</label>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-            Jika dipilih, AI wajib generate sesuai level ini. Jika kosong, AI memilih acak (C1-C3) sesuai prompt.
-          </p>
-          <select
-            value={levelKognitif}
-            onChange={(e) => setLevelKognitif(e.target.value)}
-            className="sage-input mt-1"
-            title="Pilih level kognitif target. Kosongkan agar AI memilih level secara otomatis."
-          >
-            <option value="">Opsional</option>
-            {cognitiveLevels.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Bobot Soal <span className="text-red-600">*</span></label>
-          <input
-            type="number"
-            step="0.01"
-            min="0.01"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            className="sage-input mt-1"
-            placeholder="Wajib diisi. Contoh: 20"
-            title="Bobot nilai soal. Wajib diisi dan harus lebih dari 0."
-            required
-          />
-        </div>
-
-        <label className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+        {/* Level Kognitif + Bobot — side by side */}
+        <div className="grid grid-cols-2 gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
           <div>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-100">Bulatkan Nilai</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-              Post-processing skor AI ke kelipatan {formatNumeric(activeRoundingStep)} terdekat. Contoh: {roundingExamples}.
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            checked={roundScoreTo5}
-            onChange={(e) => setRoundScoreTo5(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-900"
-            title="Aktifkan pembulatan skor AI ke kelipatan yang dipilih."
-          />
-        </label>
-        {roundScoreTo5 && (
-          <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800 space-y-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-100">Kelipatan Pembulatan</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-200" title="Pilih level kognitif target. Kosongkan agar AI memilih level secara otomatis.">Level Kognitif</label>
             <select
-              value={roundingPreset}
-              onChange={(e) => setRoundingPreset(e.target.value as "2" | "5" | "10" | "custom")}
-              className="sage-input mt-1"
-              title="Pilih kelipatan pembulatan skor otomatis."
+              value={levelKognitif}
+              onChange={(e) => setLevelKognitif(e.target.value)}
+              className="sage-input mt-1 !text-xs"
+              title="Pilih level kognitif target. Kosongkan agar AI memilih level secara otomatis."
             >
-              <option value="2">Kelipatan 2</option>
-              <option value="5">Kelipatan 5</option>
-              <option value="10">Kelipatan 10</option>
-              <option value="custom">Custom</option>
+              <option value="">Auto</option>
+              {cognitiveLevels.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
-            {roundingPreset === "custom" && (
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={customRoundingStep}
-                onChange={(e) => setCustomRoundingStep(e.target.value)}
-                className="sage-input"
-                placeholder="Contoh: 2.5"
-                title="Masukkan nilai kelipatan custom untuk pembulatan skor."
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-200">Bobot <span className="text-red-500">*</span></label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="sage-input mt-1 !text-xs"
+              placeholder="cth: 20"
+              title="Bobot nilai soal. Wajib diisi dan harus lebih dari 0."
+              required
+            />
+          </div>
+        </div>
+
+        {/* Bulatkan Nilai */}
+        <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div>
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-100">Bulatkan Nilai</p>
+              <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
+                Kelipatan {formatNumeric(activeRoundingStep)}. Contoh: {roundingExamples}
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={roundScoreTo5}
+              onChange={(e) => setRoundScoreTo5(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400 dark:border-slate-600 dark:bg-slate-900"
+              title="Aktifkan pembulatan skor AI ke kelipatan yang dipilih."
+            />
+          </label>
+          {roundScoreTo5 && (
+            <div className="mt-2 flex items-center gap-2">
+              <select
+                value={roundingPreset}
+                onChange={(e) => setRoundingPreset(e.target.value as "2" | "5" | "10" | "custom")}
+                className="sage-input !text-xs flex-1"
+                title="Pilih kelipatan pembulatan skor otomatis."
+              >
+                <option value="2">×2</option>
+                <option value="5">×5</option>
+                <option value="10">×10</option>
+                <option value="custom">Custom</option>
+              </select>
+              {roundingPreset === "custom" && (
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={customRoundingStep}
+                  onChange={(e) => setCustomRoundingStep(e.target.value)}
+                  className="sage-input !text-xs w-20"
+                  placeholder="2.5"
+                  title="Masukkan nilai kelipatan custom untuk pembulatan skor."
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Jawaban Ideal & Kata Kunci */}
+        <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((prev) => !prev)}
+            title="Buka/tutup pengaturan jawaban ideal dan kata kunci."
+            className="inline-flex w-full items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200"
+          >
+            <span>Jawaban Ideal & Kata Kunci</span>
+            {showAdvanced ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
+          </button>
+          {showAdvanced && (
+            <div className="mt-2 space-y-2">
+              <textarea
+                placeholder="Jawaban ideal (opsional)"
+                value={idealAnswer}
+                onChange={(e) => setIdealAnswer(e.target.value)}
+                rows={2}
+                className="sage-input !text-xs"
+                title="Contoh jawaban ideal untuk membantu AI menilai."
               />
-            )}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setShowAdvanced((prev) => !prev)}
-          title="Buka/tutup pengaturan jawaban ideal dan kata kunci."
-          className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--sage-700)] dark:text-slate-200"
-        >
-          {showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
-          Jawaban Ideal & Kata Kunci
-        </button>
-
-        {showAdvanced && (
-          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-            <textarea
-              placeholder="Jawaban ideal (opsional)"
-              value={idealAnswer}
-              onChange={(e) => setIdealAnswer(e.target.value)}
-              rows={3}
-              className="sage-input"
-              title="Contoh jawaban ideal untuk membantu AI menilai."
-            />
-            <p className="text-right text-[11px] text-slate-500 dark:text-slate-300">
-              {idealAnswer.trim().length} karakter jawaban ideal
-            </p>
-            <textarea
-              placeholder="Kata kunci, pisahkan dengan koma"
-              value={keywords}
-              onChange={(e) => setKeywords(e.target.value)}
-              rows={2}
-              className="sage-input"
-              title="Daftar kata kunci penting yang diharapkan muncul pada jawaban siswa."
-            />
-            <p className="text-right text-[11px] text-slate-500 dark:text-slate-300">
-              {parsedKeywords.length} kata kunci terdeteksi
-            </p>
-          </div>
-        )}
+              <p className="text-right text-[10px] text-slate-400 dark:text-slate-500">
+                {idealAnswer.trim().length} kar
+              </p>
+              <textarea
+                placeholder="Kata kunci, pisahkan dengan koma"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                rows={2}
+                className="sage-input !text-xs"
+                title="Daftar kata kunci penting yang diharapkan muncul pada jawaban siswa."
+              />
+              <p className="text-right text-[10px] text-slate-400 dark:text-slate-500">
+                {parsedKeywords.length} kata kunci
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2524,7 +2535,7 @@ const EssayQuestionFormModal = ({
         </button>
 
         {/* ── Content + Sidebar Grid ── */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-0 overflow-hidden">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-0 overflow-hidden">
           <div className="h-full overflow-y-auto pr-1">
             <div className="min-w-0">
               {step === 1 && (
