@@ -4,6 +4,7 @@ import (
 	"api-backend/internal/models"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,50 @@ func (s *SectionService) ensureTeacherOwnsClass(ctx context.Context, classID, te
 		return fmt.Errorf("class not found or access denied")
 	}
 	return nil
+}
+
+func (s *SectionService) ensureStudentInClass(ctx context.Context, classID, studentID string) error {
+	var ok bool
+	if err := s.db.QueryRowContext(
+		ctx,
+		"SELECT EXISTS(SELECT 1 FROM class_members WHERE class_id = $1 AND user_id = $2 AND status = 'approved')",
+		classID,
+		studentID,
+	).Scan(&ok); err != nil {
+		return fmt.Errorf("error validating class membership: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("class not found or access denied")
+	}
+	return nil
+}
+
+type sectionCardsPayloadLocal struct {
+	Format string `json:"format"`
+	Items  []struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+	} `json:"items"`
+}
+
+func hasSectionCard(raw *string, sectionCardID string) bool {
+	if raw == nil {
+		return false
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" || strings.TrimSpace(sectionCardID) == "" {
+		return false
+	}
+	var parsed sectionCardsPayloadLocal
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil || parsed.Format != "sage_section_cards_v1" {
+		return false
+	}
+	for _, item := range parsed.Items {
+		if strings.TrimSpace(item.ID) == strings.TrimSpace(sectionCardID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SectionService) ListSectionsByClassID(classID, teacherID string) ([]models.SectionWithContents, error) {
@@ -223,4 +268,70 @@ func (s *SectionService) CreateSectionContent(sectionID, teacherID string, req m
 	}
 
 	return created, nil
+}
+
+func (s *SectionService) IsSectionCardRead(classID, materialID, sectionCardID, studentID string) (bool, error) {
+	ctx := context.Background()
+	if err := s.ensureStudentInClass(ctx, classID, studentID); err != nil {
+		return false, err
+	}
+
+	var raw sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT isi_materi
+		FROM materials
+		WHERE id = $1 AND class_id = $2
+	`, materialID, classID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return false, fmt.Errorf("material not found or access denied")
+		}
+		return false, fmt.Errorf("error validating material access: %w", err)
+	}
+	if !hasSectionCard(&raw.String, sectionCardID) {
+		return false, fmt.Errorf("section card not found")
+	}
+
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM section_card_reads
+			WHERE student_id = $1 AND material_id = $2 AND section_card_id = $3
+		)
+	`, studentID, materialID, sectionCardID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("error checking section card read: %w", err)
+	}
+	return exists, nil
+}
+
+func (s *SectionService) MarkSectionCardRead(classID, materialID, sectionCardID, studentID string) error {
+	ctx := context.Background()
+	if err := s.ensureStudentInClass(ctx, classID, studentID); err != nil {
+		return err
+	}
+
+	var raw sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT isi_materi
+		FROM materials
+		WHERE id = $1 AND class_id = $2
+	`, materialID, classID).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("material not found or access denied")
+		}
+		return fmt.Errorf("error validating material access: %w", err)
+	}
+	if !hasSectionCard(&raw.String, sectionCardID) {
+		return fmt.Errorf("section card not found")
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO section_card_reads (class_id, material_id, student_id, section_card_id, read_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (student_id, material_id, section_card_id) DO NOTHING
+	`, classID, materialID, studentID, strings.TrimSpace(sectionCardID), time.Now())
+	if err != nil {
+		return fmt.Errorf("error marking section card read: %w", err)
+	}
+	return nil
 }

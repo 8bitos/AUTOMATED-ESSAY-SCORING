@@ -112,6 +112,8 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	protectedRouter.HandleFunc("/student/my-classes", classHandlers.GetStudentClassesHandler).Methods("GET")
 	protectedRouter.HandleFunc("/student/pending-classes", classHandlers.GetStudentPendingClassesHandler).Methods("GET")
 	protectedRouter.HandleFunc("/student/classes/{classId}", classHandlers.GetStudentClassByIDHandler).Methods("GET")
+	protectedRouter.HandleFunc("/student/classes/{classId}/materials/{materialId}/section-cards/{sectionCardId}/read", sectionHandlers.GetSectionCardReadStatusHandler).Methods("GET")
+	protectedRouter.HandleFunc("/student/classes/{classId}/materials/{materialId}/section-cards/{sectionCardId}/read", sectionHandlers.MarkSectionCardReadHandler).Methods("POST")
 	protectedRouter.HandleFunc("/ping", PingHandler).Methods("GET")          // Ping untuk pengguna terotentikasi.
 	protectedRouter.HandleFunc("/me", authHandlers.MeHandler).Methods("GET") // Mendapatkan informasi pengguna saat ini.
 	protectedRouter.HandleFunc("/profile", authHandlers.ProfileHandler).Methods("GET")
@@ -220,6 +222,10 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	teacherRouter.HandleFunc("/reports/classes/{classId}/students", essaySubmissionHandlers.GetClassStudentSubmissionSummariesHandler).Methods("GET")
 	teacherRouter.HandleFunc("/reports/classes/{classId}/distribution", essaySubmissionHandlers.GetClassScoreDistributionHandler).Methods("GET")
 	teacherRouter.HandleFunc("/reports/classes/{classId}/export", essaySubmissionHandlers.ExportClassStudentSummariesHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/export-qwk", essaySubmissionHandlers.ExportClassQWKHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/export-questions", essaySubmissionHandlers.ExportClassQuestionSummaryHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/export-rubric-template", essaySubmissionHandlers.ExportClassRubricTemplateHandler).Methods("GET")
+	teacherRouter.HandleFunc("/reports/classes/{classId}/export-rubric-scores", essaySubmissionHandlers.ExportClassRubricScoresHandler).Methods("GET")
 
 	// --- Rute Khusus Superadmin ---
 	adminRouter := protectedRouter.PathPrefix("/admin").Subrouter()

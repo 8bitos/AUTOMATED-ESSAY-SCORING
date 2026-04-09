@@ -79,6 +79,10 @@ func (h *MaterialHandlers) CreateMaterialWithQuestionsHandler(w http.ResponseWri
 		uniqueFilename := fmt.Sprintf("%s%s", uuid.New().String(), ext)
 
 		// Create the file on the server
+		if err := ensureUploadsDir(); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Error preparing uploads directory")
+			return
+		}
 		dst, err := os.Create(filepath.Join("./uploads", uniqueFilename))
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, "Error creating the file on server")
@@ -160,6 +164,10 @@ func (h *MaterialHandlers) CreateMaterialHandler(w http.ResponseWriter, r *http.
 			uniqueFilename := fmt.Sprintf("%s%s", uuid.New().String(), ext)
 
 			// Create the file on the server
+			if err := ensureUploadsDir(); err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Error preparing uploads directory")
+				return
+			}
 			dst, err := os.Create(filepath.Join("./uploads", uniqueFilename))
 			if err != nil {
 				respondWithError(w, http.StatusInternalServerError, "Error creating the file on server")
@@ -353,6 +361,10 @@ func (h *MaterialHandlers) UpdateMaterialHandler(w http.ResponseWriter, r *http.
 			defer file.Close()
 			ext := filepath.Ext(handler.Filename)
 			uniqueFilename := fmt.Sprintf("%s%s", uuid.New().String(), ext)
+			if err := ensureUploadsDir(); err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Error preparing uploads directory")
+				return
+			}
 			dst, err := os.Create(filepath.Join("./uploads", uniqueFilename))
 			if err != nil {
 				respondWithError(w, http.StatusInternalServerError, "Error creating file on server for update")

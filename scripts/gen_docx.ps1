@@ -28,7 +28,7 @@ function Titleize([string]$s) {
   return ($s.Substring(0,1).ToUpper() + $s.Substring(1))
 }
 
-function Describe-Column([string]$col, [string]$dataType) {
+function Describe-Column([string]$col) {
   switch -Regex ($col) {
     '^id$' { return 'Primary key' }
     '(_id|_by)$' { return 'Foreign key reference' }
@@ -49,7 +49,6 @@ function Describe-Column([string]$col, [string]$dataType) {
     '^class_name$' { return 'Class name' }
     '^class_code$' { return 'Class code' }
     '^deskripsi$' { return 'Description' }
-    '^description$' { return 'Description' }
     '^status$' { return 'Status' }
     '^model_name$' { return 'Model name' }
     '^feature$' { return 'Feature name' }
@@ -81,35 +80,12 @@ function Describe-Column([string]$col, [string]$dataType) {
     '^ai_grading_error$' { return 'AI grading error' }
     '^teacher_feedback$' { return 'Teacher feedback' }
     '^revised_score$' { return 'Adjusted score' }
-    '^score$' { return 'Cached score' }
-    '^feedback$' { return 'Cached feedback' }
-    '^aspect_scores$' { return 'Per-aspect scores' }
-    '^hit_count$' { return 'Cache hit count' }
-    '^request_hash$' { return 'Cache key' }
-    '^reason_type$' { return 'Appeal reason type' }
-    '^reason_text$' { return 'Appeal reason' }
-    '^attachment_url$' { return 'Attachment URL' }
-    '^teacher_response$' { return 'Teacher response' }
-    '^subject$' { return 'Subject' }
-    '^tags$' { return 'Tags' }
-    '^content_type$' { return 'Content type' }
-    '^body$' { return 'Content body' }
-    '^display_order$' { return 'Display order' }
-    '^announcement_enabled$' { return 'Announcement enabled flag' }
-    '^announcement_title$' { return 'Announcement title' }
-    '^announcement_content$' { return 'Announcement content' }
-    '^announcement_tone$' { return 'Announcement tone' }
-    '^join_policy$' { return 'Join policy' }
     default { return Titleize $col }
   }
 }
 
 $tablesWanted = @(
-  'users','classes','class_members','class_teaching_modules',
-  'materials','modules','sections','section_contents',
-  'essay_questions','rubrics','rubric_templates',
-  'essay_submissions','ai_results','teacher_reviews',
-  'ai_api_usage_logs','ai_grading_cache','grade_appeals','question_bank_entries'
+  'users','classes','class_members','materials','modules','essay_questions','rubrics','essay_submissions','ai_results','teacher_reviews'
 )
 
 $tablesList = $tablesWanted -join "','"
@@ -140,21 +116,13 @@ $descriptions = @{
   users = 'Table 3.3 stores user data consisting of teachers, students, and superadmins. Each user has a role identifier to distinguish access level.'
   classes = 'Table 3.4 stores class information created and managed by teachers.'
   class_members = 'Table 3.5 stores data on students who are enrolled in a particular class.'
-  class_teaching_modules = 'Table 3.6 stores teaching modules or files uploaded for a class by teachers.'
-  materials = 'Table 3.7 stores learning materials posted by teachers, including content and attachments.'
-  modules = 'Table 3.8 stores module files attached to a material.'
-  sections = 'Table 3.9 stores section/grouping information for organizing class content.'
-  section_contents = 'Table 3.10 stores the content items within each section, including links to materials.'
-  essay_questions = 'Table 3.11 stores essay questions created by teachers, including optional ideal answers and keywords for AI assessment.'
-  rubrics = 'Table 3.12 stores scoring rubrics per question, including aspects, descriptors, and weights.'
-  rubric_templates = 'Table 3.13 stores reusable rubric templates created by teachers.'
-  essay_submissions = 'Table 3.14 stores student essay submissions and their AI grading status.'
-  ai_results = 'Table 3.15 stores AI grading results for each submission.'
-  teacher_reviews = 'Table 3.16 stores teacher reviews and adjusted scores for submissions.'
-  ai_api_usage_logs = 'Table 3.17 stores AI API call metadata for monitoring usage and errors.'
-  ai_grading_cache = 'Table 3.18 stores cached AI grading results to avoid repeated calls.'
-  grade_appeals = 'Table 3.19 stores student grade appeal requests and their resolution status.'
-  question_bank_entries = 'Table 3.20 stores question bank entries for reuse and sharing across classes.'
+  materials = 'Table 3.6 stores learning materials posted by teachers, including content and attachments.'
+  modules = 'Table 3.7 stores module files attached to a material.'
+  essay_questions = 'Table 3.8 stores essay questions created by teachers, including optional ideal answers and keywords for AI assessment.'
+  rubrics = 'Table 3.9 stores scoring rubrics per question, including aspects, descriptors, and weights.'
+  essay_submissions = 'Table 3.10 stores student essay submissions and their AI grading status.'
+  ai_results = 'Table 3.11 stores AI grading results for each submission.'
+  teacher_reviews = 'Table 3.12 stores teacher reviews and adjusted scores for submissions.'
 }
 
 $ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -215,7 +183,7 @@ foreach ($g in $grouped) {
   $cols = $g.Group | Sort-Object ordinal_position
   foreach ($c in $cols) {
     $dt = Format-DataType $c.data_type $c.udt_name
-    $desc = Describe-Column $c.column_name $dt
+    $desc = Describe-Column $c.column_name
     $rows += ,@($c.column_name, $dt, $desc)
   }
   [void]$body.Append((Make-Table $rows))

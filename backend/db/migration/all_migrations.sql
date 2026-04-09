@@ -108,6 +108,9 @@ ALTER TABLE classes ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 ALTER TABLE classes ADD COLUMN announcement_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE classes ADD COLUMN announcement_title TEXT NOT NULL DEFAULT '';
 ALTER TABLE classes ADD COLUMN announcement_content TEXT NOT NULL DEFAULT '';
+
+-- Migration 000056_add_rubric_scores_to_ai_results.up.sql
+ALTER TABLE ai_results ADD COLUMN rubric_scores JSONB;
 ALTER TABLE classes ADD COLUMN announcement_tone TEXT NOT NULL DEFAULT 'info';
 
 -- Migration 000051_add_class_announcement_schedule.up.sql

@@ -117,3 +117,70 @@ func (h *SectionHandlers) CreateSectionContentHandler(w http.ResponseWriter, r *
 	}
 	respondWithJSON(w, http.StatusCreated, created)
 }
+
+func (h *SectionHandlers) GetSectionCardReadStatusHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok || userID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	vars := mux.Vars(r)
+	classID := vars["classId"]
+	materialID := vars["materialId"]
+	sectionCardID := vars["sectionCardId"]
+	if classID == "" || materialID == "" || sectionCardID == "" {
+		respondWithError(w, http.StatusBadRequest, "Invalid section card request")
+		return
+	}
+
+	read, err := h.Service.IsSectionCardRead(classID, materialID, sectionCardID, userID)
+	if err != nil {
+		log.Printf("ERROR: Failed to read section card status for class %s: %v", classID, err)
+		switch err.Error() {
+		case "class not found or access denied", "material not found or access denied":
+			respondWithError(w, http.StatusForbidden, err.Error())
+			return
+		case "section card not found":
+			respondWithError(w, http.StatusNotFound, err.Error())
+			return
+		default:
+			respondWithError(w, http.StatusInternalServerError, "Failed to check section card status")
+			return
+		}
+	}
+	respondWithJSON(w, http.StatusOK, map[string]bool{"read": read})
+}
+
+func (h *SectionHandlers) MarkSectionCardReadHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(string)
+	if !ok || userID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	vars := mux.Vars(r)
+	classID := vars["classId"]
+	materialID := vars["materialId"]
+	sectionCardID := vars["sectionCardId"]
+	if classID == "" || materialID == "" || sectionCardID == "" {
+		respondWithError(w, http.StatusBadRequest, "Invalid section card request")
+		return
+	}
+
+	if err := h.Service.MarkSectionCardRead(classID, materialID, sectionCardID, userID); err != nil {
+		log.Printf("ERROR: Failed to mark section card read for class %s: %v", classID, err)
+		switch err.Error() {
+		case "class not found or access denied", "material not found or access denied":
+			respondWithError(w, http.StatusForbidden, err.Error())
+			return
+		case "section card not found":
+			respondWithError(w, http.StatusNotFound, err.Error())
+			return
+		default:
+			respondWithError(w, http.StatusInternalServerError, "Failed to update section card status")
+			return
+		}
+	}
+	respondWithJSON(w, http.StatusOK, map[string]bool{"read": true})
+}

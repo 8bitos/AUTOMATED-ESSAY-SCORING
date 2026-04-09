@@ -25,6 +25,19 @@ interface MaterialItem {
   id: string;
   judul: string;
   material_type?: "materi" | "soal" | "tugas";
+  isi_materi?: string | null;
+}
+
+interface StudentItem {
+  id: string;
+  student_name: string;
+  student_email?: string;
+}
+
+interface SectionCardItem {
+  id: string;
+  type: string;
+  title: string;
 }
 
 interface SummaryResponse {
@@ -74,12 +87,39 @@ const formatScore = (value?: number | null) => {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
 };
 
+const parseSectionCards = (raw?: string | null): SectionCardItem[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as { format?: string; items?: unknown[] };
+    if (parsed?.format !== "sage_section_cards_v1" || !Array.isArray(parsed?.items)) return [];
+    return parsed.items
+      .map((x: unknown) => {
+        if (typeof x !== "object" || x === null) return null;
+        const row = x as Record<string, unknown>;
+        const id = typeof row.id === "string" ? row.id : "";
+        if (!id) return null;
+        return {
+          id,
+          type: typeof row.type === "string" ? row.type : "materi",
+          title: typeof row.title === "string" ? row.title : "",
+        } as SectionCardItem;
+      })
+      .filter((x): x is SectionCardItem => x !== null);
+  } catch {
+    return [];
+  }
+};
+
 export default function TeacherLaporanNilaiPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState("");
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
+  const [students, setStudents] = useState<StudentItem[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [selectedSectionCardId, setSelectedSectionCardId] = useState("");
   const [loadingMaterials, setLoadingMaterials] = useState(false);
+  const [loadingStudents, setLoadingStudents] = useState(false);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("");
   const [page, setPage] = useState(1);
@@ -87,6 +127,10 @@ export default function TeacherLaporanNilaiPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [exportScope, setExportScope] = useState<"all" | "page">("all");
+  const [exportMode, setExportMode] = useState<"summary" | "qwk" | "question">("summary");
+  const [aiStatus, setAiStatus] = useState("");
+  const [reviewStatus, setReviewStatus] = useState("");
+  const [includeRubricScores, setIncludeRubricScores] = useState(false);
 
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
@@ -94,6 +138,16 @@ export default function TeacherLaporanNilaiPage() {
   const [loadingDistribution, setLoadingDistribution] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+
+  const selectedMaterial = useMemo(
+    () => materials.find((m) => m.id === selectedMaterialId) || null,
+    [materials, selectedMaterialId]
+  );
+
+  const sectionCards = useMemo(() => {
+    if (!selectedMaterial?.isi_materi) return [];
+    return parseSectionCards(selectedMaterial.isi_materi).filter((card) => card.type === "soal");
+  }, [selectedMaterial]);
 
   const totalPages = useMemo(() => {
     if (!summary) return 1;
@@ -133,6 +187,24 @@ export default function TeacherLaporanNilaiPage() {
     }
   }, [selectedClassId]);
 
+  const fetchStudents = useCallback(async () => {
+    if (!selectedClassId) {
+      setStudents([]);
+      return;
+    }
+    setLoadingStudents(true);
+    try {
+      const res = await fetch(`${API_URL}/classes/${selectedClassId}/students`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Gagal memuat siswa.");
+      setStudents(Array.isArray(data) ? data : []);
+    } catch {
+      setStudents([]);
+    } finally {
+      setLoadingStudents(false);
+    }
+  }, [selectedClassId]);
+
   const fetchSummary = useCallback(async () => {
     if (!selectedClassId) return;
     setLoadingSummary(true);
@@ -141,9 +213,14 @@ export default function TeacherLaporanNilaiPage() {
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
       if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+      if (selectedStudentId) params.set("studentId", selectedStudentId);
+      if (selectedSectionCardId) params.set("sectionCardId", selectedSectionCardId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       if (sortBy) params.set("sort", sortBy);
+      if (aiStatus) params.set("aiStatus", aiStatus);
+      if (reviewStatus) params.set("reviewStatus", reviewStatus);
+      if (exportMode === "qwk" && includeRubricScores) params.set("includeRubricScores", "1");
       params.set("page", String(page));
       params.set("limit", String(limit));
       const res = await fetch(`${API_URL}/reports/classes/${selectedClassId}/students?${params.toString()}`, {
@@ -158,7 +235,20 @@ export default function TeacherLaporanNilaiPage() {
     } finally {
       setLoadingSummary(false);
     }
-  }, [limit, page, query, selectedClassId, sortBy]);
+  }, [
+    aiStatus,
+    dateFrom,
+    dateTo,
+    limit,
+    page,
+    query,
+    reviewStatus,
+    selectedClassId,
+    selectedMaterialId,
+    selectedSectionCardId,
+    selectedStudentId,
+    sortBy,
+  ]);
 
   const fetchDistribution = useCallback(async () => {
     if (!selectedClassId) return;
@@ -166,8 +256,12 @@ export default function TeacherLaporanNilaiPage() {
     try {
       const params = new URLSearchParams();
       if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+      if (selectedStudentId) params.set("studentId", selectedStudentId);
+      if (selectedSectionCardId) params.set("sectionCardId", selectedSectionCardId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (aiStatus) params.set("aiStatus", aiStatus);
+      if (reviewStatus) params.set("reviewStatus", reviewStatus);
       const url = `${API_URL}/reports/classes/${selectedClassId}/distribution?${params.toString()}`;
       const res = await fetch(url, {
         credentials: "include",
@@ -180,7 +274,16 @@ export default function TeacherLaporanNilaiPage() {
     } finally {
       setLoadingDistribution(false);
     }
-  }, [selectedClassId]);
+  }, [
+    aiStatus,
+    dateFrom,
+    dateTo,
+    reviewStatus,
+    selectedClassId,
+    selectedMaterialId,
+    selectedSectionCardId,
+    selectedStudentId,
+  ]);
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = window.URL.createObjectURL(blob);
@@ -287,7 +390,7 @@ ${rowsXml.join("")}
     if (!selectedClassId) return;
     setExporting(true);
     try {
-      if (exportScope === "page") {
+      if (exportMode === "summary" && exportScope === "page") {
         const rows = summary?.items || [];
         if (format === "csv") {
           const csv = buildCsvContent(rows);
@@ -303,11 +406,21 @@ ${rowsXml.join("")}
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
       if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+      if (selectedStudentId) params.set("studentId", selectedStudentId);
+      if (selectedSectionCardId) params.set("sectionCardId", selectedSectionCardId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       if (sortBy) params.set("sort", sortBy);
+      if (aiStatus) params.set("aiStatus", aiStatus);
+      if (reviewStatus) params.set("reviewStatus", reviewStatus);
       params.set("format", format);
-      const res = await fetch(`${API_URL}/reports/classes/${selectedClassId}/export?${params.toString()}`, {
+      const endpoint =
+        exportMode === "summary"
+          ? `/reports/classes/${selectedClassId}/export`
+          : exportMode === "qwk"
+          ? `/reports/classes/${selectedClassId}/export-qwk`
+          : `/reports/classes/${selectedClassId}/export-questions`;
+      const res = await fetch(`${API_URL}${endpoint}?${params.toString()}`, {
         credentials: "include",
       });
       if (!res.ok) {
@@ -315,13 +428,92 @@ ${rowsXml.join("")}
         throw new Error(body?.message || "Gagal export laporan.");
       }
       const blob = await res.blob();
-      downloadBlob(blob, `laporan-nilai-${selectedClassId}.${format}`);
+      const filename =
+        exportMode === "summary"
+          ? `laporan-nilai-${selectedClassId}.${format}`
+          : exportMode === "qwk"
+          ? `qwk-export-${selectedClassId}.${format}`
+          : `question-export-${selectedClassId}.${format}`;
+      downloadBlob(blob, filename);
     } catch (err: any) {
       setError(err?.message || "Gagal export laporan.");
     } finally {
       setExporting(false);
     }
-  }, [dateFrom, dateTo, exportScope, query, selectedClassId, selectedMaterialId, sortBy, summary?.items]);
+  }, [
+    aiStatus,
+    dateFrom,
+    dateTo,
+    exportMode,
+    exportScope,
+    includeRubricScores,
+    query,
+    reviewStatus,
+    selectedClassId,
+    selectedMaterialId,
+    selectedSectionCardId,
+    selectedStudentId,
+    sortBy,
+    summary?.items,
+  ]);
+
+  const handleExportTemplate = useCallback(
+    async (format: "csv" | "xlsx") => {
+      if (!selectedClassId) return;
+      setExporting(true);
+      try {
+        const params = new URLSearchParams();
+        if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+        if (selectedStudentId) params.set("studentId", selectedStudentId);
+        if (selectedSectionCardId) params.set("sectionCardId", selectedSectionCardId);
+        params.set("format", format);
+        const endpoint = `/reports/classes/${selectedClassId}/export-rubric-template`;
+        const res = await fetch(`${API_URL}${endpoint}?${params.toString()}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.message || "Gagal export template penilaian.");
+        }
+        const blob = await res.blob();
+        downloadBlob(blob, `template-penilaian-${selectedClassId}.${format}`);
+      } catch (err: any) {
+        setError(err?.message || "Gagal export template penilaian.");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [selectedClassId, selectedMaterialId, selectedSectionCardId, selectedStudentId]
+  );
+
+  const handleExportRubricScores = useCallback(
+    async (format: "csv" | "xlsx") => {
+      if (!selectedClassId) return;
+      setExporting(true);
+      try {
+        const params = new URLSearchParams();
+        if (selectedMaterialId) params.set("materialId", selectedMaterialId);
+        if (selectedStudentId) params.set("studentId", selectedStudentId);
+        if (selectedSectionCardId) params.set("sectionCardId", selectedSectionCardId);
+        params.set("format", format);
+        const endpoint = `/reports/classes/${selectedClassId}/export-rubric-scores`;
+        const res = await fetch(`${API_URL}${endpoint}?${params.toString()}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.message || "Gagal export penilaian.");
+        }
+        const blob = await res.blob();
+        downloadBlob(blob, `penilaian-${selectedClassId}.${format}`);
+      } catch (err: any) {
+        setError(err?.message || "Gagal export penilaian.");
+      } finally {
+        setExporting(false);
+      }
+    },
+    [selectedClassId, selectedMaterialId, selectedSectionCardId, selectedStudentId]
+  );
 
   useEffect(() => {
     fetchClasses();
@@ -340,12 +532,31 @@ ${rowsXml.join("")}
   useEffect(() => {
     if (!selectedClassId) return;
     fetchMaterials();
+    fetchStudents();
     setSelectedMaterialId("");
-  }, [fetchMaterials, selectedClassId]);
+    setSelectedStudentId("");
+    setSelectedSectionCardId("");
+  }, [fetchMaterials, fetchStudents, selectedClassId]);
+
+  useEffect(() => {
+    setSelectedSectionCardId("");
+  }, [selectedMaterialId]);
 
   useEffect(() => {
     setPage(1);
-  }, [query, sortBy, selectedClassId, selectedMaterialId, dateFrom, dateTo, limit]);
+  }, [
+    query,
+    sortBy,
+    selectedClassId,
+    selectedMaterialId,
+    selectedStudentId,
+    selectedSectionCardId,
+    aiStatus,
+    reviewStatus,
+    dateFrom,
+    dateTo,
+    limit,
+  ]);
 
   const maxBucket = useMemo(() => {
     if (!distribution?.buckets?.length) return 0;
@@ -392,6 +603,22 @@ ${rowsXml.join("")}
               ))}
             </select>
           </div>
+          <div className="min-w-[220px] flex-1">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Bab / Section</label>
+            <select
+              value={selectedSectionCardId}
+              onChange={(e) => setSelectedSectionCardId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              disabled={!selectedMaterialId || sectionCards.length === 0}
+            >
+              <option value="">Semua bab</option>
+              {sectionCards.map((card, idx) => (
+                <option key={card.id} value={card.id}>
+                  {card.title?.trim() ? card.title : `Bab ${idx + 1}`}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="min-w-[160px]">
             <label className="text-xs uppercase tracking-wide text-slate-500">Dari</label>
             <input
@@ -410,6 +637,23 @@ ${rowsXml.join("")}
               className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
             />
           </div>
+          <div className="min-w-[220px] flex-1">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Siswa</label>
+            <select
+              value={selectedStudentId}
+              onChange={(e) => setSelectedStudentId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              disabled={!selectedClassId || loadingStudents}
+            >
+              <option value="">Semua siswa</option>
+              {students.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.student_name}
+                  {student.student_email ? ` (${student.student_email})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="min-w-[200px] flex-1">
             <label className="text-xs uppercase tracking-wide text-slate-500">Cari Siswa</label>
             <div className="mt-1 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
@@ -421,6 +665,32 @@ ${rowsXml.join("")}
                 className="w-full outline-none"
               />
             </div>
+          </div>
+          <div className="min-w-[180px]">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Status AI</label>
+            <select
+              value={aiStatus}
+              onChange={(e) => setAiStatus(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            >
+              <option value="">Semua</option>
+              <option value="completed">Completed</option>
+              <option value="processing">Processing</option>
+              <option value="queued">Queued</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+          <div className="min-w-[180px]">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Status Review</label>
+            <select
+              value={reviewStatus}
+              onChange={(e) => setReviewStatus(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+            >
+              <option value="">Semua</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="pending">Pending</option>
+            </select>
           </div>
           <div className="min-w-[180px]">
             <label className="text-xs uppercase tracking-wide text-slate-500">Urutkan</label>
@@ -437,16 +707,40 @@ ${rowsXml.join("")}
           </div>
           <div className="ml-auto flex flex-wrap items-end gap-2">
             <div className="min-w-[170px]">
-              <label className="text-xs uppercase tracking-wide text-slate-500">Scope Export</label>
+              <label className="text-xs uppercase tracking-wide text-slate-500">Mode Export</label>
               <select
-                value={exportScope}
-                onChange={(e) => setExportScope(e.target.value as "all" | "page")}
+                value={exportMode}
+                onChange={(e) => setExportMode(e.target.value as "summary" | "qwk" | "question")}
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
               >
-                <option value="all">Semua data</option>
-                <option value="page">Halaman ini</option>
+                <option value="summary">Summary</option>
+                <option value="qwk">QWK (Per Submission)</option>
+                <option value="question">Per Soal</option>
               </select>
             </div>
+            {exportMode === "qwk" && (
+              <label className="min-w-[170px] flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={includeRubricScores}
+                  onChange={(e) => setIncludeRubricScores(e.target.checked)}
+                />
+                Sertakan skor rubrik
+              </label>
+            )}
+            {exportMode === "summary" && (
+              <div className="min-w-[170px]">
+                <label className="text-xs uppercase tracking-wide text-slate-500">Scope Export</label>
+                <select
+                  value={exportScope}
+                  onChange={(e) => setExportScope(e.target.value as "all" | "page")}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                >
+                  <option value="all">Semua data</option>
+                  <option value="page">Halaman ini</option>
+                </select>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => handleExport("csv")}
@@ -464,6 +758,43 @@ ${rowsXml.join("")}
             >
               <FiDownload />
               {exporting ? "Exporting..." : "Export Excel"}
+            </button>
+            <div className="h-9 w-px bg-slate-200" />
+            <button
+              type="button"
+              onClick={() => handleExportTemplate("csv")}
+              disabled={!selectedClassId || exporting}
+              className="sage-button-outline inline-flex items-center gap-2"
+            >
+              <FiDownload />
+              {exporting ? "Exporting..." : "Template Penilaian CSV"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportTemplate("xlsx")}
+              disabled={!selectedClassId || exporting}
+              className="sage-button-outline inline-flex items-center gap-2"
+            >
+              <FiDownload />
+              {exporting ? "Exporting..." : "Template Penilaian Excel"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportRubricScores("csv")}
+              disabled={!selectedClassId || exporting}
+              className="sage-button-outline inline-flex items-center gap-2"
+            >
+              <FiDownload />
+              {exporting ? "Exporting..." : "Penilaian CSV"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExportRubricScores("xlsx")}
+              disabled={!selectedClassId || exporting}
+              className="sage-button-outline inline-flex items-center gap-2"
+            >
+              <FiDownload />
+              {exporting ? "Exporting..." : "Penilaian Excel"}
             </button>
           </div>
         </div>

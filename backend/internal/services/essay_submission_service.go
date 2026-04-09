@@ -19,6 +19,22 @@ import (
 	"github.com/lib/pq"
 )
 
+type SectionCardInfo struct {
+	ID          string
+	Title       string
+	RequireRead bool
+}
+
+type sectionCardsPayload struct {
+	Format string `json:"format"`
+	Items  []struct {
+		ID    string                 `json:"id"`
+		Type  string                 `json:"type"`
+		Title string                 `json:"title"`
+		Meta  map[string]interface{} `json:"meta"`
+	} `json:"items"`
+}
+
 // EssaySubmissionService menyediakan metode untuk manajemen submission esai.
 // Layanan ini juga mengintegrasikan AIService dan EssayQuestionService untuk
 // penilaian otomatis dan pengambilan detail pertanyaan.
@@ -50,6 +66,7 @@ type groundingCandidate struct {
 }
 
 var ErrAttemptLimitReached = errors.New("attempt limit reached")
+var ErrSectionCardUnread = errors.New("section card not read")
 
 type AttemptCooldownError struct {
 	Remaining time.Duration
@@ -698,6 +715,9 @@ func (s *EssaySubmissionService) CreateEssaySubmission(questionID, studentID, te
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load quiz attempt config: %w", err)
 	}
+	if err := s.ensureSectionCardRead(questionID, studentID); err != nil {
+		return nil, nil, err
+	}
 
 	now := time.Now()
 	newSubmission := &models.EssaySubmission{
@@ -939,10 +959,12 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 	}
 	feedbackAI := gradeResp.Feedback
 	var logsRAG *string
+	var rubricScores *string
 	if len(gradeResp.AspectScores) > 0 {
 		if aspectJSON, marshalErr := json.Marshal(gradeResp.AspectScores); marshalErr == nil {
 			text := string(aspectJSON)
 			logsRAG = &text
+			rubricScores = &text
 		}
 	}
 
@@ -965,17 +987,19 @@ func (s *EssaySubmissionService) gradeJob(job essayGradingJob) (*models.GradeEss
 
 	if _, insertErr := s.db.ExecContext(
 		context.Background(),
-		`INSERT INTO ai_results (submission_id, skor_ai, umpan_balik_ai, logs_rag, generated_at)
-			 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO ai_results (submission_id, skor_ai, umpan_balik_ai, logs_rag, rubric_scores, generated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6)
 			 ON CONFLICT (submission_id) DO UPDATE
 			 SET skor_ai = EXCLUDED.skor_ai,
 			     umpan_balik_ai = EXCLUDED.umpan_balik_ai,
 			     logs_rag = EXCLUDED.logs_rag,
+			     rubric_scores = EXCLUDED.rubric_scores,
 			     generated_at = EXCLUDED.generated_at`,
 		job.SubmissionID,
 		skorAI,
 		feedbackAI,
 		logsRAG,
+		rubricScores,
 		time.Now(),
 	); insertErr != nil {
 		_ = s.updateSubmissionGradingStatus(job.SubmissionID, "failed", insertErr.Error(), nil)
@@ -1251,7 +1275,134 @@ func (s *EssaySubmissionService) ListMaterialStudentSubmissionSummaries(material
 	return result, nil
 }
 
-func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, teacherID, materialID string, from, to *time.Time, query, sortBy string, page, size int) (*models.ClassStudentSubmissionSummaryListResponse, error) {
+func (s *EssaySubmissionService) ensureSectionCardRead(questionID, studentID string) error {
+	if strings.TrimSpace(questionID) == "" || strings.TrimSpace(studentID) == "" {
+		return nil
+	}
+
+	var materialID, classID string
+	var raw sql.NullString
+	if err := s.db.QueryRowContext(
+		context.Background(),
+		`SELECT m.id, m.class_id, m.isi_materi
+		 FROM essay_questions eq
+		 JOIN materials m ON m.id = eq.material_id
+		 WHERE eq.id = $1`,
+		questionID,
+	).Scan(&materialID, &classID, &raw); err != nil {
+		return err
+	}
+	if !raw.Valid || strings.TrimSpace(raw.String) == "" {
+		return nil
+	}
+	index := buildSectionCardQuestionIndex(&raw.String)
+	if len(index) == 0 {
+		return nil
+	}
+	info, ok := index[strings.TrimSpace(questionID)]
+	if !ok || strings.TrimSpace(info.ID) == "" {
+		return nil
+	}
+	if !info.RequireRead {
+		return nil
+	}
+
+	var exists bool
+	if err := s.db.QueryRowContext(
+		context.Background(),
+		`SELECT EXISTS(
+			SELECT 1
+			FROM section_card_reads
+			WHERE student_id = $1 AND material_id = $2 AND section_card_id = $3
+		)`,
+		studentID,
+		materialID,
+		strings.TrimSpace(info.ID),
+	).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ErrSectionCardUnread
+	}
+	return nil
+}
+
+func buildSectionCardQuestionIndex(raw *string) map[string]SectionCardInfo {
+	if raw == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil
+	}
+	var parsed sectionCardsPayload
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil || parsed.Format != "sage_section_cards_v1" {
+		return nil
+	}
+	result := make(map[string]SectionCardInfo)
+	for _, item := range parsed.Items {
+		if strings.TrimSpace(item.Type) != "soal" {
+			continue
+		}
+		meta := item.Meta
+		if meta == nil {
+			continue
+		}
+		requireRead := false
+		if quizRaw, ok := meta["quiz_settings"].(map[string]interface{}); ok && quizRaw != nil {
+			if flag, ok := quizRaw["require_read_material"].(bool); ok {
+				requireRead = flag
+			}
+		}
+		rawIDs, ok := meta["question_ids"]
+		if !ok {
+			continue
+		}
+		idSlice, ok := rawIDs.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, entry := range idSlice {
+			id, ok := entry.(string)
+			if !ok {
+				continue
+			}
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, exists := result[id]; exists {
+				continue
+			}
+			title := strings.TrimSpace(item.Title)
+			result[id] = SectionCardInfo{
+				ID:          strings.TrimSpace(item.ID),
+				Title:       title,
+				RequireRead: requireRead,
+			}
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func questionIDsForSection(sectionIndex map[string]SectionCardInfo, sectionCardID string) []string {
+	sectionCardID = strings.TrimSpace(sectionCardID)
+	if sectionCardID == "" || len(sectionIndex) == 0 {
+		return nil
+	}
+	out := make([]string, 0)
+	for qid, info := range sectionIndex {
+		if strings.TrimSpace(info.ID) == sectionCardID {
+			out = append(out, qid)
+		}
+	}
+	return out
+}
+
+func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, teacherID, materialID string, questionIDs []string, studentID, aiStatus, reviewStatus string, from, to *time.Time, query, sortBy string, page, size int) (*models.ClassStudentSubmissionSummaryListResponse, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -1271,6 +1422,21 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, te
 		args = append(args, materialID)
 		argPos++
 	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+	if strings.TrimSpace(aiStatus) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.ai_grading_status = $%d", argPos))
+		args = append(args, aiStatus)
+		argPos++
+	}
 	if from != nil {
 		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
 		args = append(args, *from)
@@ -1285,6 +1451,14 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, te
 		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
 		args = append(args, "%"+trimmed+"%")
 		argPos++
+	}
+	if strings.TrimSpace(reviewStatus) != "" {
+		reviewedExpr := "(tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '')"
+		if reviewStatus == "reviewed" {
+			whereClauses = append(whereClauses, reviewedExpr)
+		} else if reviewStatus == "pending" {
+			whereClauses = append(whereClauses, "NOT "+reviewedExpr)
+		}
 	}
 
 	baseCTE := `
@@ -1392,7 +1566,7 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummaries(classID, te
 	return result, nil
 }
 
-func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID, teacherID, materialID string, from, to *time.Time, query, sortBy string) ([]models.ClassStudentSubmissionSummary, error) {
+func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID, teacherID, materialID string, questionIDs []string, studentID, aiStatus, reviewStatus string, from, to *time.Time, query, sortBy string) ([]models.ClassStudentSubmissionSummary, error) {
 	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
 	args := []interface{}{classID, teacherID}
 	argPos := 3
@@ -1400,6 +1574,21 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID,
 	if strings.TrimSpace(materialID) != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
 		args = append(args, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+	if strings.TrimSpace(aiStatus) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.ai_grading_status = $%d", argPos))
+		args = append(args, aiStatus)
 		argPos++
 	}
 	if from != nil {
@@ -1416,6 +1605,14 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID,
 		whereClauses = append(whereClauses, fmt.Sprintf("LOWER(u.nama_lengkap) LIKE LOWER($%d)", argPos))
 		args = append(args, "%"+trimmed+"%")
 		argPos++
+	}
+	if strings.TrimSpace(reviewStatus) != "" {
+		reviewedExpr := "(tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '')"
+		if reviewStatus == "reviewed" {
+			whereClauses = append(whereClauses, reviewedExpr)
+		} else if reviewStatus == "pending" {
+			whereClauses = append(whereClauses, "NOT "+reviewedExpr)
+		}
 	}
 
 	baseCTE := `
@@ -1502,13 +1699,83 @@ func (s *EssaySubmissionService) ListClassStudentSubmissionSummariesAll(classID,
 	return items, nil
 }
 
-func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID, materialID string, from, to *time.Time) (*models.ClassScoreDistributionResponse, error) {
-	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+func (s *EssaySubmissionService) BuildSectionCardIndexForClass(classID, teacherID, materialID string) (map[string]SectionCardInfo, error) {
+	if strings.TrimSpace(classID) == "" || strings.TrimSpace(teacherID) == "" {
+		return nil, fmt.Errorf("class ID and teacher ID are required")
+	}
+	where := []string{"c.id = $1", "c.teacher_id = $2"}
 	args := []interface{}{classID, teacherID}
 	argPos := 3
 	if strings.TrimSpace(materialID) != "" {
+		where = append(where, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+
+	rows, err := s.db.Query(
+		`SELECT m.id, m.judul, m.isi_materi
+		 FROM materials m
+		 JOIN classes c ON c.id = m.class_id
+		 WHERE `+strings.Join(where, " AND "),
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load materials for section cards: %w", err)
+	}
+	defer rows.Close()
+
+	index := make(map[string]SectionCardInfo)
+	for rows.Next() {
+		var materialID string
+		var materialTitle string
+		var raw sql.NullString
+		if err := rows.Scan(&materialID, &materialTitle, &raw); err != nil {
+			return nil, fmt.Errorf("failed to scan material for section cards: %w", err)
+		}
+		_ = materialTitle
+		if !raw.Valid || strings.TrimSpace(raw.String) == "" {
+			continue
+		}
+		sectionIndex := buildSectionCardQuestionIndex(&raw.String)
+		for qid, info := range sectionIndex {
+			if _, exists := index[qid]; exists {
+				continue
+			}
+			if strings.TrimSpace(info.Title) == "" {
+				info.Title = "Soal"
+			}
+			index[qid] = info
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during section card iteration: %w", err)
+	}
+	return index, nil
+}
+
+func (s *EssaySubmissionService) ListClassQWKExportRows(classID, teacherID, materialID string, questionIDs []string, studentID, aiStatus, reviewStatus string, from, to *time.Time, query string, sectionIndex map[string]SectionCardInfo, includeRubricScores bool) ([]models.QWKExportRow, error) {
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2", "es.submission_type = 'essay'"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+
+	if strings.TrimSpace(materialID) != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
 		args = append(args, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+	if strings.TrimSpace(aiStatus) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.ai_grading_status = $%d", argPos))
+		args = append(args, aiStatus)
 		argPos++
 	}
 	if from != nil {
@@ -1520,6 +1787,505 @@ func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID, m
 		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at <= $%d", argPos))
 		args = append(args, *to)
 		argPos++
+	}
+	if trimmed := strings.TrimSpace(query); trimmed != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(LOWER(u.nama_lengkap) LIKE LOWER($%d) OR LOWER(u.email) LIKE LOWER($%d))", argPos, argPos))
+		args = append(args, "%"+trimmed+"%")
+		argPos++
+	}
+	if strings.TrimSpace(reviewStatus) != "" {
+		reviewedExpr := "(tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '')"
+		if reviewStatus == "reviewed" {
+			whereClauses = append(whereClauses, reviewedExpr)
+		} else if reviewStatus == "pending" {
+			whereClauses = append(whereClauses, "NOT "+reviewedExpr)
+		}
+	}
+
+	querySQL := `
+		SELECT
+			c.id AS class_id,
+			c.class_name,
+			m.id AS material_id,
+			m.judul AS material_title,
+			eq.id AS question_id,
+			eq.teks_soal AS question_text,
+			u.id AS student_id,
+			u.nama_lengkap AS student_name,
+			u.email AS student_email,
+			es.id AS submission_id,
+			es.submitted_at,
+			ar.skor_ai,
+			tr.revised_score,
+			COALESCE(es.ai_grading_status, '') AS ai_status,
+			ar.rubric_scores::text AS rubric_scores
+		FROM essay_submissions es
+		JOIN essay_questions eq ON eq.id = es.soal_id
+		JOIN materials m ON m.id = eq.material_id
+		JOIN classes c ON c.id = m.class_id
+		JOIN users u ON u.id = es.siswa_id
+		LEFT JOIN ai_results ar ON ar.submission_id = es.id
+		LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+		WHERE ` + strings.Join(whereClauses, " AND ") + `
+		ORDER BY es.submitted_at DESC
+	`
+
+	rows, err := s.db.Query(querySQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query qwk export rows: %w", err)
+	}
+	defer rows.Close()
+
+	items := []models.QWKExportRow{}
+	for rows.Next() {
+		var item models.QWKExportRow
+		var aiScore sql.NullFloat64
+		var revisedScore sql.NullFloat64
+		var aiStatus sql.NullString
+		var rubricScores sql.NullString
+		if err := rows.Scan(
+			&item.ClassID,
+			&item.ClassName,
+			&item.MaterialID,
+			&item.MaterialTitle,
+			&item.QuestionID,
+			&item.QuestionText,
+			&item.StudentID,
+			&item.StudentName,
+			&item.StudentEmail,
+			&item.SubmissionID,
+			&item.SubmittedAt,
+			&aiScore,
+			&revisedScore,
+			&aiStatus,
+			&rubricScores,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan qwk export row: %w", err)
+		}
+		if aiScore.Valid {
+			item.AIScore = &aiScore.Float64
+		}
+		if revisedScore.Valid {
+			item.RevisedScore = &revisedScore.Float64
+		}
+		if aiStatus.Valid {
+			item.AIStatus = aiStatus.String
+		}
+		if includeRubricScores && rubricScores.Valid {
+			text := rubricScores.String
+			item.RubricScores = &text
+		}
+		if info, ok := sectionIndex[item.QuestionID]; ok {
+			item.SectionCardID = info.ID
+			item.SectionTitle = info.Title
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during qwk export iteration: %w", err)
+	}
+	return items, nil
+}
+
+func (s *EssaySubmissionService) ListClassQuestionExportRows(classID, teacherID, materialID string, questionIDs []string, studentID, aiStatus, reviewStatus string, from, to *time.Time) ([]models.QuestionExportRow, error) {
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2", "es.submission_type = 'essay'"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+	if strings.TrimSpace(aiStatus) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.ai_grading_status = $%d", argPos))
+		args = append(args, aiStatus)
+		argPos++
+	}
+	if from != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
+		args = append(args, *from)
+		argPos++
+	}
+	if to != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at <= $%d", argPos))
+		args = append(args, *to)
+		argPos++
+	}
+	if strings.TrimSpace(reviewStatus) != "" {
+		reviewedExpr := "(tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '')"
+		if reviewStatus == "reviewed" {
+			whereClauses = append(whereClauses, reviewedExpr)
+		} else if reviewStatus == "pending" {
+			whereClauses = append(whereClauses, "NOT "+reviewedExpr)
+		}
+	}
+
+	querySQL := `
+		SELECT
+			c.id AS class_id,
+			c.class_name,
+			m.id AS material_id,
+			m.judul AS material_title,
+			eq.id AS question_id,
+			eq.teks_soal AS question_text,
+			COUNT(es.id)::int AS total_submissions,
+			SUM(CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END)::int AS reviewed_submissions,
+			AVG(ar.skor_ai) AS avg_ai_score,
+			AVG(tr.revised_score) AS avg_revised_score,
+			AVG(COALESCE(tr.revised_score, ar.skor_ai)) AS avg_final_score
+		FROM essay_submissions es
+		JOIN essay_questions eq ON eq.id = es.soal_id
+		JOIN materials m ON m.id = eq.material_id
+		JOIN classes c ON c.id = m.class_id
+		LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+		LEFT JOIN ai_results ar ON ar.submission_id = es.id
+		WHERE ` + strings.Join(whereClauses, " AND ") + `
+		GROUP BY c.id, c.class_name, m.id, m.judul, eq.id, eq.teks_soal
+		ORDER BY total_submissions DESC, eq.teks_soal ASC
+	`
+
+	rows, err := s.db.Query(querySQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query question export rows: %w", err)
+	}
+	defer rows.Close()
+
+	items := []models.QuestionExportRow{}
+	for rows.Next() {
+		var item models.QuestionExportRow
+		var avgAI sql.NullFloat64
+		var avgRevised sql.NullFloat64
+		var avgFinal sql.NullFloat64
+		if err := rows.Scan(
+			&item.ClassID,
+			&item.ClassName,
+			&item.MaterialID,
+			&item.MaterialTitle,
+			&item.QuestionID,
+			&item.QuestionText,
+			&item.TotalSubmissions,
+			&item.ReviewedSubmissions,
+			&avgAI,
+			&avgRevised,
+			&avgFinal,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan question export row: %w", err)
+		}
+		if avgAI.Valid {
+			item.AvgAIScore = &avgAI.Float64
+		}
+		if avgRevised.Valid {
+			item.AvgRevisedScore = &avgRevised.Float64
+		}
+		if avgFinal.Valid {
+			item.AvgFinalScore = &avgFinal.Float64
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during question export iteration: %w", err)
+	}
+	return items, nil
+}
+
+func (s *EssaySubmissionService) ListClassRubricTemplateRows(classID, teacherID, materialID string, questionIDs []string, studentID string) ([]models.RubricTemplateRow, error) {
+	if strings.TrimSpace(classID) == "" || strings.TrimSpace(teacherID) == "" {
+		return nil, fmt.Errorf("class ID and teacher ID are required")
+	}
+
+	studentWhere := []string{"c.id = $1", "c.teacher_id = $2", "cm.status = 'approved'"}
+	studentArgs := []interface{}{classID, teacherID}
+	argPos := 3
+	if strings.TrimSpace(studentID) != "" {
+		studentWhere = append(studentWhere, fmt.Sprintf("u.id = $%d", argPos))
+		studentArgs = append(studentArgs, studentID)
+		argPos++
+	}
+	studentsQuery := `
+		SELECT u.id, u.nama_lengkap
+		FROM class_members cm
+		JOIN classes c ON c.id = cm.class_id
+		JOIN users u ON u.id = cm.user_id
+		WHERE ` + strings.Join(studentWhere, " AND ") + `
+		ORDER BY u.nama_lengkap ASC
+	`
+	studentRows, err := s.db.Query(studentsQuery, studentArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query students for rubric template: %w", err)
+	}
+	defer studentRows.Close()
+
+	type studentRow struct {
+		ID   string
+		Name string
+	}
+	students := make([]studentRow, 0)
+	for studentRows.Next() {
+		var row studentRow
+		if err := studentRows.Scan(&row.ID, &row.Name); err != nil {
+			return nil, fmt.Errorf("failed to scan student for rubric template: %w", err)
+		}
+		students = append(students, row)
+	}
+	if err := studentRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during student iteration for rubric template: %w", err)
+	}
+
+	questionWhere := []string{"c.id = $1", "c.teacher_id = $2"}
+	questionArgs := []interface{}{classID, teacherID}
+	argPos = 3
+	if strings.TrimSpace(materialID) != "" {
+		questionWhere = append(questionWhere, fmt.Sprintf("m.id = $%d", argPos))
+		questionArgs = append(questionArgs, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		questionWhere = append(questionWhere, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		questionArgs = append(questionArgs, pq.Array(questionIDs))
+		argPos++
+	}
+
+	questionQuery := `
+		SELECT eq.id, eq.teks_soal, eq.rubrics, eq.weight
+		FROM essay_questions eq
+		JOIN materials m ON m.id = eq.material_id
+		JOIN classes c ON c.id = m.class_id
+		WHERE ` + strings.Join(questionWhere, " AND ") + `
+		ORDER BY eq.created_at ASC, eq.teks_soal ASC
+	`
+	questionRows, err := s.db.Query(questionQuery, questionArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query questions for rubric template: %w", err)
+	}
+	defer questionRows.Close()
+
+	type questionRow struct {
+		ID      string
+		Text    string
+		Weight  *float64
+		Aspects []struct {
+			Name     string
+			MaxScore int
+		}
+	}
+	questions := make([]questionRow, 0)
+	for questionRows.Next() {
+		var (
+			qid      string
+			qtext    string
+			rawRubric []byte
+			weight   sql.NullFloat64
+		)
+		if err := questionRows.Scan(&qid, &qtext, &rawRubric, &weight); err != nil {
+			return nil, fmt.Errorf("failed to scan question for rubric template: %w", err)
+		}
+		var rubrics []models.Rubric
+		if len(rawRubric) > 0 && string(rawRubric) != "null" {
+			if err := json.Unmarshal(rawRubric, &rubrics); err != nil {
+				log.Printf("WARNING: failed to parse rubrics for question %s: %v", qid, err)
+			}
+		}
+		aspects := make([]struct {
+			Name     string
+			MaxScore int
+		}, 0, len(rubrics))
+		for _, rubric := range rubrics {
+			if strings.TrimSpace(rubric.NamaAspek) == "" {
+				continue
+			}
+			maxScore := rubric.MaxScore
+			if maxScore <= 0 && len(rubric.Descriptors) > 0 {
+				for score := range rubric.Descriptors {
+					if score > maxScore {
+						maxScore = score
+					}
+				}
+			}
+			aspects = append(aspects, struct {
+				Name     string
+				MaxScore int
+			}{
+				Name:     rubric.NamaAspek,
+				MaxScore: maxScore,
+			})
+		}
+		if len(aspects) == 0 {
+			continue
+		}
+		var weightPtr *float64
+		if weight.Valid {
+			weightPtr = &weight.Float64
+		}
+		questions = append(questions, questionRow{
+			ID:      qid,
+			Text:    qtext,
+			Weight:  weightPtr,
+			Aspects: aspects,
+		})
+	}
+	if err := questionRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during question iteration for rubric template: %w", err)
+	}
+
+	items := make([]models.RubricTemplateRow, 0)
+	for _, student := range students {
+		for _, question := range questions {
+			for _, aspect := range question.Aspects {
+				items = append(items, models.RubricTemplateRow{
+					StudentID:    student.ID,
+					StudentName:  student.Name,
+					QuestionID:   question.ID,
+					QuestionText: question.Text,
+					AspectName:   aspect.Name,
+					AspectMaxScore: aspect.MaxScore,
+					QuestionWeight: question.Weight,
+				})
+			}
+		}
+	}
+	return items, nil
+}
+
+func (s *EssaySubmissionService) ListClassRubricScoreMap(classID, teacherID, materialID string, questionIDs []string, studentID string) (map[string]map[string]map[string]int, error) {
+	if strings.TrimSpace(classID) == "" || strings.TrimSpace(teacherID) == "" {
+		return nil, fmt.Errorf("class ID and teacher ID are required")
+	}
+
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+
+	querySQL := `
+		WITH latest AS (
+			SELECT DISTINCT ON (es.soal_id, es.siswa_id)
+				es.id,
+				es.soal_id,
+				es.siswa_id,
+				es.submitted_at
+			FROM essay_submissions es
+			JOIN essay_questions eq ON eq.id = es.soal_id
+			JOIN materials m ON m.id = eq.material_id
+			JOIN classes c ON c.id = m.class_id
+			WHERE ` + strings.Join(whereClauses, " AND ") + `
+			ORDER BY es.soal_id, es.siswa_id, es.submitted_at DESC
+		)
+		SELECT latest.soal_id, latest.siswa_id, COALESCE(ar.rubric_scores::text, ar.logs_rag::text)
+		FROM latest
+		LEFT JOIN ai_results ar ON ar.submission_id = latest.id
+	`
+
+	rows, err := s.db.Query(querySQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rubric scores: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]map[string]map[string]int{}
+	for rows.Next() {
+		var questionID string
+		var studentID string
+		var rubricScores sql.NullString
+		if err := rows.Scan(&questionID, &studentID, &rubricScores); err != nil {
+			return nil, fmt.Errorf("failed to scan rubric scores: %w", err)
+		}
+		if !rubricScores.Valid || strings.TrimSpace(rubricScores.String) == "" {
+			continue
+		}
+		var parsed []models.GradeEssayAspectScore
+		if err := json.Unmarshal([]byte(rubricScores.String), &parsed); err != nil {
+			log.Printf("WARNING: failed to parse rubric scores for student %s question %s: %v", studentID, questionID, err)
+			continue
+		}
+		if len(parsed) == 0 {
+			continue
+		}
+		if _, ok := out[studentID]; !ok {
+			out[studentID] = map[string]map[string]int{}
+		}
+		if _, ok := out[studentID][questionID]; !ok {
+			out[studentID][questionID] = map[string]int{}
+		}
+		for _, score := range parsed {
+			aspect := strings.TrimSpace(score.Aspek)
+			if aspect == "" {
+				continue
+			}
+			out[studentID][questionID][aspect] = score.SkorDiperoleh
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during rubric score iteration: %w", err)
+	}
+	return out, nil
+}
+
+func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID, materialID string, questionIDs []string, studentID, aiStatus, reviewStatus string, from, to *time.Time) (*models.ClassScoreDistributionResponse, error) {
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+	if strings.TrimSpace(aiStatus) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.ai_grading_status = $%d", argPos))
+		args = append(args, aiStatus)
+		argPos++
+	}
+	if from != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at >= $%d", argPos))
+		args = append(args, *from)
+		argPos++
+	}
+	if to != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.submitted_at <= $%d", argPos))
+		args = append(args, *to)
+		argPos++
+	}
+	if strings.TrimSpace(reviewStatus) != "" {
+		reviewedExpr := "(tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '')"
+		if reviewStatus == "reviewed" {
+			whereClauses = append(whereClauses, reviewedExpr)
+		} else if reviewStatus == "pending" {
+			whereClauses = append(whereClauses, "NOT "+reviewedExpr)
+		}
 	}
 
 	whereSQL := strings.Join(whereClauses, " AND ")

@@ -41,6 +41,11 @@ func (h *UploadHandler) UploadFileHandler(w http.ResponseWriter, r *http.Request
 	rand.Read(randBytes)
 	newFileName := fmt.Sprintf("%x%s", randBytes, filepath.Ext(handler.Filename))
 
+	if err := ensureUploadsDir(); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error preparing uploads directory")
+		return
+	}
+
 	dst, err := os.Create(filepath.Join("./uploads", newFileName))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

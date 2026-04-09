@@ -137,6 +137,7 @@ interface SectionQuizSettings {
   max_tab_switch: number;
   auto_lock_on_tab_switch_limit: boolean;
   require_fullscreen: boolean;
+  require_read_material: boolean;
 }
 
 interface SectionTaskCard {
@@ -352,6 +353,7 @@ const parseSectionQuizSettings = (activeCard: SectionSoalCard | null): SectionQu
     max_tab_switch: clampDuration(raw.max_tab_switch, 3),
     auto_lock_on_tab_switch_limit: readBoolean(raw.auto_lock_on_tab_switch_limit, false),
     require_fullscreen: readBoolean(raw.require_fullscreen, false),
+    require_read_material: readBoolean(raw.require_read_material, false),
   };
 };
 
@@ -532,12 +534,18 @@ export default function StudentMaterialDetailPage() {
   const [integrityPopupOpen, setIntegrityPopupOpen] = useState(false);
   const [integrityPopupMessage, setIntegrityPopupMessage] = useState("");
   const [hardlockPending, setHardlockPending] = useState(false);
+  const [sectionRead, setSectionRead] = useState(false);
+  const [sectionReadLoading, setSectionReadLoading] = useState(false);
+  const [readConfirmOpen, setReadConfirmOpen] = useState(false);
+  const [readToastVisible, setReadToastVisible] = useState(false);
+  const [readToastFading, setReadToastFading] = useState(false);
   const [reattemptQuestionIds, setReattemptQuestionIds] = useState<Record<string, boolean>>({});
   const [retryConfirmQuestionId, setRetryConfirmQuestionId] = useState<string | null>(null);
   const [retryPopupMessage, setRetryPopupMessage] = useState("");
   const [completionPopupOpen, setCompletionPopupOpen] = useState(false);
   const [liveTickMs, setLiveTickMs] = useState(Date.now());
   const tabChangePendingRef = useRef(false);
+  const readPanelRef = useRef<HTMLDivElement | null>(null);
   const materialRef = useRef<Material | null>(null);
   const completionHandledRef = useRef(false);
   const submittedInSessionRef = useRef(false);
@@ -588,12 +596,27 @@ export default function StudentMaterialDetailPage() {
     fetchData(true);
   }, [fetchData]);
 
+
   const allQuestions = useMemo(() => material?.essay_questions ?? [], [material?.essay_questions]);
   const sectionCards = useMemo(() => parseSectionQuestionCards(material?.isi_materi), [material?.isi_materi]);
+  const sectionContentCards = useMemo(() => parseSectionContentCards(material?.isi_materi), [material?.isi_materi]);
   const activeCard = useMemo(
     () => (sectionCardId ? sectionCards.find((card) => card.id === sectionCardId) || null : null),
     [sectionCardId, sectionCards]
   );
+  const requiredReadCard = useMemo(() => {
+    if (!sectionCardId || sectionContentCards.length === 0) return null;
+    const idx = sectionContentCards.findIndex((card) => card.id === sectionCardId);
+    if (idx >= 0) {
+      for (let i = idx; i >= 0; i -= 1) {
+        if (sectionContentCards[i].type === "materi") return sectionContentCards[i];
+      }
+      for (let i = idx + 1; i < sectionContentCards.length; i += 1) {
+        if (sectionContentCards[i].type === "materi") return sectionContentCards[i];
+      }
+    }
+    return null;
+  }, [sectionCardId, sectionContentCards]);
   const sectionQuizSettings = useMemo(() => parseSectionQuizSettings(activeCard), [activeCard]);
   const questions = useMemo(() => {
     if (!activeCard) return allQuestions;
@@ -614,7 +637,89 @@ export default function StudentMaterialDetailPage() {
   const forceTugasView = viewMode === "tugas" || activeCard?.type === "tugas";
   const isSoalContext = isSoalType || forceSoalView;
   const isTugasContext = isTugasType || forceTugasView;
+  const shouldRequireSectionRead = Boolean(
+    sectionCardId && requiredReadCard && isSoalContext && !isTugasContext && sectionQuizSettings.require_read_material
+  );
+  const isSectionReadLocked = shouldRequireSectionRead && !sectionRead;
   const isCardAnswerMode = isSoalContext && !isTugasContext && sectionQuizSettings.answer_mode === "card";
+
+  const fetchSectionReadStatus = useCallback(async () => {
+    if (!shouldRequireSectionRead || !classId || !materialId || !sectionCardId) {
+      setSectionRead(true);
+      return;
+    }
+    setSectionReadLoading(true);
+    try {
+      const res = await fetch(
+        `/api/student/classes/${classId}/materials/${materialId}/section-cards/${sectionCardId}/read`,
+        { credentials: "include" }
+      );
+      if (!res.ok) {
+        setSectionRead(false);
+        return;
+      }
+      const data = await res.json();
+      setSectionRead(Boolean(data?.read));
+    } catch {
+      setSectionRead(false);
+    } finally {
+      setSectionReadLoading(false);
+    }
+  }, [classId, materialId, sectionCardId, shouldRequireSectionRead]);
+
+  const markSectionRead = useCallback(async () => {
+    if (!shouldRequireSectionRead || !classId || !materialId || !sectionCardId || sectionRead) return;
+    setSectionReadLoading(true);
+    try {
+      const res = await fetch(
+        `/api/student/classes/${classId}/materials/${materialId}/section-cards/${sectionCardId}/read`,
+        { method: "POST", credentials: "include" }
+      );
+      if (res.ok) {
+        setSectionRead(true);
+        setReadToastVisible(true);
+        setReadToastFading(false);
+      }
+    } finally {
+      setSectionReadLoading(false);
+    }
+  }, [classId, materialId, sectionCardId, sectionRead, shouldRequireSectionRead]);
+
+  const handleReadScroll = useCallback(() => {
+    if (!shouldRequireSectionRead || sectionRead) return;
+    if (readConfirmOpen) return;
+    const el = readPanelRef.current;
+    if (!el) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 16) {
+      setReadConfirmOpen(true);
+    }
+  }, [readConfirmOpen, sectionRead, shouldRequireSectionRead]);
+
+  useEffect(() => {
+    void fetchSectionReadStatus();
+  }, [fetchSectionReadStatus]);
+
+  useEffect(() => {
+    if (!shouldRequireSectionRead || sectionRead) return;
+    const el = readPanelRef.current;
+    if (!el) return;
+    const timer = window.setTimeout(() => {
+      if (el.scrollHeight <= el.clientHeight + 4) {
+        setReadConfirmOpen(true);
+      }
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [sectionRead, shouldRequireSectionRead, requiredReadCard, readConfirmOpen]);
+
+  useEffect(() => {
+    if (!readToastVisible) return;
+    const fadeTimer = window.setTimeout(() => setReadToastFading(true), 4500);
+    const hideTimer = window.setTimeout(() => setReadToastVisible(false), 5000);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(hideTimer);
+    };
+  }, [readToastVisible]);
   const taskCardConfig = useMemo(() => {
     if (activeCard?.type === "tugas") {
       return {
@@ -680,7 +785,7 @@ export default function StudentMaterialDetailPage() {
   const isBeforeSchedule = Boolean(scheduleStartDate && nowMs < scheduleStartDate.getTime());
   const isAfterSchedule = Boolean(scheduleEndWithGraceMs !== null && nowMs > scheduleEndWithGraceMs);
   const isSoalSubmissionBlockedBySchedule = isSoalContext && !isTugasContext && (isBeforeSchedule || isAfterSchedule);
-  const canSubmitInCurrentState = !isSoalSubmissionBlockedBySchedule && !tabLocked;
+  const canSubmitInCurrentState = !isSoalSubmissionBlockedBySchedule && !tabLocked && !isSectionReadLocked;
   const allSoalAnswered =
     isSoalContext &&
     !isTugasContext &&
@@ -1863,6 +1968,52 @@ export default function StudentMaterialDetailPage() {
 
       {activeSection === "questions" && (isSoalContext || isTugasContext) && (
         <section className="space-y-4">
+          {readToastVisible && (
+            <div
+              className={`sage-panel border border-emerald-200 bg-emerald-50 p-4 transition-opacity duration-700 ${
+                readToastFading ? "opacity-0" : "opacity-100"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-[color:var(--ink-900)]">Materi Wajib Dibaca</p>
+                <span className="sage-pill bg-emerald-100 text-emerald-800">Sudah Dibaca</span>
+              </div>
+              <p className="mt-2 text-sm text-emerald-700">Materi sudah dibaca. Kamu bisa menjawab soal.</p>
+            </div>
+          )}
+          {isSectionReadLocked && shouldRequireSectionRead && requiredReadCard && (
+            <div className="sage-panel p-4 border border-amber-200 bg-amber-50">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-[color:var(--ink-900)]">Materi Wajib Dibaca</p>
+                <span className="sage-pill bg-amber-100 text-amber-800">
+                  {sectionReadLoading ? "Memeriksa..." : "Belum Dibaca"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-amber-900">Scroll sampai akhir materi untuk membuka soal.</p>
+              <div
+                ref={readPanelRef}
+                onScroll={handleReadScroll}
+                className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-amber-200 bg-white p-3 text-sm text-[color:var(--ink-700)]"
+              >
+                {(() => {
+                  const content = (
+                    requiredReadCard.body ||
+                    requiredReadCard.meta?.materi_description ||
+                    requiredReadCard.meta?.description ||
+                    ""
+                  ).trim();
+                  if (!content) {
+                    return <p className="text-[color:var(--ink-500)]">Materi belum tersedia.</p>;
+                  }
+                  if (containsHtmlTag(content)) {
+                    return <SafeHtml className="sage-tiptap-render max-w-none" html={content} />;
+                  }
+                  return <p className="whitespace-pre-line leading-relaxed">{content}</p>;
+                })()}
+              </div>
+            </div>
+          )}
+          <div className={isSectionReadLocked ? "hidden" : "space-y-4"}>
           {!isTugasContext && !isCardAnswerMode && (
             <div className="sage-panel p-3">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -2549,6 +2700,7 @@ export default function StudentMaterialDetailPage() {
               </div>
             </div>
           )}
+          </div>
         </section>
       )}
 
@@ -2782,6 +2934,35 @@ export default function StudentMaterialDetailPage() {
             );
           })}
         </section>
+      )}
+      {readConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Apakah sudah selesai membaca?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Jika sudah, kamu bisa melanjutkan ke soal.
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="sage-button-outline"
+                onClick={() => setReadConfirmOpen(false)}
+              >
+                Tidak
+              </button>
+              <button
+                type="button"
+                className="sage-button"
+                onClick={() => {
+                  setReadConfirmOpen(false);
+                  void markSectionRead();
+                }}
+              >
+                Ya, sudah
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

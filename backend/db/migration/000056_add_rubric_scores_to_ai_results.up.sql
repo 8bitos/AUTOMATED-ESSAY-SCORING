@@ -1,0 +1,2 @@
+ALTER TABLE ai_results
+ADD COLUMN IF NOT EXISTS rubric_scores JSONB;

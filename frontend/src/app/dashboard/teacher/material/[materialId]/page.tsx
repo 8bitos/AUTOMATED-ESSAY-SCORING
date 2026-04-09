@@ -119,6 +119,7 @@ interface SoalQuizSettings {
   max_tab_switch: number;
   auto_lock_on_tab_switch_limit: boolean;
   require_fullscreen: boolean;
+  require_read_material: boolean;
 }
 
 type CardRubricMode = "per_question" | "global";
@@ -516,6 +517,7 @@ const parseSoalQuizSettings = (meta?: Record<string, unknown>): SoalQuizSettings
     max_tab_switch: clampDuration(root.max_tab_switch, 3),
     auto_lock_on_tab_switch_limit: readBoolean(root.auto_lock_on_tab_switch_limit, false),
     require_fullscreen: readBoolean(root.require_fullscreen, false),
+    require_read_material: readBoolean(root.require_read_material, false),
   };
 };
 
@@ -573,6 +575,7 @@ const toQuizSettingsMeta = (settings: SoalQuizSettings): Record<string, unknown>
   max_tab_switch: clampDuration(settings.max_tab_switch, 3),
   auto_lock_on_tab_switch_limit: settings.auto_lock_on_tab_switch_limit,
   require_fullscreen: settings.require_fullscreen,
+  require_read_material: settings.require_read_material,
 });
 
 const serializeSectionCards = (items: SectionCardItem[]) =>

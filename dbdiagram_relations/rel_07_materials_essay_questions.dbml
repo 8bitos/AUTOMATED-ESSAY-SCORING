@@ -1,0 +1,37 @@
+﻿Enum user_role {
+  student
+  teacher
+  superadmin
+}
+
+Table materials {
+  id uuid [pk]
+  class_id uuid
+  uploader_id uuid
+  judul text
+  isi_materi text
+  file_url text
+  created_at timestamptz
+  capaian_pembelajaran text
+  kata_kunci text[]
+  updated_at timestamptz
+  display_order int4
+}
+
+Table essay_questions {
+  id uuid [pk]
+  material_id uuid
+  teks_soal text
+  created_at timestamptz
+  module_id uuid
+  level_kognitif text
+  ideal_answer text
+  keywords text[]
+  weight numeric
+  rubrics jsonb
+  updated_at timestamptz
+  round_score_to_5 boolean
+  round_score_step float8
+}
+
+Ref: essay_questions.material_id > materials.id

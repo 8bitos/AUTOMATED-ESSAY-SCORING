@@ -33,6 +33,7 @@ export interface SoalQuizSettings {
   max_tab_switch: number;
   auto_lock_on_tab_switch_limit: boolean;
   require_fullscreen: boolean;
+  require_read_material: boolean;
 }
 
 interface SoalSettingsModalProps {
@@ -191,6 +192,7 @@ export default function SoalSettingsModal({
               <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa isi semua jawaban dulu, lalu kirim semua sekaligus dengan satu tombol Submit."><input type="checkbox" checked={quizSettings.bulk_submit_mode} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, bulk_submit_mode: e.target.checked }))} />Submit semua jawaban sekaligus</label>
               <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa bisa kembali ke soal yang sudah dibuka sebelumnya."><input type="checkbox" checked={quizSettings.allow_back_navigation} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, allow_back_navigation: e.target.checked }))} />Izinkan kembali ke soal sebelumnya</label>
               <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Soal yang sudah ditinggalkan tidak bisa dibuka lagi."><input type="checkbox" checked={quizSettings.lock_question_after_leave} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, lock_question_after_leave: e.target.checked }))} />Kunci soal yang sudah dilewati</label>
+              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa harus membaca materi terlebih dahulu sebelum bisa membuka soal."><input type="checkbox" checked={quizSettings.require_read_material} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, require_read_material: e.target.checked }))} />Wajib baca materi sebelum menjawab</label>
             </div>
           </section>
 
