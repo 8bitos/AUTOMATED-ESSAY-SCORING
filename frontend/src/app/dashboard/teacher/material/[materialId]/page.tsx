@@ -2450,116 +2450,82 @@ const EssayQuestionFormModal = ({
             {bankNotice}
           </div>
         )}
-        <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
-          <div className="h-full rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <div className="flex h-full flex-col">
-              <p className="text-[11px] font-semibold text-slate-500 sm:text-xs">Kontrol Cepat</p>
-              <div className="mt-3 flex flex-1 flex-col gap-2.5 lg:gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {hasLocalDraft ? (
-                    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 sm:py-1 sm:text-[11px]">
-                      Draft tersimpan lokal
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 sm:py-1 sm:text-[11px]">
-                      Draft kosong
-                    </span>
-                  )}
-                  <button type="button" onClick={resetQuestionForm} className="sage-button-outline !py-1 !px-2 text-[11px] sm:text-xs">Buat Baru</button>
-                </div>
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-                  <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] dark:border-slate-700 dark:bg-slate-800 sm:text-xs lg:flex-1">
-                    <button
-                      type="button"
-                      onClick={() => setQuestionMode('manual')}
-                      title="Isi soal, parameter, dan rubrik secara manual."
-                      className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:px-3 sm:py-1.5 ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
-                    >
-                      Mode Manual
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setQuestionMode('auto')}
-                      title="Gunakan AI untuk menghasilkan draft soal dari materi acuan."
-                      className={`flex-1 rounded-md px-2 py-1 font-medium transition sm:px-3 sm:py-1.5 ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}
-                    >
-                      Mode Auto (AI)
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap lg:overflow-visible">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsBankPickerOpen(true);
-                        loadQuestionBankEntries();
-                      }}
-                      title="Buka bank soal dan gunakan soal yang sudah ada."
-                      className="sage-button-outline !py-1 !px-2 text-[11px] sm:!py-1.5 sm:!px-2.5 sm:text-xs"
-                    >
-                      Panggil Bank Soal
-                    </button>
-                    {questionMode === 'auto' && (
-                      <button
-                        type="button"
-                        onClick={handleAutoGenerate}
-                        disabled={isGenerating}
-                        title="Generate draft soal otomatis dari materi acuan RAG yang dipilih."
-                        className="sage-button !py-1 !px-2 text-[11px] sm:!py-1.5 sm:!px-2.5 sm:text-xs"
-                      >
-                        {isGenerating ? 'Generating...' : 'Generate dari Materi'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {generatedSourceMeta && (
-                <p className="mt-2 truncate text-[11px] text-slate-500">
-                  Sumber generate: <span className="font-medium text-slate-700">{generatedSourceMeta.label}</span>
-                  {generatedSourceMeta.forcedHolisticC1 ? " · C1 dipaksa Holistik" : ""}
-                </p>
-              )}
-            </div>
+        {/* ── Tab Bar ── */}
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:items-center sm:gap-0 sm:py-0 sm:px-0">
+          {/* Step tabs */}
+          <div className="flex items-center gap-0">
+            {[
+              { num: 1, label: 'Soal', tip: 'Atur teks soal dan parameter dasar.' },
+              { num: 2, label: usesGlobalRubric ? 'Mode Global' : 'Rubrik', tip: 'Atur tipe rubrik dan deskriptor penilaian.' },
+              { num: 3, label: 'Preview', tip: 'Tinjau hasil akhir sebelum menyimpan.' },
+            ].map((s) => (
+              <button
+                key={s.num}
+                type="button"
+                onClick={() => goToStep(s.num)}
+                title={s.tip}
+                className={`relative flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold transition sm:px-5 sm:py-3 ${
+                  step === s.num
+                    ? 'text-sky-700 dark:text-sky-400'
+                    : step > s.num
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                  step === s.num
+                    ? 'bg-sky-600 text-white'
+                    : step > s.num
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                }`}>{step > s.num ? '✓' : s.num}</span>
+                <span className="hidden sm:inline">{s.label}</span>
+                {step === s.num && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-sky-600" />}
+              </button>
+            ))}
           </div>
 
-          <div className="h-full rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <p className="text-[11px] font-semibold text-slate-500 sm:text-xs">Langkah Form</p>
-            <div className="mt-2 grid grid-cols-3 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 text-[11px] shadow-sm sm:text-xs dark:border-slate-700 dark:bg-slate-900">
-              {[1, 2, 3].map((i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => goToStep(i)}
-                  title={i === 1 ? "Atur teks soal dan parameter dasar." : i === 2 ? "Atur tipe rubrik dan deskriptor penilaian." : "Tinjau hasil akhir sebelum menyimpan."}
-                  className={`rounded-lg px-2.5 py-1.5 font-medium transition ${
-                    step === i ? 'bg-[color:var(--sage-700)] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {i}. {i === 1 ? 'Soal' : i === 2 ? (usesGlobalRubric ? 'Mode Global' : 'Rubrik') : 'Preview'}
-                </button>
-              ))}
+          {/* Separator */}
+          <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+
+          {/* Controls */}
+          <div className="flex flex-1 flex-wrap items-center gap-2 sm:justify-end sm:px-3 sm:py-2">
+            <div className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5 text-[10px] dark:border-slate-700 dark:bg-slate-800 sm:text-[11px]">
+              <button type="button" onClick={() => setQuestionMode('manual')} title="Isi soal, parameter, dan rubrik secara manual." className={`rounded px-2 py-1 font-semibold transition ${questionMode === 'manual' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>Manual</button>
+              <button type="button" onClick={() => setQuestionMode('auto')} title="Gunakan AI untuk membuat draft soal otomatis dari materi." className={`rounded px-2 py-1 font-semibold transition ${questionMode === 'auto' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-600 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>Auto (AI)</button>
             </div>
-            <p className="mt-2 px-1 text-xs text-slate-500">
-              {step === 1
-                ? "Isi pertanyaan utama dan pastikan instruksi jelas untuk siswa."
-                : step === 2
-                  ? usesGlobalRubric
-                    ? "Rubrik memakai mode global dari card ini. Tambah/edit rubrik lewat tombol Mode Rubrik di header."
-                    : "Tentukan tipe rubrik lalu isi deskriptor penilaian secara rinci."
-                  : "Tinjau ulang detail soal, rubrik, dan parameter sebelum disimpan."}
-            </p>
+            {hasLocalDraft ? (
+              <span className="hidden rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-300 sm:inline-block">Draft</span>
+            ) : null}
+            <button type="button" onClick={resetQuestionForm} title="Kosongkan semua input dan mulai draft baru." className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 sm:text-[11px]">Buat Baru</button>
+            <button type="button" onClick={() => { setIsBankPickerOpen(true); loadQuestionBankEntries(); }} title="Buka bank soal dan gunakan soal yang sudah ada." className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 sm:text-[11px]">Bank Soal</button>
+            {questionMode === 'auto' && (
+              <button type="button" onClick={handleAutoGenerate} disabled={isGenerating} title="Generate draft soal otomatis dari materi acuan RAG yang dipilih." className="sage-button !py-1 !px-2 text-[10px] sm:text-[11px]">
+                {isGenerating ? 'Generating...' : 'Generate'}
+              </button>
+            )}
           </div>
         </div>
+        {generatedSourceMeta && (
+          <p className="-mt-2 truncate px-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Sumber: <span className="font-medium text-slate-700 dark:text-slate-300">{generatedSourceMeta.label}</span>
+            {generatedSourceMeta.forcedHolisticC1 ? ' · C1 dipaksa Holistik' : ''}
+          </p>
+        )}
+
+        {/* ── Mobile parameter toggle ── */}
         <button
           type="button"
           onClick={() => setShowParameterPanel((prev) => !prev)}
-          className="lg:hidden inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm"
+          className="lg:hidden inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
         >
           {showParameterPanel ? <FiChevronUp size={14} /> : <FiChevronDown size={14} />}
-          {showParameterPanel ? "Sembunyikan Parameter" : "Tampilkan Parameter"}
+          {showParameterPanel ? 'Sembunyikan Parameter' : 'Tampilkan Parameter'}
         </button>
 
-        <div className="relative flex-1 min-h-0 overflow-hidden">
-          <div className={`h-full overflow-y-auto pr-1 transition-[padding] duration-300 ${showParameterPanel ? 'lg:pr-[356px]' : ''}`}>
+        {/* ── Content + Sidebar Grid ── */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-0 overflow-hidden">
+          <div className="h-full overflow-y-auto pr-1">
             <div className="min-w-0">
               {step === 1 && (
                 <section className="space-y-5">
@@ -3136,70 +3102,55 @@ const EssayQuestionFormModal = ({
                 {parameterPanel}
               </div>
             )}
-            </div>
-          <button
-            type="button"
-            onClick={() => setShowParameterPanel((prev) => !prev)}
-            className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 h-12 w-8 items-center justify-center rounded-l-md border border-r-0 border-slate-300 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            title={showParameterPanel ? "Sembunyikan panel parameter" : "Tampilkan panel parameter"}
-            aria-label={showParameterPanel ? "Sembunyikan panel parameter" : "Tampilkan panel parameter"}
-          >
-            {showParameterPanel ? <FiChevronRight size={16} /> : <FiChevronLeft size={16} />}
-          </button>
-          <aside
-            className={`hidden lg:block absolute inset-y-0 right-0 w-[86vw] max-w-[340px] transition-transform duration-300 ease-in-out ${showParameterPanel ? 'translate-x-0' : 'translate-x-full'}`}
-          >
-            <div className="h-full overflow-y-auto pl-4 pr-1">
+          </div>
+          {/* Sidebar — always visible on desktop */}
+          <aside className="hidden lg:block h-full overflow-y-auto border-l border-slate-200 bg-slate-50/50 pl-4 pr-2 dark:border-slate-700 dark:bg-slate-900/40">
             {parameterPanel}
-            </div>
           </aside>
         </div>
 
-        <div className="border-t border-slate-200 bg-white pt-4 sm:sticky sm:bottom-0 sm:z-10 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
-            <button type="button" onClick={onClose} className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm" title="Tutup popup. Input tetap tersimpan sebagai draft lokal.">Batal</button>
-            <button type="button" onClick={resetQuestionForm} className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm" title="Kosongkan semua input dan mulai draft baru.">Reset</button>
-          </div>
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:justify-end sm:overflow-visible sm:pb-0">
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white pt-4 sm:sticky sm:bottom-0 sm:z-10 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose} className="sage-button-outline shrink-0 !py-1.5 !px-3 text-xs sm:!py-2 sm:!px-4 sm:text-sm" title="Tutup popup. Input tetap tersimpan sebagai draft lokal.">Batal</button>
             <button
               type="button"
-              className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
+              className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 sm:text-xs"
               onClick={handleSaveToQuestionBank}
               disabled={isSavingToBank || isCurrentDraftSavedToBank}
-              title="Simpan draft soal saat ini ke Bank Soal untuk dipakai ulang."
+              title="Simpan draft soal saat ini ke Bank Soal untuk dipakai ulang nanti."
             >
-              {isSavingToBank ? 'Menyimpan ke Bank...' : isCurrentDraftSavedToBank ? 'Sudah Tersimpan' : 'Simpan ke Bank Soal'}
+              {isSavingToBank ? 'Menyimpan...' : isCurrentDraftSavedToBank ? '✓ Tersimpan di Bank' : 'Simpan ke Bank Soal'}
             </button>
+          </div>
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              className="sage-button-outline shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
+              className="sage-button-outline shrink-0 !py-1.5 !px-3 text-xs sm:!py-2 sm:!px-4 sm:text-sm"
               onClick={() => setStep((s) => Math.max(1, s - 1))}
               disabled={step === 1}
               title="Kembali ke langkah sebelumnya."
             >
-              Kembali
+              ← Kembali
             </button>
             {step < 3 ? (
               <button
                 type="button"
-                className="sage-button shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
+                className="sage-button shrink-0 !py-1.5 !px-3 text-xs sm:!py-2 sm:!px-4 sm:text-sm"
                 onClick={() => goToStep(step + 1)}
                 title="Lanjut ke langkah berikutnya."
               >
-                Lanjut
+                Lanjut →
               </button>
             ) : (
               <button
                 type="submit"
-                className="sage-button shrink-0 whitespace-nowrap !py-1 !px-2 text-xs sm:!py-2 sm:!px-3 sm:text-sm"
+                className="sage-button shrink-0 !py-1.5 !px-3 text-xs sm:!py-2 sm:!px-4 sm:text-sm"
                 disabled={!canSubmitQuestion}
                 title="Simpan soal dan rubrik ke database."
               >
                 Simpan Soal
               </button>
             )}
-          </div>
           </div>
         </div>
       </form>

@@ -1,7 +1,17 @@
 "use client";
 
-import { Dispatch, SetStateAction } from "react";
-import { FiCalendar, FiClock, FiHelpCircle, FiPlayCircle, FiShield, FiShuffle, FiX } from "react-icons/fi";
+import { Dispatch, SetStateAction, useState } from "react";
+import {
+  FiBookOpen,
+  FiCalendar,
+  FiClock,
+  FiEye,
+  FiHelpCircle,
+  FiPlayCircle,
+  FiShield,
+  FiX,
+  FiZap,
+} from "react-icons/fi";
 
 export interface SoalQuizSettings {
   answer_mode: "list" | "card";
@@ -52,57 +62,205 @@ const clampDuration = (value: unknown, fallback: number): number => {
   return Math.max(0, Math.floor(parsed));
 };
 
-function BaseModal({
-  isOpen,
-  onClose,
-  title,
-  panelClassName,
-  children,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  panelClassName?: string;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className={`relative max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-6 shadow-xl ${panelClassName || "max-w-4xl"}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-          <button title="Tutup popup pengaturan soal." onClick={onClose} className="rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700">
-            <FiX />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+type TabId = "soal" | "timer" | "akses" | "hasil" | "integritas";
 
-function TooltipHint({ text }: { text: string }) {
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: "soal", label: "Mode Soal", icon: FiPlayCircle },
+  { id: "timer", label: "Timer", icon: FiClock },
+  { id: "akses", label: "Akses & Attempt", icon: FiCalendar },
+  { id: "hasil", label: "Rilis Hasil", icon: FiEye },
+  { id: "integritas", label: "Integritas", icon: FiShield },
+];
+
+const PRESETS: {
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+  desc: string;
+  bg: string;
+  iconColor: string;
+  apply: Partial<SoalQuizSettings>;
+}[] = [
+  {
+    name: "Ujian Ketat",
+    icon: FiShield,
+    desc: "Fullscreen, timer total, soal acak, pengawasan tab",
+    bg: "bg-rose-50 border-rose-200 hover:bg-rose-100 dark:bg-rose-900/30 dark:border-rose-700 dark:hover:bg-rose-900/50",
+    iconColor: "text-rose-500",
+    apply: {
+      answer_mode: "card",
+      timer_mode: "all_questions",
+      total_seconds: 3600,
+      randomize_question_order: true,
+      auto_submit_on_timeout: true,
+      require_fullscreen: true,
+      warn_on_tab_switch: true,
+      max_tab_switch: 3,
+      auto_lock_on_tab_switch_limit: true,
+      lock_question_after_leave: false,
+      allow_back_navigation: true,
+      bulk_submit_mode: true,
+    },
+  },
+  {
+    name: "Latihan Santai",
+    icon: FiBookOpen,
+    desc: "Tanpa timer, urutan tetap, navigasi bebas",
+    bg: "bg-emerald-50 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:border-emerald-700 dark:hover:bg-emerald-900/50",
+    iconColor: "text-emerald-500",
+    apply: {
+      answer_mode: "list",
+      timer_mode: "none",
+      randomize_question_order: false,
+      allow_back_navigation: true,
+      lock_question_after_leave: false,
+      require_fullscreen: false,
+      warn_on_tab_switch: false,
+      bulk_submit_mode: false,
+      auto_next_on_submit: false,
+    },
+  },
+  {
+    name: "Kuis Cepat",
+    icon: FiZap,
+    desc: "Timer per soal 30 detik, kartu, auto-next",
+    bg: "bg-amber-50 border-amber-200 hover:bg-amber-100 dark:bg-amber-900/30 dark:border-amber-700 dark:hover:bg-amber-900/50",
+    iconColor: "text-amber-500",
+    apply: {
+      answer_mode: "card",
+      timer_mode: "per_question",
+      per_question_seconds: 30,
+      randomize_question_order: true,
+      auto_next_on_submit: true,
+      auto_submit_on_timeout: true,
+      require_fullscreen: false,
+      warn_on_tab_switch: false,
+      lock_question_after_leave: true,
+      allow_back_navigation: false,
+    },
+  },
+];
+
+/* ── Reusable small components ── */
+
+function Tip({ text }: { text: string }) {
   return (
-    <span className="group relative inline-flex items-center">
-      <FiHelpCircle className="h-3.5 w-3.5 text-slate-400 transition group-hover:text-sky-600" />
-      <span className="pointer-events-none absolute left-1/2 top-[115%] z-20 w-56 -translate-x-1/2 rounded-lg border border-slate-200 bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+    <span className="group/tip relative ml-1 inline-flex cursor-help items-center">
+      <FiHelpCircle className="h-3.5 w-3.5 text-slate-400 transition group-hover/tip:text-sky-500" />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 w-60 -translate-x-1/2 rounded-lg bg-slate-900 px-3 py-2 text-[11px] font-medium leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/tip:opacity-100 dark:bg-slate-600">
         {text}
+        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-900 dark:border-t-slate-600" />
       </span>
     </span>
   );
 }
 
-function LabelWithHint({ label, hint }: { label: string; hint: string }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="mb-2 mt-4 first:mt-0 text-[11px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{children}</p>;
+}
+
+function Seg<T extends string>({
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  options: { value: T; label: string; tip: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-slate-600">
-      <span>{label}</span>
-      <TooltipHint text={hint} />
-    </span>
+    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-600 dark:bg-slate-700">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          title={o.tip}
+          disabled={disabled}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+            value === o.value
+              ? "bg-white text-sky-700 shadow-sm dark:bg-slate-500 dark:text-sky-300"
+              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
+
+function Check({
+  checked,
+  onChange,
+  label,
+  tip,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  tip: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition ${
+        disabled
+          ? "cursor-not-allowed opacity-50 border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
+          : "cursor-pointer border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700/50 dark:hover:bg-slate-700"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-slate-500 dark:bg-slate-700"
+      />
+      <span className="flex-1 text-slate-700 dark:text-slate-200">
+        {label}
+        <Tip text={tip} />
+      </span>
+    </label>
+  );
+}
+
+function Num({
+  label,
+  tip,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  tip: string;
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  const cls =
+    "sage-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+  return (
+    <label className="block space-y-1.5">
+      <span className="inline-flex items-center text-xs font-medium text-slate-600 dark:text-slate-300">
+        {label}
+        <Tip text={tip} />
+      </span>
+      <input
+        type="number"
+        min={0}
+        className={`${cls} ${disabled ? "opacity-50" : ""}`}
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onChange(clampDuration(e.target.value, value))}
+      />
+    </label>
+  );
+}
+
+/* ── Main component ── */
 
 export default function SoalSettingsModal({
   isOpen,
@@ -113,9 +271,18 @@ export default function SoalSettingsModal({
   saving,
   disabled,
 }: SoalSettingsModalProps) {
-  const publishedLabel = quizSettings.result_manual_published
-    ? `Dipublish${quizSettings.result_manual_published_at ? `: ${quizSettings.result_manual_published_at}` : ""}`
+  const [activeTab, setActiveTab] = useState<TabId>("soal");
+
+  if (!isOpen) return null;
+
+  const s = quizSettings;
+  const set = <K extends keyof SoalQuizSettings>(key: K, val: SoalQuizSettings[K]) =>
+    setQuizSettings((prev) => ({ ...prev, [key]: val }));
+
+  const publishedLabel = s.result_manual_published
+    ? `Dipublish${s.result_manual_published_at ? `: ${s.result_manual_published_at}` : ""}`
     : "Belum dipublish";
+
   const toggleManualPublish = (published: boolean) => {
     setQuizSettings((prev) => ({
       ...prev,
@@ -123,203 +290,304 @@ export default function SoalSettingsModal({
       result_manual_published_at: published ? new Date().toISOString() : "",
     }));
   };
-  const capsuleBase = "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition border";
-  const capsuleOn = "border-sky-600 bg-sky-600 text-white shadow-sm";
-  const capsuleOff = "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50";
-  const numberInputClass =
-    "sage-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-  const settingCardClass = "flex h-full flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50 p-3";
+
+  const applyPreset = (preset: (typeof PRESETS)[number]) => {
+    setQuizSettings((prev) => ({ ...prev, ...preset.apply }));
+  };
+
+  /* ── Tab content ── */
+
+  const tabSoal = (
+    <div className="space-y-4">
+      <SectionLabel>Tampilan Soal</SectionLabel>
+      <Seg
+        options={[
+          { value: "list" as const, label: "Daftar", tip: "Siswa melihat semua soal dalam satu halaman dan bisa scroll." },
+          { value: "card" as const, label: "Kartu", tip: "Siswa mengerjakan satu soal per layar. Lebih fokus, cocok untuk ujian." },
+        ]}
+        value={s.answer_mode}
+        onChange={(v) => set("answer_mode", v)}
+        disabled={disabled}
+      />
+
+      <SectionLabel>Urutan &amp; Jumlah Soal</SectionLabel>
+      <Seg
+        options={[
+          { value: "false", label: "Tetap", tip: "Urutan soal sama persis untuk semua siswa." },
+          { value: "true", label: "Acak", tip: "Setiap siswa mendapat urutan soal yang berbeda-beda secara acak." },
+        ]}
+        value={String(s.randomize_question_order)}
+        onChange={(v) => set("randomize_question_order", v === "true")}
+        disabled={disabled}
+      />
+      <Num
+        label="Question Pool (0 = semua)"
+        tip="Jumlah soal yang diambil secara acak dari bank soal. Isi 0 jika ingin menggunakan semua soal yang tersedia."
+        value={s.random_subset_count}
+        onChange={(v) => set("random_subset_count", v)}
+        disabled={disabled}
+      />
+
+      <SectionLabel>Navigasi Soal</SectionLabel>
+      <div className="space-y-2">
+        <Check checked={s.auto_next_on_submit} onChange={(v) => set("auto_next_on_submit", v)} disabled={disabled} label="Auto-next setelah submit" tip="Setelah siswa mengirim jawaban, layar otomatis berpindah ke soal berikutnya tanpa perlu klik manual." />
+        <Check checked={s.allow_back_navigation} onChange={(v) => set("allow_back_navigation", v)} disabled={disabled} label="Izinkan kembali ke soal sebelumnya" tip="Siswa boleh kembali ke soal yang sudah mereka lewati atau jawab sebelumnya." />
+        <Check checked={s.lock_question_after_leave} onChange={(v) => set("lock_question_after_leave", v)} disabled={disabled} label="Kunci soal yang sudah dilewati" tip="Soal yang sudah ditinggalkan atau dilewati tidak bisa dibuka lagi oleh siswa." />
+      </div>
+
+      <SectionLabel>Pengerjaan</SectionLabel>
+      <div className="space-y-2">
+        <Check checked={s.bulk_submit_mode} onChange={(v) => set("bulk_submit_mode", v)} disabled={disabled} label="Submit semua jawaban sekaligus" tip="Siswa mengisi semua jawaban terlebih dahulu, lalu mengirim semuanya sekaligus di akhir dengan satu tombol." />
+        <Check checked={s.require_read_material} onChange={(v) => set("require_read_material", v)} disabled={disabled} label="Wajib baca materi sebelum menjawab" tip="Siswa harus membaca materi yang diberikan terlebih dahulu sebelum bisa membuka dan mengerjakan soal." />
+      </div>
+    </div>
+  );
+
+  const tabTimer = (
+    <div className="space-y-4">
+      <SectionLabel>Mode Timer</SectionLabel>
+      <Seg
+        options={[
+          { value: "none" as const, label: "Tanpa Timer", tip: "Tidak ada batas waktu. Siswa bisa mengerjakan selama yang mereka butuhkan." },
+          { value: "per_question" as const, label: "Per Soal", tip: "Setiap soal punya batas waktu sendiri-sendiri. Cocok untuk kuis cepat." },
+          { value: "all_questions" as const, label: "Total", tip: "Satu timer berjalan untuk seluruh sesi pengerjaan. Cocok untuk ujian." },
+        ]}
+        value={s.timer_mode}
+        onChange={(v) => set("timer_mode", v)}
+        disabled={disabled}
+      />
+
+      {s.timer_mode !== "none" && (
+        <>
+          <SectionLabel>Durasi</SectionLabel>
+          <div className="grid grid-cols-2 gap-3">
+            {s.timer_mode === "per_question" && (
+              <Num label="Per Soal (detik)" tip="Waktu maksimal yang diberikan untuk mengerjakan setiap soal, dalam satuan detik." value={s.per_question_seconds} onChange={(v) => set("per_question_seconds", v)} disabled={disabled} />
+            )}
+            {s.timer_mode === "all_questions" && (
+              <Num label="Total (detik)" tip="Total waktu untuk mengerjakan semua soal dari awal sampai selesai, dalam satuan detik." value={s.total_seconds} onChange={(v) => set("total_seconds", v)} disabled={disabled} />
+            )}
+            <Num label="Extra Time (detik)" tip="Waktu tambahan di atas batas waktu normal. Berguna untuk siswa yang memerlukan waktu ekstra." value={s.extra_time_seconds} onChange={(v) => set("extra_time_seconds", v)} disabled={disabled} />
+          </div>
+
+          <SectionLabel>Saat Waktu Habis</SectionLabel>
+          <Check checked={s.auto_submit_on_timeout} onChange={(v) => set("auto_submit_on_timeout", v)} disabled={disabled} label="Auto-submit saat habis waktu" tip="Jika waktu habis, semua jawaban yang sudah diisi akan otomatis dikirim tanpa perlu siswa menekan tombol submit." />
+        </>
+      )}
+
+      {s.timer_mode === "none" && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-400">
+          Timer tidak aktif. Siswa bisa mengerjakan tanpa batas waktu.
+        </div>
+      )}
+    </div>
+  );
+
+  const tabAkses = (
+    <div className="space-y-4">
+      <SectionLabel>Jadwal Pengerjaan</SectionLabel>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block space-y-1.5">
+          <span className="inline-flex items-center text-xs font-medium text-slate-600 dark:text-slate-300">
+            Mulai<Tip text="Tanggal dan jam kapan siswa mulai bisa membuka dan mengerjakan soal ini." />
+          </span>
+          <input type="datetime-local" className="sage-input" disabled={disabled} value={s.schedule_start_at} onChange={(e) => set("schedule_start_at", e.target.value)} />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="inline-flex items-center text-xs font-medium text-slate-600 dark:text-slate-300">
+            Selesai<Tip text="Tanggal dan jam kapan akses pengerjaan soal ditutup untuk siswa." />
+          </span>
+          <input type="datetime-local" className="sage-input" disabled={disabled} value={s.schedule_end_at} onChange={(e) => set("schedule_end_at", e.target.value)} />
+        </label>
+      </div>
+      <Num label="Toleransi Keterlambatan (menit)" tip="Waktu toleransi setelah jadwal selesai. Siswa yang sudah mulai mengerjakan masih bisa menyelesaikan dalam jeda ini." value={s.grace_period_minutes} onChange={(v) => set("grace_period_minutes", v)} disabled={disabled} />
+
+      <SectionLabel>Percobaan (Attempt)</SectionLabel>
+      <div className="grid grid-cols-2 gap-3">
+        <Num label="Batas percobaan (0 = tanpa batas)" tip="Berapa kali siswa boleh mencoba mengerjakan soal ini. Isi 0 jika siswa boleh mencoba tanpa batas." value={s.attempt_limit} onChange={(v) => set("attempt_limit", v)} disabled={disabled} />
+        <Num label="Jeda antar percobaan (menit)" tip="Waktu tunggu yang harus dilalui sebelum siswa boleh mencoba mengerjakan soal lagi setelah selesai satu percobaan." value={s.attempt_cooldown_minutes} onChange={(v) => set("attempt_cooldown_minutes", v)} disabled={disabled} />
+      </div>
+
+      <SectionLabel>Skema Penilaian Attempt</SectionLabel>
+      <Seg
+        options={[
+          { value: "last" as const, label: "Nilai terakhir", tip: "Nilai yang dipakai adalah dari percobaan terakhir siswa, bukan yang terbaik." },
+          { value: "best" as const, label: "Nilai terbaik", tip: "Sistem otomatis memilih nilai tertinggi dari semua percobaan siswa." },
+        ]}
+        value={s.attempt_scoring_method}
+        onChange={(v) => set("attempt_scoring_method", v)}
+        disabled={disabled}
+      />
+    </div>
+  );
+
+  const tabHasil = (
+    <div className="space-y-4">
+      <SectionLabel>Mode Rilis Hasil</SectionLabel>
+      <Seg
+        options={[
+          { value: "immediate" as const, label: "Langsung", tip: "Siswa langsung bisa melihat nilai dan feedback segera setelah mengirim jawaban." },
+          { value: "after_close" as const, label: "Setelah ditutup", tip: "Nilai baru bisa dilihat siswa setelah jadwal pengerjaan resmi berakhir." },
+          { value: "manual" as const, label: "Manual", tip: "Anda mengatur sendiri kapan hasil ditampilkan ke siswa menggunakan tombol di bawah." },
+        ]}
+        value={s.result_release_mode}
+        onChange={(v) => set("result_release_mode", v)}
+        disabled={disabled}
+      />
+
+      {s.result_release_mode === "manual" && (
+        <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-900/30">
+          <p className="text-xs text-sky-700 dark:text-sky-300">Status: {publishedLabel}</p>
+          <div className="flex gap-2">
+            <button type="button" className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(true)}>Publish Hasil</button>
+            <button type="button" className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(false)}>Tarik Hasil</button>
+          </div>
+        </div>
+      )}
+
+      <SectionLabel>Informasi yang Ditampilkan ke Siswa</SectionLabel>
+      <div className="space-y-2">
+        <Check checked={s.show_ideal_answer} onChange={(v) => set("show_ideal_answer", v)} disabled={disabled} label="Tampilkan jawaban ideal" tip="Siswa bisa melihat contoh jawaban yang benar setelah hasil dirilis. Membantu siswa belajar dari kesalahan." />
+        <Check checked={s.show_rubric_in_question} onChange={(v) => set("show_rubric_in_question", v)} disabled={disabled} label="Tampilkan rubrik saat mengerjakan soal" tip="Rubrik penilaian ditampilkan langsung di halaman soal saat siswa sedang mengerjakan, sehingga siswa tahu aspek apa saja yang dinilai." />
+        <Check checked={s.show_rubric_breakdown} onChange={(v) => set("show_rubric_breakdown", v)} disabled={disabled} label="Tampilkan detail rubrik di hasil" tip="Siswa dapat melihat rincian skor per aspek rubrik di halaman hasil mereka." />
+        <Check checked={s.hide_results_tab} onChange={(v) => set("hide_results_tab", v)} disabled={disabled} label="Sembunyikan tab Hasil Penilaian" tip="Tab 'Hasil Penilaian' dan tombol 'Lihat Hasil' akan disembunyikan dari siswa. Siswa tidak bisa melihat hasil mereka sama sekali." />
+      </div>
+    </div>
+  );
+
+  const tabIntegritas = (
+    <div className="space-y-4">
+      <SectionLabel>Pengawasan Layar</SectionLabel>
+      <Check checked={s.require_fullscreen} onChange={(v) => set("require_fullscreen", v)} disabled={disabled} label="Wajib fullscreen saat mengerjakan" tip="Siswa wajib membuka soal dalam mode layar penuh. Header dan sidebar akan disembunyikan agar siswa lebih fokus." />
+
+      <SectionLabel>Pemantauan Tab Browser</SectionLabel>
+      <Check checked={s.warn_on_tab_switch} onChange={(v) => set("warn_on_tab_switch", v)} disabled={disabled} label="Peringatan saat pindah tab" tip="Sistem akan mencatat dan memberi peringatan jika siswa berpindah ke tab atau aplikasi lain saat mengerjakan soal." />
+
+      {s.warn_on_tab_switch && (
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-700/40">
+          <Num label="Batas maksimal pindah tab" tip="Berapa kali siswa boleh berpindah tab sebelum dianggap melanggar aturan." value={s.max_tab_switch} onChange={(v) => set("max_tab_switch", v)} disabled={disabled} />
+          <Check checked={s.auto_lock_on_tab_switch_limit} onChange={(v) => set("auto_lock_on_tab_switch_limit", v)} disabled={disabled} label="Kunci otomatis jika melebihi batas" tip="Jika siswa sudah melebihi batas pindah tab, pengerjaan soal mereka akan otomatis dikunci dan tidak bisa melanjutkan." />
+        </div>
+      )}
+
+      {!s.warn_on_tab_switch && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-center text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-400">
+          Pemantauan tab tidak aktif. Siswa bebas berpindah tab.
+        </div>
+      )}
+    </div>
+  );
+
+  const tabContent: Record<TabId, React.ReactNode> = {
+    soal: tabSoal,
+    timer: tabTimer,
+    akses: tabAkses,
+    hasil: tabHasil,
+    integritas: tabIntegritas,
+  };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} title="Pengaturan Mode Pengerjaan Siswa" panelClassName="max-w-6xl">
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-sky-50 via-cyan-50 to-emerald-50 p-4">
-          <p className="text-sm font-semibold text-slate-900">Konfigurasi Cepat</p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
-              <FiPlayCircle className="h-3.5 w-3.5" />
-              {quizSettings.answer_mode === "card" ? "Kartu per Soal" : "Daftar Soal"}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
-              <FiClock className="h-3.5 w-3.5" />
-              {quizSettings.timer_mode === "none" ? "Tanpa Timer" : quizSettings.timer_mode === "per_question" ? "Timer per Soal" : "Timer Total"}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-medium text-slate-700">
-              <FiShuffle className="h-3.5 w-3.5" />
-              {quizSettings.randomize_question_order ? "Urutan Acak" : "Urutan Tetap"}
-            </span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-slate-800"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">Pengaturan Mode Pengerjaan Siswa</h2>
+          <button title="Tutup" onClick={onClose} className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300">
+            <FiX className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Presets */}
+        <div className="border-b border-slate-200 bg-slate-50/60 px-6 py-3 dark:border-slate-700 dark:bg-slate-800/60">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Konfigurasi Cepat</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                disabled={disabled}
+                title={p.desc}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${p.bg} ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+                onClick={() => applyPreset(p)}
+              >
+                <p.icon className={`h-3.5 w-3.5 ${p.iconColor}`} />
+                <span className="dark:text-slate-200">{p.name}</span>
+              </button>
+            ))}
           </div>
         </div>
 
         {disabled && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Pengaturan ini aktif jika halaman dibuka dari card section soal (`sectionCardId`).
+          <div className="mx-6 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+            Pengaturan ini aktif jika halaman dibuka dari card section soal (<code>sectionCardId</code>).
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <section className="space-y-3 rounded-2xl border border-indigo-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiPlayCircle /> Mode Soal
-            </h3>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Jawaban</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" title="Siswa melihat semua soal dalam satu daftar dan bisa scroll." disabled={disabled} className={`${capsuleBase} ${quizSettings.answer_mode === "list" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, answer_mode: "list" }))}>Daftar</button>
-                <button type="button" title="Siswa fokus satu soal per layar seperti kartu." disabled={disabled} className={`${capsuleBase} ${quizSettings.answer_mode === "card" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, answer_mode: "card" }))}>Kartu</button>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Urutan Soal</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" title="Urutan soal sama untuk semua siswa." disabled={disabled} className={`${capsuleBase} ${!quizSettings.randomize_question_order ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, randomize_question_order: false }))}>Tetap</button>
-                <button type="button" title="Urutan soal diacak agar tiap siswa bisa berbeda." disabled={disabled} className={`${capsuleBase} ${quizSettings.randomize_question_order ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, randomize_question_order: true }))}>Acak</button>
-              </div>
-            </div>
-            <label className="block space-y-1" title="Batasi jumlah soal yang diambil dari bank/section. Isi 0 untuk pakai semua soal.">
-              <LabelWithHint label="Question Pool (0 = semua)" hint="Batasi jumlah soal yang diambil. Isi 0 jika semua soal ingin dipakai." />
-              <input
-                type="number"
-                min={0}
-                className={numberInputClass}
-                value={quizSettings.random_subset_count}
-                disabled={disabled}
-                onChange={(e) => setQuizSettings((prev) => ({ ...prev, random_subset_count: clampDuration(e.target.value, prev.random_subset_count) }))}
-              />
-            </label>
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Setelah submit, sistem langsung pindah ke soal berikutnya."><input type="checkbox" checked={quizSettings.auto_next_on_submit} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_next_on_submit: e.target.checked }))} />Auto-next setelah submit</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa isi semua jawaban dulu, lalu kirim semua sekaligus dengan satu tombol Submit."><input type="checkbox" checked={quizSettings.bulk_submit_mode} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, bulk_submit_mode: e.target.checked }))} />Submit semua jawaban sekaligus</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa bisa kembali ke soal yang sudah dibuka sebelumnya."><input type="checkbox" checked={quizSettings.allow_back_navigation} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, allow_back_navigation: e.target.checked }))} />Izinkan kembali ke soal sebelumnya</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Soal yang sudah ditinggalkan tidak bisa dibuka lagi."><input type="checkbox" checked={quizSettings.lock_question_after_leave} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, lock_question_after_leave: e.target.checked }))} />Kunci soal yang sudah dilewati</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa harus membaca materi terlebih dahulu sebelum bisa membuka soal."><input type="checkbox" checked={quizSettings.require_read_material} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, require_read_material: e.target.checked }))} />Wajib baca materi sebelum menjawab</label>
-            </div>
-          </section>
+        {/* Body: sidebar tabs + content */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Desktop sidebar tabs */}
+          <nav className="flex shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-slate-200 bg-slate-50/40 p-3 max-md:hidden md:w-44 dark:border-slate-700 dark:bg-slate-900/30">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                    active
+                      ? "bg-white text-sky-700 shadow-sm dark:bg-slate-700 dark:text-sky-400"
+                      : "text-slate-600 hover:bg-white/60 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
 
-          <section className="space-y-3 rounded-2xl border border-sky-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiClock /> Timer
-            </h3>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Timer</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" title="Tidak ada batas waktu otomatis." disabled={disabled} className={`${capsuleBase} ${quizSettings.timer_mode === "none" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, timer_mode: "none" }))}>Tanpa Timer</button>
-                <button type="button" title="Setiap soal punya hitungan waktu sendiri." disabled={disabled} className={`${capsuleBase} ${quizSettings.timer_mode === "per_question" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, timer_mode: "per_question" }))}>Per Soal</button>
-                <button type="button" title="Satu total waktu untuk semua soal." disabled={disabled} className={`${capsuleBase} ${quizSettings.timer_mode === "all_questions" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, timer_mode: "all_questions" }))}>Total</button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1" title="Durasi maksimal tiap soal dalam detik saat mode Per Soal aktif.">
-                <LabelWithHint label="Per Soal (detik)" hint="Waktu maksimal untuk tiap soal saat mode Per Soal aktif." />
-                <input type="number" min={0} className={numberInputClass} disabled={disabled || quizSettings.timer_mode !== "per_question"} value={quizSettings.per_question_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, per_question_seconds: clampDuration(e.target.value, prev.per_question_seconds) }))} />
-              </label>
-              <label className="block space-y-1" title="Durasi total pengerjaan dalam detik saat mode Total aktif.">
-                <LabelWithHint label="Total (detik)" hint="Total waktu untuk seluruh sesi soal saat mode Total aktif." />
-                <input type="number" min={0} className={numberInputClass} disabled={disabled || quizSettings.timer_mode !== "all_questions"} value={quizSettings.total_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, total_seconds: clampDuration(e.target.value, prev.total_seconds) }))} />
-              </label>
-            </div>
-            <label className="block space-y-1" title="Tambahan waktu kompensasi untuk siswa (detik).">
-              <LabelWithHint label="Extra Time (detik)" hint="Tambahan waktu kompensasi untuk siswa." />
-              <input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.extra_time_seconds} onChange={(e) => setQuizSettings((prev) => ({ ...prev, extra_time_seconds: clampDuration(e.target.value, prev.extra_time_seconds) }))} />
-            </label>
-            <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" title="Jawaban otomatis dikirim saat timer habis."><input type="checkbox" checked={quizSettings.auto_submit_on_timeout} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_submit_on_timeout: e.target.checked }))} />Auto-submit saat habis waktu</label>
-          </section>
+          {/* Mobile horizontal tabs */}
+          <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-4 py-2 md:hidden dark:border-slate-700">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                    active
+                      ? "bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
-          <section className="space-y-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiCalendar /> Akses & Attempt
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block space-y-1" title="Waktu mulai siswa bisa mengerjakan soal ini.">
-                <LabelWithHint label="Mulai" hint="Tanggal dan jam awal siswa boleh mulai mengerjakan." />
-                <input type="datetime-local" className="sage-input" disabled={disabled} value={quizSettings.schedule_start_at} onChange={(e) => setQuizSettings((prev) => ({ ...prev, schedule_start_at: e.target.value }))} />
-              </label>
-              <label className="block space-y-1" title="Waktu akhir akses soal untuk siswa.">
-                <LabelWithHint label="Selesai" hint="Tanggal dan jam akhir akses pengerjaan soal." />
-                <input type="datetime-local" className="sage-input" disabled={disabled} value={quizSettings.schedule_end_at} onChange={(e) => setQuizSettings((prev) => ({ ...prev, schedule_end_at: e.target.value }))} />
-              </label>
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <label className={settingCardClass} title="Toleransi keterlambatan setelah waktu selesai (menit).">
-                <span className="min-h-[1.25rem]">
-                  <LabelWithHint label="Grace (menit)" hint="Toleransi keterlambatan setelah waktu selesai." />
-                </span>
-                <input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.grace_period_minutes} onChange={(e) => setQuizSettings((prev) => ({ ...prev, grace_period_minutes: clampDuration(e.target.value, prev.grace_period_minutes) }))} />
-              </label>
-              <label className={settingCardClass} title="Berapa kali siswa boleh mencoba mengerjakan soal. Isi 0 untuk tanpa batas.">
-                <span className="min-h-[1.25rem]">
-                  <LabelWithHint label="Attempt limit" hint="Jumlah maksimal percobaan siswa. 0 berarti tanpa batas." />
-                </span>
-                <input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.attempt_limit} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_limit: clampDuration(e.target.value, prev.attempt_limit) }))} />
-              </label>
-              <label className={settingCardClass} title="Jeda tunggu (menit) sebelum siswa boleh memulai attempt berikutnya.">
-                <span className="min-h-[1.25rem]">
-                  <LabelWithHint label="Cooldown (menit)" hint="Jeda tunggu sebelum siswa bisa mencoba kembali." />
-                </span>
-                <input type="number" min={0} className={numberInputClass} disabled={disabled} value={quizSettings.attempt_cooldown_minutes} onChange={(e) => setQuizSettings((prev) => ({ ...prev, attempt_cooldown_minutes: clampDuration(e.target.value, prev.attempt_cooldown_minutes) }))} />
-              </label>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Skema Nilai Attempt</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" title="Nilai yang dipakai adalah hasil attempt terakhir siswa." disabled={disabled} className={`${capsuleBase} ${quizSettings.attempt_scoring_method === "last" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, attempt_scoring_method: "last" }))}>Nilai terakhir</button>
-                <button type="button" title="Nilai yang dipakai adalah attempt terbaik siswa." disabled={disabled} className={`${capsuleBase} ${quizSettings.attempt_scoring_method === "best" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, attempt_scoring_method: "best" }))}>Nilai terbaik</button>
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiShuffle /> Rilis Hasil & Feedback
-            </h3>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Rilis</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" title="Nilai dan feedback langsung muncul setelah submit." disabled={disabled} className={`${capsuleBase} ${quizSettings.result_release_mode === "immediate" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, result_release_mode: "immediate" }))}>Langsung</button>
-                <button type="button" title="Nilai baru muncul setelah jadwal pengerjaan ditutup." disabled={disabled} className={`${capsuleBase} ${quizSettings.result_release_mode === "after_close" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, result_release_mode: "after_close" }))}>Setelah ditutup</button>
-                <button type="button" title="Guru mengatur sendiri kapan hasil ditampilkan." disabled={disabled} className={`${capsuleBase} ${quizSettings.result_release_mode === "manual" ? capsuleOn : capsuleOff}`} onClick={() => setQuizSettings((prev) => ({ ...prev, result_release_mode: "manual" }))}>Manual</button>
-              </div>
-            </div>
-            {quizSettings.result_release_mode === "manual" && (
-              <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
-                <p className="text-xs text-sky-700">Status publish: {publishedLabel}</p>
-                <div className="flex gap-2">
-                  <button type="button" title="Buka akses nilai untuk siswa sekarang." className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(true)}>Publish Hasil</button>
-                  <button type="button" title="Sembunyikan kembali hasil dari siswa." className="sage-button-outline !px-3 !py-1.5 text-xs" disabled={disabled} onClick={() => toggleManualPublish(false)}>Tarik Hasil</button>
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa bisa melihat contoh jawaban ideal saat hasil sudah dirilis."><input type="checkbox" checked={quizSettings.show_ideal_answer} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_ideal_answer: e.target.checked }))} />Tampilkan jawaban ideal di hasil</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Rubrik tampil langsung di halaman soal saat siswa mengerjakan."><input type="checkbox" checked={quizSettings.show_rubric_in_question} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_rubric_in_question: e.target.checked }))} />Tampilkan rubrik saat siswa mengerjakan soal</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa melihat rincian skor per aspek rubrik di halaman hasil."><input type="checkbox" checked={quizSettings.show_rubric_breakdown} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, show_rubric_breakdown: e.target.checked }))} />Tampilkan detail rubrik di halaman hasil</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" title="Siswa tidak bisa membuka 'Hasil Penilaian' atau tombol 'Lihat Hasil' pada halaman soal ini."><input type="checkbox" checked={quizSettings.hide_results_tab} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, hide_results_tab: e.target.checked }))} />Sembunyikan Hasil Penilaian & Lihat Hasil</label>
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-sm lg:col-span-2">
-            <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiShield /> Integritas
-            </h3>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" title="Pengerjaan dibuka dalam mode fullscreen tanpa header/sidebar."><input type="checkbox" checked={quizSettings.require_fullscreen} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, require_fullscreen: e.target.checked }))} />Wajib Fullscreen saat mengerjakan</label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" title="Siswa diberi peringatan ketika berpindah tab/browser."><input type="checkbox" checked={quizSettings.warn_on_tab_switch} disabled={disabled} onChange={(e) => setQuizSettings((prev) => ({ ...prev, warn_on_tab_switch: e.target.checked }))} />Warn saat pindah tab</label>
-              <label className="block space-y-1" title="Batas maksimal pindah tab sebelum dianggap melanggar.">
-                <LabelWithHint label="Batas pindah tab" hint="Batas jumlah pindah tab sebelum dianggap melanggar." />
-                <input type="number" min={0} className={numberInputClass} disabled={disabled || !quizSettings.warn_on_tab_switch} value={quizSettings.max_tab_switch} onChange={(e) => setQuizSettings((prev) => ({ ...prev, max_tab_switch: clampDuration(e.target.value, prev.max_tab_switch) }))} />
-              </label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" title="Jika batas terlampaui, pengerjaan otomatis dikunci."><input type="checkbox" checked={quizSettings.auto_lock_on_tab_switch_limit} disabled={disabled || !quizSettings.warn_on_tab_switch} onChange={(e) => setQuizSettings((prev) => ({ ...prev, auto_lock_on_tab_switch_limit: e.target.checked }))} />Auto lock jika melebihi batas</label>
-            </div>
-          </section>
+          {/* Tab content */}
+          <div className="flex-1 overflow-y-auto p-5">{tabContent[activeTab]}</div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-3">
-          <button type="button" title="Tutup popup tanpa menyimpan perubahan baru." className="sage-button-outline" onClick={onClose}>Batal</button>
-          <button type="button" title="Simpan semua pengaturan soal untuk section ini." className="sage-button" disabled={disabled || saving} onClick={() => void onSave()}>
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-3 dark:border-slate-700">
+          <button type="button" className="sage-button-outline" onClick={onClose}>
+            Batal
+          </button>
+          <button type="button" className="sage-button" disabled={disabled || saving} onClick={() => void onSave()}>
             {saving ? "Menyimpan..." : "Simpan Pengaturan"}
           </button>
         </div>
       </div>
-    </BaseModal>
+    </div>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiBarChart2, FiDownload, FiSearch } from "react-icons/fi";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FiBarChart2, FiChevronDown, FiDownload, FiFilter, FiSearch, FiX } from "react-icons/fi";
 
 interface ClassItem {
   id: string;
@@ -131,6 +131,9 @@ export default function TeacherLaporanNilaiPage() {
   const [aiStatus, setAiStatus] = useState("");
   const [reviewStatus, setReviewStatus] = useState("");
   const [includeRubricScores, setIncludeRubricScores] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
@@ -558,6 +561,19 @@ ${rowsXml.join("")}
     limit,
   ]);
 
+  // Close export dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const advancedFilterCount = [dateFrom, dateTo, selectedStudentId, query, aiStatus, reviewStatus].filter(Boolean).length;
+
   const maxBucket = useMemo(() => {
     if (!distribution?.buckets?.length) return 0;
     return Math.max(...distribution.buckets.map((b) => b.count));
@@ -570,14 +586,15 @@ ${rowsXml.join("")}
         <p className="text-sm text-slate-500">Rekap nilai siswa per kelas, distribusi skor, dan export CSV.</p>
       </div>
 
-      <div className="sage-panel p-5 space-y-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[220px] flex-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Pilih Kelas</label>
+      <div className="sage-panel p-5 space-y-0">
+        {/* ═══ ROW 1: Primary Filters ═══ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs font-medium text-slate-500">Kelas</label>
             <select
               value={selectedClassId}
               onChange={(e) => setSelectedClassId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
             >
               <option value="">Pilih kelas...</option>
               {classes.map((cls) => (
@@ -587,12 +604,12 @@ ${rowsXml.join("")}
               ))}
             </select>
           </div>
-          <div className="min-w-[220px] flex-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Konten / Section</label>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Konten</label>
             <select
               value={selectedMaterialId}
               onChange={(e) => setSelectedMaterialId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
               disabled={!selectedClassId || loadingMaterials}
             >
               <option value="">Semua konten</option>
@@ -603,12 +620,12 @@ ${rowsXml.join("")}
               ))}
             </select>
           </div>
-          <div className="min-w-[220px] flex-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Bab / Section</label>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Bab</label>
             <select
               value={selectedSectionCardId}
               onChange={(e) => setSelectedSectionCardId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
               disabled={!selectedMaterialId || sectionCards.length === 0}
             >
               <option value="">Semua bab</option>
@@ -619,85 +636,33 @@ ${rowsXml.join("")}
               ))}
             </select>
           </div>
-          <div className="min-w-[160px]">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Dari</label>
+        </div>
+
+        {/* ═══ ROW 2: Action bar — Search + Sort + Filter toggle + Export ═══ */}
+        <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
+          {/* Search */}
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm flex-1 min-w-[200px] max-w-[320px]">
+            <FiSearch className="text-slate-400 shrink-0" />
             <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Cari nama siswa..."
+              className="w-full outline-none bg-transparent"
             />
+            {query && (
+              <button type="button" onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600">
+                <FiX size={14} />
+              </button>
+            )}
           </div>
-          <div className="min-w-[160px]">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Sampai</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-            />
-          </div>
-          <div className="min-w-[220px] flex-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Siswa</label>
-            <select
-              value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-              disabled={!selectedClassId || loadingStudents}
-            >
-              <option value="">Semua siswa</option>
-              {students.map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.student_name}
-                  {student.student_email ? ` (${student.student_email})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-[200px] flex-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Cari Siswa</label>
-            <div className="mt-1 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-              <FiSearch className="text-slate-400" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Nama siswa..."
-                className="w-full outline-none"
-              />
-            </div>
-          </div>
-          <div className="min-w-[180px]">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Status AI</label>
-            <select
-              value={aiStatus}
-              onChange={(e) => setAiStatus(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-            >
-              <option value="">Semua</option>
-              <option value="completed">Completed</option>
-              <option value="processing">Processing</option>
-              <option value="queued">Queued</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
-          <div className="min-w-[180px]">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Status Review</label>
-            <select
-              value={reviewStatus}
-              onChange={(e) => setReviewStatus(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-            >
-              <option value="">Semua</option>
-              <option value="reviewed">Reviewed</option>
-              <option value="pending">Pending</option>
-            </select>
-          </div>
-          <div className="min-w-[180px]">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Urutkan</label>
+
+          {/* Sort */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-500 whitespace-nowrap">Urutkan:</label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
             >
               <option value="">Terbaru</option>
               <option value="alpha">Nama A-Z</option>
@@ -705,101 +670,256 @@ ${rowsXml.join("")}
               <option value="pending_asc">Pending Terendah</option>
             </select>
           </div>
-          <div className="ml-auto flex flex-wrap items-end gap-2">
-            <div className="min-w-[170px]">
-              <label className="text-xs uppercase tracking-wide text-slate-500">Mode Export</label>
-              <select
-                value={exportMode}
-                onChange={(e) => setExportMode(e.target.value as "summary" | "qwk" | "question")}
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-              >
-                <option value="summary">Summary</option>
-                <option value="qwk">QWK (Per Submission)</option>
-                <option value="question">Per Soal</option>
-              </select>
-            </div>
-            {exportMode === "qwk" && (
-              <label className="min-w-[170px] flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={includeRubricScores}
-                  onChange={(e) => setIncludeRubricScores(e.target.checked)}
-                />
-                Sertakan skor rubrik
-              </label>
+
+          {/* Advanced filter toggle */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${
+              showAdvanced || advancedFilterCount > 0
+                ? "border-[color:var(--sage-300)] bg-[color:var(--sage-50)] text-[color:var(--sage-700)]"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <FiFilter size={14} />
+            Filter Lanjutan
+            {advancedFilterCount > 0 && (
+              <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[color:var(--sage-600)] text-[10px] font-semibold text-white">
+                {advancedFilterCount}
+              </span>
             )}
-            {exportMode === "summary" && (
-              <div className="min-w-[170px]">
-                <label className="text-xs uppercase tracking-wide text-slate-500">Scope Export</label>
-                <select
-                  value={exportScope}
-                  onChange={(e) => setExportScope(e.target.value as "all" | "page")}
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                >
-                  <option value="all">Semua data</option>
-                  <option value="page">Halaman ini</option>
-                </select>
-              </div>
-            )}
+            <FiChevronDown size={14} className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+          </button>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Export dropdown */}
+          <div className="relative" ref={exportMenuRef}>
             <button
               type="button"
-              onClick={() => handleExport("csv")}
+              onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={!selectedClassId || exporting}
               className="sage-button inline-flex items-center gap-2"
             >
-              <FiDownload />
-              {exporting ? "Exporting..." : "Export CSV"}
+              <FiDownload size={14} />
+              {exporting ? "Exporting..." : "Export"}
+              <FiChevronDown size={14} className={`transition-transform ${showExportMenu ? "rotate-180" : ""}`} />
             </button>
-            <button
-              type="button"
-              onClick={() => handleExport("xlsx")}
-              disabled={!selectedClassId || exporting}
-              className="sage-button-outline inline-flex items-center gap-2"
-            >
-              <FiDownload />
-              {exporting ? "Exporting..." : "Export Excel"}
-            </button>
-            <div className="h-9 w-px bg-slate-200" />
-            <button
-              type="button"
-              onClick={() => handleExportTemplate("csv")}
-              disabled={!selectedClassId || exporting}
-              className="sage-button-outline inline-flex items-center gap-2"
-            >
-              <FiDownload />
-              {exporting ? "Exporting..." : "Template Penilaian CSV"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleExportTemplate("xlsx")}
-              disabled={!selectedClassId || exporting}
-              className="sage-button-outline inline-flex items-center gap-2"
-            >
-              <FiDownload />
-              {exporting ? "Exporting..." : "Template Penilaian Excel"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleExportRubricScores("csv")}
-              disabled={!selectedClassId || exporting}
-              className="sage-button-outline inline-flex items-center gap-2"
-            >
-              <FiDownload />
-              {exporting ? "Exporting..." : "Penilaian CSV"}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleExportRubricScores("xlsx")}
-              disabled={!selectedClassId || exporting}
-              className="sage-button-outline inline-flex items-center gap-2"
-            >
-              <FiDownload />
-              {exporting ? "Exporting..." : "Penilaian Excel"}
-            </button>
+
+            {showExportMenu && (
+              <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg ring-1 ring-slate-900/5">
+                {/* Export mode & scope */}
+                <div className="p-3 space-y-3 border-b border-slate-100">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500">Mode Export</label>
+                    <select
+                      value={exportMode}
+                      onChange={(e) => setExportMode(e.target.value as "summary" | "qwk" | "question")}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                    >
+                      <option value="summary">Summary</option>
+                      <option value="qwk">QWK (Per Submission)</option>
+                      <option value="question">Per Soal</option>
+                    </select>
+                  </div>
+                  {exportMode === "summary" && (
+                    <div>
+                      <label className="text-xs font-medium text-slate-500">Scope Export</label>
+                      <select
+                        value={exportScope}
+                        onChange={(e) => setExportScope(e.target.value as "all" | "page")}
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                      >
+                        <option value="all">Semua data</option>
+                        <option value="page">Halaman ini</option>
+                      </select>
+                    </div>
+                  )}
+                  {exportMode === "qwk" && (
+                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeRubricScores}
+                        onChange={(e) => setIncludeRubricScores(e.target.checked)}
+                        className="rounded"
+                      />
+                      Sertakan skor rubrik
+                    </label>
+                  )}
+                </div>
+
+                {/* Export Data section */}
+                <div className="p-2">
+                  <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Export Data</p>
+                  <button
+                    type="button"
+                    onClick={() => { handleExport("csv"); setShowExportMenu(false); }}
+                    disabled={!selectedClassId || exporting}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    <FiDownload size={14} className="text-slate-400" />
+                    Export CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { handleExport("xlsx"); setShowExportMenu(false); }}
+                    disabled={!selectedClassId || exporting}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    <FiDownload size={14} className="text-slate-400" />
+                    Export Excel
+                  </button>
+                </div>
+
+                {/* Template Penilaian section */}
+                <div className="p-2 border-t border-slate-100">
+                  <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Template Penilaian</p>
+                  <button
+                    type="button"
+                    onClick={() => { handleExportTemplate("csv"); setShowExportMenu(false); }}
+                    disabled={!selectedClassId || exporting}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    <FiDownload size={14} className="text-slate-400" />
+                    Template CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { handleExportTemplate("xlsx"); setShowExportMenu(false); }}
+                    disabled={!selectedClassId || exporting}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    <FiDownload size={14} className="text-slate-400" />
+                    Template Excel
+                  </button>
+                </div>
+
+                {/* Penilaian Rubrik section */}
+                <div className="p-2 border-t border-slate-100">
+                  <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Penilaian Rubrik</p>
+                  <button
+                    type="button"
+                    onClick={() => { handleExportRubricScores("csv"); setShowExportMenu(false); }}
+                    disabled={!selectedClassId || exporting}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    <FiDownload size={14} className="text-slate-400" />
+                    Penilaian CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { handleExportRubricScores("xlsx"); setShowExportMenu(false); }}
+                    disabled={!selectedClassId || exporting}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  >
+                    <FiDownload size={14} className="text-slate-400" />
+                    Penilaian Excel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {/* ═══ ROW 3: Collapsible Advanced Filters ═══ */}
+        {showAdvanced && (
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {/* Siswa dropdown */}
+              <div>
+                <label className="text-xs font-medium text-slate-500">Siswa</label>
+                <select
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                  disabled={!selectedClassId || loadingStudents}
+                >
+                  <option value="">Semua siswa</option>
+                  {students.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.student_name}
+                      {student.student_email ? ` (${student.student_email})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status AI */}
+              <div>
+                <label className="text-xs font-medium text-slate-500">Status AI</label>
+                <select
+                  value={aiStatus}
+                  onChange={(e) => setAiStatus(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                >
+                  <option value="">Semua</option>
+                  <option value="completed">Completed</option>
+                  <option value="processing">Processing</option>
+                  <option value="queued">Queued</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+
+              {/* Status Review */}
+              <div>
+                <label className="text-xs font-medium text-slate-500">Status Review</label>
+                <select
+                  value={reviewStatus}
+                  onChange={(e) => setReviewStatus(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                >
+                  <option value="">Semua</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+
+              {/* Dari */}
+              <div>
+                <label className="text-xs font-medium text-slate-500">Dari</label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                />
+              </div>
+
+              {/* Sampai */}
+              <div>
+                <label className="text-xs font-medium text-slate-500">Sampai</label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                />
+              </div>
+            </div>
+
+            {/* Clear all filters */}
+            {advancedFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                  setSelectedStudentId("");
+                  setQuery("");
+                  setAiStatus("");
+                  setReviewStatus("");
+                }}
+                className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <FiX size={12} />
+                Hapus semua filter lanjutan
+              </button>
+            )}
+          </div>
+        )}
+
+        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
