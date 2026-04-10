@@ -894,6 +894,7 @@ export default function StudentMaterialDetailPage() {
   const hideResultsForStudent = isSoalContext && !isTugasContext && sectionQuizSettings.hide_results_tab;
   const shouldForceFullscreen = isSoalContext && !isTugasContext && sectionQuizSettings.require_fullscreen && !allSoalAnswered;
   const isBulkSubmitMode = isSoalContext && !isTugasContext && !isCardAnswerMode && sectionQuizSettings.bulk_submit_mode;
+  const showMobileBulkBar = isBulkSubmitMode && activeSection === "questions";
   const isResultReleased = (() => {
     if (!isSoalContext || isTugasContext) return true;
     if (sectionQuizSettings.result_release_mode === "immediate") return true;
@@ -1649,7 +1650,9 @@ export default function StudentMaterialDetailPage() {
   };
 
   return (
-    <div className={`student-material-view space-y-4 md:space-y-6 ${shouldForceFullscreen ? "min-h-screen bg-slate-950 p-4 md:p-6" : ""}`}>
+    <div
+      className={`student-material-view space-y-4 md:space-y-6 ${shouldForceFullscreen ? "min-h-screen bg-slate-950 p-4 md:p-6" : ""} ${showMobileBulkBar ? "pb-24 md:pb-0" : ""}`}
+    >
       {completionPopupOpen && (
         <div className="fixed inset-0 z-[82] flex items-center justify-center bg-slate-950/70 p-4">
           <div className="w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-5 shadow-2xl">
@@ -1890,7 +1893,7 @@ export default function StudentMaterialDetailPage() {
       </section>
       )}
 
-      <section className={`${isSoalContext || isTugasContext ? "hidden md:block" : "block"} sage-panel p-2 md:p-3`}>
+      <section className="sage-panel p-2 md:p-3">
         <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
           {!isSoalContext && !isTugasContext && (
             <button
@@ -2121,20 +2124,20 @@ export default function StudentMaterialDetailPage() {
           )}
           <div className={isSectionReadLocked ? "hidden" : "space-y-4"}>
           {!isTugasContext && !isCardAnswerMode && (
-            <div className="sage-panel p-3">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--ink-500)]">Urutkan:</label>
+            <div className="sage-panel p-3 md:p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2.5">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-[color:var(--ink-500)]">Urutkan:</label>
                 <select
                   value={questionSort}
                   onChange={(e) => setQuestionSort(e.target.value as QuestionSort)}
-                  className="sage-input min-w-44"
+                  className="sage-input w-full sm:w-auto sm:min-w-44"
                 >
                   <option value="default">Urutan Default</option>
                   <option value="weight_desc">Bobot Paling Besar</option>
                   <option value="alphabet">Alphabet</option>
                   <option value="unanswered_first">Belum Dijawab Dulu</option>
                 </select>
-                <label className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/[0.02] px-2.5 py-1.5 text-xs font-medium text-[color:var(--ink-600)] dark:border-white/15 dark:bg-white/[0.03]">
+                <label className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-black/[0.02] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--ink-600)] dark:border-white/15 dark:bg-white/[0.03]">
                   <input
                     type="checkbox"
                     checked={hideAnsweredQuestions}
@@ -2147,7 +2150,7 @@ export default function StudentMaterialDetailPage() {
             </div>
           )}
           {!isTugasContext && isBulkSubmitMode && (
-            <div className="sage-panel p-4 border border-sky-200 bg-sky-50">
+            <div className="hidden md:block sage-panel p-4 border border-sky-200 bg-sky-50">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-sky-800">
                   Kirim sekali untuk semua jawaban. Lengkapi dulu, lalu tekan Kirim di bagian bawah.
@@ -3040,6 +3043,35 @@ export default function StudentMaterialDetailPage() {
             );
           })}
         </section>
+      )}
+      {showMobileBulkBar && (
+        <div className="fixed inset-x-0 bottom-0 z-40 md:hidden">
+          <div className="mx-auto w-full max-w-xl px-4 pb-4">
+            <div className="rounded-2xl border border-sky-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-slate-800">
+                    {submittedCount}/{displayQuestions.length} Terjawab
+                  </p>
+                  <p className="text-[11px] text-slate-500">Kirim semua jawaban sekaligus.</p>
+                </div>
+                <button
+                  type="button"
+                  className="sage-button !px-4 !py-2 text-xs"
+                  disabled={bulkSubmitLoading || !canSubmitInCurrentState}
+                  onClick={() => void handleSubmitAllAnswers()}
+                >
+                  {bulkSubmitLoading ? "Mengirim..." : "Kirim Semua"}
+                </button>
+              </div>
+              {bulkSubmitMessage && (
+                <p className={`mt-2 text-xs ${bulkSubmitMessage.toLowerCase().includes("berhasil") ? "text-emerald-700" : "text-red-600"}`}>
+                  {bulkSubmitMessage}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {readConfirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
