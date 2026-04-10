@@ -21,6 +21,7 @@ import {
   LabelList,
 } from "recharts";
 import SafeHtml from "@/components/ui/SafeHtml";
+import { useAuth } from "@/context/AuthContext";
 
 interface RubricScore {
   aspek?: string;
@@ -495,6 +496,7 @@ const getQuestionGradingState = (
 };
 
 export default function StudentMaterialDetailPage() {
+  const { user } = useAuth();
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -549,6 +551,47 @@ export default function StudentMaterialDetailPage() {
   const materialRef = useRef<Material | null>(null);
   const completionHandledRef = useRef(false);
   const submittedInSessionRef = useRef(false);
+  const draftSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftKeyRef = useRef<string>("");
+  const draftLoadedRef = useRef(false);
+
+  const answerDraftKey = useMemo(() => {
+    if (!classId || !materialId) return "";
+    const userKey = user?.id ? String(user.id) : "anon";
+    return `sage_answer_draft:${userKey}:${classId}:${materialId}:${sectionCardId || "all"}`;
+  }, [user?.id, classId, materialId, sectionCardId]);
+
+  const clearDraftForQuestionIds = useCallback(
+    (questionIds: string[]) => {
+      if (!answerDraftKey || typeof window === "undefined" || questionIds.length === 0) return;
+      try {
+        const raw = window.localStorage.getItem(answerDraftKey);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return;
+        questionIds.forEach((id) => {
+          if (Object.prototype.hasOwnProperty.call(parsed, id)) {
+            delete parsed[id];
+          }
+        });
+        if (Object.keys(parsed).length === 0) {
+          window.localStorage.removeItem(answerDraftKey);
+        } else {
+          window.localStorage.setItem(answerDraftKey, JSON.stringify(parsed));
+        }
+      } catch {
+        // ignore storage errors
+      }
+      setAnswerInputs((prev) => {
+        const next = { ...prev };
+        questionIds.forEach((id) => {
+          if (id in next) delete next[id];
+        });
+        return next;
+      });
+    },
+    [answerDraftKey]
+  );
 
   useEffect(() => {
     materialRef.current = material;
@@ -760,6 +803,63 @@ export default function StudentMaterialDetailPage() {
     return shuffleQuestions(questionPool);
   }, [isCardAnswerMode, sectionQuizSettings.randomize_question_order, questionPool]);
   const displayQuestions = isSoalContext && !isTugasContext ? questionPool : questions;
+  useEffect(() => {
+    if (!answerDraftKey || typeof window === "undefined") return;
+    if (displayQuestions.length === 0) return;
+    if (draftLoadedRef.current && draftKeyRef.current === answerDraftKey) return;
+    draftLoadedRef.current = true;
+    draftKeyRef.current = answerDraftKey;
+    try {
+      const raw = window.localStorage.getItem(answerDraftKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setAnswerInputs((prev) => {
+        const next = { ...prev };
+        displayQuestions.forEach((q) => {
+          if (q.submission_id && !reattemptQuestionIds[q.id]) return;
+          const value = (parsed as Record<string, string>)[q.id];
+          if (typeof value === "string" && value.trim().length > 0 && !next[q.id]) {
+            next[q.id] = value;
+          }
+        });
+        return next;
+      });
+    } catch {
+      // ignore storage errors
+    }
+  }, [answerDraftKey, displayQuestions, reattemptQuestionIds]);
+
+  useEffect(() => {
+    if (!answerDraftKey || typeof window === "undefined") return;
+    if (displayQuestions.length === 0) return;
+    if (draftSaveTimeoutRef.current) {
+      clearTimeout(draftSaveTimeoutRef.current);
+    }
+    draftSaveTimeoutRef.current = setTimeout(() => {
+      const allowedIds = new Set(displayQuestions.map((q) => q.id));
+      const payload: Record<string, string> = {};
+      Object.entries(answerInputs).forEach(([id, value]) => {
+        if (!allowedIds.has(id)) return;
+        if (value.trim().length === 0) return;
+        payload[id] = value;
+      });
+      try {
+        if (Object.keys(payload).length === 0) {
+          window.localStorage.removeItem(answerDraftKey);
+        } else {
+          window.localStorage.setItem(answerDraftKey, JSON.stringify(payload));
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }, 400);
+    return () => {
+      if (draftSaveTimeoutRef.current) {
+        clearTimeout(draftSaveTimeoutRef.current);
+      }
+    };
+  }, [answerDraftKey, answerInputs, displayQuestions]);
   const submittedCount = displayQuestions.filter((q) => !!q.submission_id).length;
   const reviewedCount = displayQuestions.filter(
     (q) => !!q.submission_id && (q.revised_score !== undefined || (q.teacher_feedback ?? "").trim().length > 0)
@@ -1307,6 +1407,7 @@ export default function StudentMaterialDetailPage() {
       submittedInSessionRef.current = true;
       setSubmitMessage((prev) => ({ ...prev, [questionId]: data?.grading_message || defaultMessage }));
       setReattemptQuestionIds((prev) => ({ ...prev, [questionId]: false }));
+      clearDraftForQuestionIds([questionId]);
       await fetchData(false);
       if (isCardAnswerMode && sectionQuizSettings.auto_next_on_submit) {
         goToCardQuestionIndex(quizQuestionIndex + 1);
@@ -1345,6 +1446,7 @@ export default function StudentMaterialDetailPage() {
 
     let successCount = 0;
     let failedCount = 0;
+    const submittedDraftIds: string[] = [];
     for (const q of unansweredQuestions) {
       try {
         const answer = (answerInputs[q.id] || "").trim();
@@ -1372,6 +1474,7 @@ export default function StudentMaterialDetailPage() {
         submittedInSessionRef.current = true;
         setSubmitMessage((prev) => ({ ...prev, [q.id]: data?.grading_message || defaultMessage }));
         setReattemptQuestionIds((prev) => ({ ...prev, [q.id]: false }));
+        submittedDraftIds.push(q.id);
         successCount += 1;
       } catch (err: unknown) {
         const message = err instanceof Error && err.message ? err.message : "Terjadi kesalahan saat submit.";
@@ -1382,6 +1485,9 @@ export default function StudentMaterialDetailPage() {
       }
     }
 
+    if (submittedDraftIds.length > 0) {
+      clearDraftForQuestionIds(submittedDraftIds);
+    }
     await fetchData(false);
     if (failedCount > 0) {
       setBulkSubmitMessage(`${successCount} jawaban berhasil dikirim, ${failedCount} gagal. Coba kirim ulang yang gagal.`);
@@ -2044,7 +2150,7 @@ export default function StudentMaterialDetailPage() {
             <div className="sage-panel p-4 border border-sky-200 bg-sky-50">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-sky-800">
-                  Mode submit semua aktif. Isi semua jawaban dulu, lalu kirim sekaligus.
+                  Kirim sekali untuk semua jawaban. Lengkapi dulu, lalu tekan Kirim di bagian bawah.
                 </p>
                 <button
                   type="button"
@@ -2052,7 +2158,7 @@ export default function StudentMaterialDetailPage() {
                   disabled={bulkSubmitLoading || !canSubmitInCurrentState}
                   onClick={() => void handleSubmitAllAnswers()}
                 >
-                  {bulkSubmitLoading ? "Mengirim Semua..." : "Submit Semua Jawaban"}
+                  {bulkSubmitLoading ? "Mengirim Semua..." : "Kirim Semua Jawaban"}
                 </button>
               </div>
               {bulkSubmitMessage && (

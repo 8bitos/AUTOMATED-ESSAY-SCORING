@@ -26,8 +26,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_KEY, theme);
-    document.documentElement.dataset.theme = theme;
     document.documentElement.classList.toggle("dark", theme === "dark");
+    document.body.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
   const value = useMemo(
@@ -42,3 +42,5 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
 };
 
 export const useTheme = () => useContext(ThemeContext);
+
+

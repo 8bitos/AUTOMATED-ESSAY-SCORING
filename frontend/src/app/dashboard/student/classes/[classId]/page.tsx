@@ -108,10 +108,10 @@ interface ClassDetail {
 type AnnouncementTone = "info" | "success" | "warning" | "urgent";
 
 const getAnnouncementToneStyles = (tone?: AnnouncementTone) => {
-  if (tone === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (tone === "urgent") return "border-rose-200 bg-rose-50 text-rose-900";
-  return "border-sky-200 bg-sky-50 text-sky-900";
+  if (tone === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200";
+  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200";
+  if (tone === "urgent") return "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200";
+  return "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-200";
 };
 
 const isClassAnnouncementActive = (cls?: Pick<ClassDetail, "announcement_enabled" | "announcement_title" | "announcement_content" | "announcement_starts_at" | "announcement_ends_at"> | null) => {
@@ -325,12 +325,12 @@ const getTypeTone = (type: SectionContentType): string => {
 
 const getSectionSurfaceTone = (type: "materi" | "soal" | "tugas"): string => {
   if (type === "soal") {
-    return "border-blue-200/90 bg-gradient-to-br from-white via-white to-blue-50/70 dark:border-slate-700 dark:bg-slate-900";
+    return "border-blue-200/90 bg-gradient-to-br from-white via-white to-blue-50/70 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-blue-950/30";
   }
   if (type === "tugas") {
-    return "border-violet-200/90 bg-gradient-to-br from-white via-white to-violet-50/70 dark:border-slate-700 dark:bg-slate-900";
+    return "border-violet-200/90 bg-gradient-to-br from-white via-white to-violet-50/70 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/30";
   }
-  return "border-emerald-200/90 bg-gradient-to-br from-white via-white to-emerald-50/70 dark:border-slate-700 dark:bg-slate-900";
+  return "border-emerald-200/90 bg-gradient-to-br from-white via-white to-emerald-50/70 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-emerald-950/30";
 };
 
 const getSectionAccentTone = (type: "materi" | "soal" | "tugas"): string => {
@@ -1078,7 +1078,7 @@ export default function StudentClassMaterialsPage() {
             type="button"
             onClick={() => setActiveTab("materi")}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              activeTab === "materi" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+              activeTab === "materi" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             }`}
           >
             Materi
@@ -1087,7 +1087,7 @@ export default function StudentClassMaterialsPage() {
             type="button"
             onClick={() => setActiveTab("nilai")}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              activeTab === "nilai" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+              activeTab === "nilai" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             }`}
           >
             Nilai & Feedback
@@ -1097,7 +1097,7 @@ export default function StudentClassMaterialsPage() {
 
       {activeTab === "materi" && (
         <>
-      <section className="sage-panel sticky top-16 z-20 border border-slate-300/90 bg-white/95 p-4 backdrop-blur">
+      <section className="sage-panel sticky top-16 z-20 border border-slate-300/90 bg-white/95 p-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
         <div className="flex items-center justify-between gap-3 sm:hidden">
           <div>
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Filter Materi</p>
@@ -1140,7 +1140,7 @@ export default function StudentClassMaterialsPage() {
                 type="button"
                 onClick={() => setFilter(chip.id as MaterialFilter)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                  filter === chip.id ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  filter === chip.id ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 }`}
               >
                 {chip.label}
@@ -1186,7 +1186,9 @@ export default function StudentClassMaterialsPage() {
           return (
             <div
               key={material.id}
-              className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,transform,border-color] duration-200 hover:-translate-y-[1px] hover:shadow-md sm:p-5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30"
+              className={`relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[box-shadow,transform,border-color] duration-200 hover:-translate-y-[1px] hover:shadow-md sm:p-5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/30 ${
+                type === "soal" ? "border-l-[3px] border-l-blue-500" : type === "tugas" ? "border-l-[3px] border-l-violet-500" : "border-l-[3px] border-l-emerald-500"
+              }`}
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0 flex-1 space-y-2">
@@ -1218,14 +1220,16 @@ export default function StudentClassMaterialsPage() {
               </div>
 
               <div className="mt-3 h-2 rounded-full bg-[color:var(--sand-100)] overflow-hidden">
-                <div className="h-full bg-[color:var(--sage-700)]" style={{ width: `${summary.progress}%` }} />
+                <div className={`h-full rounded-full bg-gradient-to-r ${getSectionAccentTone(type)} transition-all duration-500 ease-out`} style={{ width: `${summary.progress}%` }} />
               </div>
 
               <div className="mt-4 p-0">
                 <div className="w-full inline-flex items-center justify-between text-sm text-[color:var(--ink-700)]">
                   <button
                     type="button"
-                    className="text-left font-medium hover:underline"
+                    className={`text-left font-medium hover:underline ${
+                      type === "soal" ? "text-blue-600 dark:text-blue-400" : type === "tugas" ? "text-violet-600 dark:text-violet-400" : "text-emerald-600 dark:text-emerald-400"
+                    }`}
                     onClick={() => {
                       setExpandedMaterials((prev) => ({ ...prev, [material.id]: !prev[material.id] }));
                       markMaterialSeen(material);
@@ -1274,7 +1278,7 @@ export default function StudentClassMaterialsPage() {
                         setExpandedMaterials((prev) => ({ ...prev, [material.id]: !prev[material.id] }));
                         markMaterialSeen(material);
                       }}
-                      className="inline-flex items-center justify-center rounded-md p-1 hover:bg-slate-200"
+                      className="inline-flex items-center justify-center rounded-md p-1 hover:bg-slate-200 dark:hover:bg-slate-700"
                       aria-label={isExpanded ? "Tutup konten section" : "Buka konten section"}
                     >
                       {isExpanded ? <FiChevronUp /> : <FiChevronDown />}
@@ -1285,7 +1289,7 @@ export default function StudentClassMaterialsPage() {
                 {isExpanded && (
                   <div className="mt-3 space-y-3">
                     {cards.length === 0 && (
-                      <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-[color:var(--ink-600)] whitespace-pre-line">
+                      <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-[color:var(--ink-600)] whitespace-pre-line dark:border-slate-700 dark:bg-slate-900">
                         {toPlainText(material.capaian_pembelajaran || material.isi_materi || "") || "Konten section belum tersedia."}
                         <div className="mt-3">
                           <Link
@@ -1357,13 +1361,13 @@ export default function StudentClassMaterialsPage() {
                                   );
                                   if (!fullContent) {
                                     return (
-                                      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-[color:var(--ink-500)]">
+                                      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-[color:var(--ink-500)] dark:border-slate-700 dark:bg-slate-800/50">
                                         Konten materi belum tersedia.
                                       </div>
                                     );
                                   }
                                   return (
-                                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                                    <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                                       {containsHtmlTag(fullContent) ? (
                                         <SafeHtml
                                           className="sage-tiptap-render max-w-none text-[color:var(--ink-700)] dark:text-slate-200"
@@ -1378,7 +1382,7 @@ export default function StudentClassMaterialsPage() {
                               )}
 
                               {hasInlineView && card.type === "gambar" && (
-                                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                                   {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
                                     <div className="space-y-3">
                                       {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
@@ -1412,7 +1416,7 @@ export default function StudentClassMaterialsPage() {
                               )}
 
                               {hasInlineView && card.type === "video" && (
-                                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                                   {normalizeSectionMediaItems(card.type, card.body, card.meta).length > 0 ? (
                                     <div className="space-y-3">
                                       {normalizeSectionMediaItems(card.type, card.body, card.meta).map((item, idx) => (
@@ -1519,49 +1523,49 @@ export default function StudentClassMaterialsPage() {
                                     const showImageInput = enabledInputs.image || Boolean(taskPendingImageByMaterial[materialId]);
 
                                     return (
-                                      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-3">
+                                      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-3 dark:border-slate-700 dark:bg-slate-800/50">
                                         {!taskSubmitted && isLate && (
-                                          <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                                          <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                                             Peringatan: waktu pengumpulan sudah lewat. Kamu masih bisa submit, tapi tercatat terlambat.
                                           </div>
                                         )}
                                         {taskSubmitted && (
-                                          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-800">
+                                          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
                                             Tugas ini sudah kamu submit.
                                           </div>
                                         )}
                                         {!taskSubmitted && (
                                           <>
-                                            <div className="rounded-md border border-slate-300 bg-white p-3">
-                                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mode Pengumpulan</p>
+                                            <div className="rounded-md border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Mode Pengumpulan</p>
                                               <div className="mt-2 flex flex-wrap gap-2">
                                                 {allowsTextOrLink && (
-                                                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                                                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
                                                     Jawaban Teks <span className="ml-1 text-[10px] font-semibold">Wajib</span>
                                                   </span>
                                                 )}
                                                 {allowsFile && (
-                                                  <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                                                  <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
                                                     Upload Dokumen <span className="ml-1 text-[10px] font-semibold">Wajib</span>
                                                   </span>
                                                 )}
                                                 {allowsImageInline && (
-                                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300">
                                                     Gambar/Link <span className="ml-1 text-[10px] font-semibold">Opsional</span>
                                                   </span>
                                                 )}
                                               </div>
-                                              <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-                                                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-                                                  <span className="font-semibold text-slate-700">Tenggat:</span>{" "}
+                                              <div className="mt-3 grid gap-2 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
+                                                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800/50">
+                                                  <span className="font-semibold text-slate-700 dark:text-slate-300">Tenggat:</span>{" "}
                                                   {card.meta?.tugas_due_at || "-"}
                                                 </div>
-                                                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-                                                  <span className="font-semibold text-slate-700">Maks file:</span>{" "}
+                                                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800/50">
+                                                  <span className="font-semibold text-slate-700 dark:text-slate-300">Maks file:</span>{" "}
                                                   {typeof card.meta?.tugas_max_file_mb === "number" ? `${card.meta.tugas_max_file_mb} MB` : "-"}
                                                 </div>
-                                                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-                                                  <span className="font-semibold text-slate-700">Format:</span>{" "}
+                                                <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-700 dark:bg-slate-800/50">
+                                                  <span className="font-semibold text-slate-700 dark:text-slate-300">Format:</span>{" "}
                                                   {Array.isArray(card.meta?.tugas_allowed_formats) && card.meta.tugas_allowed_formats.length > 0
                                                     ? card.meta.tugas_allowed_formats.join(", ")
                                                     : "-"}
@@ -1576,7 +1580,7 @@ export default function StudentClassMaterialsPage() {
                                                     className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm transition ${
                                                       showFileInput
                                                         ? "border-[color:var(--sage-500)] bg-[color:var(--sage-50)] text-[color:var(--sage-700)]"
-                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                     }`}
                                                     onClick={() => toggleTaskInput(materialId, "file", allowsFile)}
                                                   >
@@ -1591,7 +1595,7 @@ export default function StudentClassMaterialsPage() {
                                                     className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm transition ${
                                                       showVideoInput
                                                         ? "border-[color:var(--sage-500)] bg-[color:var(--sage-50)] text-[color:var(--sage-700)]"
-                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                     }`}
                                                     onClick={() => toggleTaskInput(materialId, "video", allowsTextOrLink)}
                                                   >
@@ -1606,7 +1610,7 @@ export default function StudentClassMaterialsPage() {
                                                     className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm transition ${
                                                       showImageInput
                                                         ? "border-[color:var(--sage-500)] bg-[color:var(--sage-50)] text-[color:var(--sage-700)]"
-                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                     }`}
                                                     onClick={() => toggleTaskInput(materialId, "image", allowsImageInline)}
                                                   >
@@ -1617,7 +1621,7 @@ export default function StudentClassMaterialsPage() {
                                             </div>
 
                                             {allowsTextOrLink && (
-                                              <div className="rounded-md border border-slate-300 bg-white p-3">
+                                              <div className="rounded-md border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                                                 <label className="text-xs font-semibold text-[color:var(--ink-700)]">
                                                   Jawaban Teks <span className="text-rose-500">*</span>
                                                 </label>
@@ -1634,7 +1638,7 @@ export default function StudentClassMaterialsPage() {
                                             )}
 
                                             {allowsFile && showFileInput && (
-                                              <div className="rounded-md border border-slate-300 bg-white p-3">
+                                              <div className="rounded-md border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                                   <label className="text-xs font-semibold text-[color:var(--ink-700)]">
                                                     Upload Dokumen <span className="text-rose-500">*</span>
@@ -1680,7 +1684,7 @@ export default function StudentClassMaterialsPage() {
                                             )}
 
                                             {allowsTextOrLink && showVideoInput && (
-                                              <div className="rounded-md border border-slate-200 bg-white p-3">
+                                              <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                                                 <label className="text-xs font-medium text-[color:var(--ink-700)]">Tambahkan Link</label>
                                                 <div className="mt-2 flex flex-wrap gap-2">
                                                   <input
@@ -1704,7 +1708,7 @@ export default function StudentClassMaterialsPage() {
                                               </div>
                                             )}
                                             {allowsImageInline && showImageInput && (
-                                              <div className="rounded-md border border-slate-200 bg-white p-3">
+                                              <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                                                 <label className="text-xs font-medium text-[color:var(--ink-700)]">Tambahkan Gambar</label>
                                                 <div className="mt-2 space-y-2">
                                                   <input
@@ -1889,10 +1893,10 @@ export default function StudentClassMaterialsPage() {
                         <span
                           className={`rounded-md px-2 py-1 ${
                             row.status === "sudah_dinilai"
-                              ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                              ? "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
                               : row.status === "menunggu_review"
-                                ? "border border-amber-200 bg-amber-50 text-amber-700"
-                                : "border border-slate-200 bg-slate-50 text-slate-700"
+                                ? "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                                : "border border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                           }`}
                         >
                           {row.status === "sudah_dinilai"
@@ -2068,10 +2072,10 @@ export default function StudentClassMaterialsPage() {
                                                               <span
                                                                 className={`rounded border px-1.5 py-0.5 text-[10px] ${
                                                                   appeal?.status === "resolved_accepted"
-                                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
                                                                     : appeal?.status === "resolved_rejected"
-                                                                      ? "border-rose-200 bg-rose-50 text-rose-700"
-                                                                      : "border-amber-200 bg-amber-50 text-amber-700"
+                                                                      ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200"
+                                                                      : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
                                                                 }`}
                                                               >
                                                                 {appealLabel}
@@ -2080,7 +2084,7 @@ export default function StudentClassMaterialsPage() {
                                                             {item.submissionId && (!appeal || appeal.status === "resolved_accepted" || appeal.status === "resolved_rejected") && (
                                                               <button
                                                                 type="button"
-                                                                className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100"
+                                                                className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                                                 onClick={() => {
                                                                   setAppealDialog({
                                                                     submissionId: item.submissionId || "",
