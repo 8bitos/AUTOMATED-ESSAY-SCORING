@@ -391,6 +391,16 @@ const convertEditableToRubricPayload = (rubrics: EditableRubric[], rubricType: R
     };
   });
 
+const isAnalyticPlaceholderName = (value: string, idx: number): boolean => {
+  const name = value.trim().toLowerCase();
+  return !name || name === `aspek ${idx + 1}` || name === `aspek ${idx + 1}.`;
+};
+
+const isHolisticPlaceholderName = (value: string): boolean => {
+  const name = value.trim().toLowerCase();
+  return !name || name === "penilaian holistik";
+};
+
 const renderDoubleAsteriskBold = (text?: string): JSX.Element[] => {
   const safeText = String(text || "");
   const lines = safeText.split("\n");
@@ -1512,6 +1522,10 @@ const EssayQuestionFormModal = ({
   const [templateTitle, setTemplateTitle] = useState('');
   const [templateSaving, setTemplateSaving] = useState(false);
   const [generatedSourceMeta, setGeneratedSourceMeta] = useState<{ label: string; chars: number; preview: string; forcedHolisticC1: boolean } | null>(null);
+  const [rubricOverwriteConfirm, setRubricOverwriteConfirm] = useState<{ open: boolean; action: "auto" | "rubric" | null }>({
+    open: false,
+    action: null,
+  });
   const [rubricTooltip, setRubricTooltip] = useState<RubricType | null>(null);
   const wasEditingExistingRef = useRef(false);
   const usesGlobalRubric = rubricMode === "global";
@@ -2153,14 +2167,33 @@ const EssayQuestionFormModal = ({
     setHolisticDescriptors((prev) => prev.filter((_, idx) => idx !== scoreIdx));
   };
 
-  const handleAutoGenerate = async () => {
+  const handleAutoGenerate = async (forceOverwrite = false) => {
     setError('');
     setIsGenerating(true);
     try {
+      const hasMeaningfulAnalyticDraft = analyticRubrics.some((aspect, idx) => {
+        const name = (aspect.nama_aspek || '').trim();
+        const nameMeaningful = name !== '' && !isAnalyticPlaceholderName(name, idx);
+        const descriptorMeaningful = aspect.descriptors.some((d) => (d.description || '').trim() || (d.score || '').trim());
+        return nameMeaningful || descriptorMeaningful;
+      });
+      const hasMeaningfulHolisticDraft = (() => {
+        const name = (holisticAspectName || '').trim();
+        const nameMeaningful = name !== '' && !isHolisticPlaceholderName(name);
+        const descriptorMeaningful = holisticDescriptors.some((d) => (d.description || '').trim() || (d.score || '').trim());
+        return nameMeaningful || descriptorMeaningful;
+      })();
+      const hasMeaningfulRubricDraft = hasMeaningfulAnalyticDraft || hasMeaningfulHolisticDraft;
+
       const hasManualQuestion = teksSoal.trim().length > 0;
       const endpoint = hasManualQuestion
         ? `/api/materials/${materialId}/essay-questions/auto-generate-metadata`
         : `/api/materials/${materialId}/essay-questions/auto-generate`;
+      if (!forceOverwrite && !hasManualQuestion && hasMeaningfulRubricDraft) {
+        setRubricOverwriteConfirm({ open: true, action: "auto" });
+        setIsGenerating(false);
+        return;
+      }
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2204,14 +2237,7 @@ const EssayQuestionFormModal = ({
       });
 
       if (!usesGlobalRubric) {
-        const hasAnalyticDraft = analyticRubrics.some((aspect) =>
-          (aspect.nama_aspek || '').trim() ||
-          aspect.descriptors.some((d) => (d.description || '').trim() || (d.score || '').trim())
-        );
-        const hasHolisticDraft =
-          (holisticAspectName || '').trim() ||
-          holisticDescriptors.some((d) => (d.description || '').trim() || (d.score || '').trim());
-        const shouldFillRubrics = !hasManualQuestion || (!hasAnalyticDraft && !hasHolisticDraft);
+        const shouldFillRubrics = !hasManualQuestion || !hasMeaningfulRubricDraft;
 
         const normalizedType: RubricType =
           generated.rubric_type === 'holistik' || generated.rubric_type === 'analitik'
@@ -2254,6 +2280,102 @@ const EssayQuestionFormModal = ({
       setStep(1);
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Gagal generate soal otomatis.'));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateRubricsOnly = async (forceOverwrite = false) => {
+    if (!teksSoal.trim()) {
+      setError('Teks soal harus diisi dulu.');
+      return;
+    }
+    setError('');
+    setIsGenerating(true);
+    try {
+      const hasMeaningfulAnalyticDraft = analyticRubrics.some((aspect, idx) => {
+        const name = (aspect.nama_aspek || '').trim();
+        const nameMeaningful = name !== '' && !isAnalyticPlaceholderName(name, idx);
+        const descriptorMeaningful = aspect.descriptors.some((d) => (d.description || '').trim() || (d.score || '').trim());
+        return nameMeaningful || descriptorMeaningful;
+      });
+      const hasMeaningfulHolisticDraft = (() => {
+        const name = (holisticAspectName || '').trim();
+        const nameMeaningful = name !== '' && !isHolisticPlaceholderName(name);
+        const descriptorMeaningful = holisticDescriptors.some((d) => (d.description || '').trim() || (d.score || '').trim());
+        return nameMeaningful || descriptorMeaningful;
+      })();
+      if (!forceOverwrite && (hasMeaningfulAnalyticDraft || hasMeaningfulHolisticDraft)) {
+        setRubricOverwriteConfirm({ open: true, action: "rubric" });
+        setIsGenerating(false);
+        return;
+      }
+
+      const res = await fetch(`/api/materials/${materialId}/essay-questions/auto-generate-metadata`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          teks_soal: teksSoal.trim(),
+          rubric_type: rubricType,
+          reference_material_id: activeReferenceOption?.refType === "section" ? activeReferenceOption.materialId : materialId,
+          reference_section_card_id: activeReferenceOption?.refType === "card" ? activeReferenceOption.sectionCardId : null,
+          level_kognitif: levelKognitif || null,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(getBodyMessage(body) || 'Gagal generate rubrik otomatis.');
+      }
+
+      const generated = body as AutoGeneratedQuestion;
+      setGeneratedSourceMeta({
+        label: generated.source_label || (activeReferenceOption?.label || "SECTION"),
+        chars: Number(generated.source_chars || 0),
+        preview: String(generated.source_preview || "").trim(),
+        forcedHolisticC1: Boolean(generated.forced_holistic_c1),
+      });
+
+      if (!usesGlobalRubric) {
+        const normalizedType: RubricType =
+          generated.rubric_type === 'holistik' || generated.rubric_type === 'analitik'
+            ? generated.rubric_type
+            : rubricType;
+        setRubricType(normalizedType);
+
+        if (normalizedType === 'analitik') {
+          const analytic = Array.isArray(generated.rubrics)
+            ? generated.rubrics.map((aspect, idx) => ({
+                nama_aspek: (aspect?.nama_aspek || '').trim() || `Aspek ${idx + 1}`,
+                rubric_type: 'analitik' as RubricType,
+                descriptors: Array.isArray(aspect?.descriptors)
+                  ? aspect.descriptors.map((d) => ({
+                      score: String(d.score ?? ''),
+                      description: String(d.description ?? ''),
+                    }))
+                  : [],
+              }))
+            : [];
+          setAnalyticRubrics(
+            analytic.length
+              ? analytic
+              : [{ nama_aspek: '', rubric_type: 'analitik', descriptors: [{ score: '', description: '' }] }]
+          );
+        } else {
+          const first = Array.isArray(generated.rubrics) ? generated.rubrics[0] : null;
+          setHolisticAspectName((first?.nama_aspek || '').trim() || 'Penilaian Holistik');
+          const holistic = Array.isArray(first?.descriptors)
+            ? first!.descriptors.map((d) => ({
+                score: String(d.score ?? ''),
+                description: String(d.description ?? ''),
+              }))
+            : [];
+          setHolisticDescriptors(holistic.length ? holistic : [{ score: '', description: '' }]);
+        }
+      }
+      setStep(1);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Gagal generate rubrik otomatis.'));
     } finally {
       setIsGenerating(false);
     }
@@ -2542,6 +2664,17 @@ const EssayQuestionFormModal = ({
             {questionMode === 'auto' && (
               <button type="button" onClick={handleAutoGenerate} disabled={isGenerating} title="Generate draft soal otomatis dari materi acuan RAG yang dipilih." className="sage-button !py-1 !px-2 text-[10px] sm:text-[11px]">
                 {isGenerating ? 'Generating...' : 'Generate'}
+              </button>
+            )}
+            {teksSoal.trim() && (
+              <button
+                type="button"
+                onClick={handleGenerateRubricsOnly}
+                disabled={isGenerating}
+                title="Generate rubrik otomatis dari teks soal yang sudah ditulis."
+                className="sage-button-outline !py-1 !px-2 text-[10px] sm:text-[11px]"
+              >
+                {isGenerating ? 'Generating...' : 'Generate Rubrik'}
               </button>
             )}
           </div>
@@ -4583,6 +4716,23 @@ const StudentSubmissionsList = ({
         onConfirm={() => {
           if (!confirmDeleteSubmissionId) return;
           handleDeleteSubmission(confirmDeleteSubmissionId);
+        }}
+      />
+      <ConfirmDialog
+        isOpen={rubricOverwriteConfirm.open}
+        title="Timpa Rubrik?"
+        message="Rubrik saat ini akan diganti oleh hasil generate. Lanjutkan?"
+        confirmLabel="Timpa"
+        danger
+        onCancel={() => setRubricOverwriteConfirm({ open: false, action: null })}
+        onConfirm={() => {
+          const action = rubricOverwriteConfirm.action;
+          setRubricOverwriteConfirm({ open: false, action: null });
+          if (action === "auto") {
+            handleAutoGenerate(true);
+          } else if (action === "rubric") {
+            handleGenerateRubricsOnly(true);
+          }
         }}
       />
 
