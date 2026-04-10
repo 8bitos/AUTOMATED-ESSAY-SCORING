@@ -200,6 +200,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	teacherRouter.HandleFunc("/essay-questions", essayQuestionHandlers.CreateEssayQuestionHandler).Methods("POST")                                 // Membuat pertanyaan esai baru.
 	teacherRouter.HandleFunc("/materials/{materialId}/essay-questions", essayQuestionHandlers.GetEssayQuestionsByMaterialIDHandler).Methods("GET") // Mendapatkan pertanyaan esai berdasarkan materi.
 	teacherRouter.HandleFunc("/materials/{materialId}/essay-questions/auto-generate", essayQuestionHandlers.AutoGenerateEssayQuestionHandler).Methods("POST")
+	teacherRouter.HandleFunc("/materials/{materialId}/essay-questions/auto-generate-metadata", essayQuestionHandlers.AutoGenerateEssayMetadataHandler).Methods("POST")
 	teacherRouter.HandleFunc("/essay-questions/{questionId}", essayQuestionHandlers.DeleteEssayQuestionHandler).Methods("DELETE") // Menghapus pertanyaan esai.
 	teacherRouter.HandleFunc("/essay-questions/{questionId}", essayQuestionHandlers.UpdateEssayQuestionHandler).Methods("PUT")    // Memperbarui pertanyaan esai.
 	teacherRouter.HandleFunc("/question-bank", questionBankHandlers.CreateQuestionBankEntryHandler).Methods("POST")

@@ -518,3 +518,137 @@ func (h *EssayQuestionHandlers) AutoGenerateEssayQuestionHandler(w http.Response
 
 	respondWithJSON(w, http.StatusOK, draft)
 }
+
+// AutoGenerateEssayMetadataHandler membuat rubrik/jawaban ideal dari soal yang sudah ditulis guru.
+func (h *EssayQuestionHandlers) AutoGenerateEssayMetadataHandler(w http.ResponseWriter, r *http.Request) {
+	if h.AIService == nil {
+		respondWithError(w, http.StatusServiceUnavailable, "AI service is unavailable")
+		return
+	}
+	if h.MaterialService == nil {
+		respondWithError(w, http.StatusInternalServerError, "Material service is unavailable")
+		return
+	}
+
+	vars := mux.Vars(r)
+	materialID, ok := vars["materialId"]
+	if !ok || materialID == "" {
+		respondWithError(w, http.StatusBadRequest, "Material ID is missing from URL")
+		return
+	}
+
+	var req models.AutoGenerateEssayMetadataRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.TeksSoal) == "" {
+		respondWithError(w, http.StatusBadRequest, "teks_soal is required")
+		return
+	}
+
+	material, err := h.MaterialService.GetMaterialByID(materialID)
+	if err != nil {
+		log.Printf("ERROR: Failed to get material %s for auto-generate metadata: %v", materialID, err)
+		if err.Error() == "material not found" {
+			respondWithError(w, http.StatusNotFound, "Material not found")
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve material")
+		return
+	}
+
+	plainContent := normalizeMaterialToPlainText(material.IsiMateri)
+	materialTitle := material.Judul
+	sourceLabel := fmt.Sprintf("SECTION: %s", strings.TrimSpace(material.Judul))
+
+	if req.ReferenceSectionCardID != nil && strings.TrimSpace(*req.ReferenceSectionCardID) != "" {
+		cardTitle, cardText, ok := extractSectionMaterialCardText(material.IsiMateri, strings.TrimSpace(*req.ReferenceSectionCardID))
+		if !ok {
+			respondWithError(w, http.StatusBadRequest, "Card materi acuan tidak ditemukan atau tidak memiliki konten teks")
+			return
+		}
+		cardChars := len([]rune(strings.TrimSpace(cardText)))
+		if cardChars < 80 {
+			plainContent = normalizeMaterialToPlainText(material.IsiMateri)
+			log.Printf("INFO: Card source too short, fallback to section text. material_id=%s card_id=%s card_chars=%d section_chars=%d", materialID, strings.TrimSpace(*req.ReferenceSectionCardID), cardChars, len([]rune(strings.TrimSpace(plainContent))))
+		} else {
+			plainContent = cardText
+			log.Printf("INFO: Card source selected. material_id=%s card_id=%s card_chars=%d", materialID, strings.TrimSpace(*req.ReferenceSectionCardID), cardChars)
+		}
+		plainContent = clampTextForAIPrompt(plainContent, maxSingleMaterialChars)
+		if strings.TrimSpace(cardTitle) != "" {
+			materialTitle = fmt.Sprintf("%s - %s", strings.TrimSpace(material.Judul), strings.TrimSpace(cardTitle))
+			sourceLabel = fmt.Sprintf("CARD: %s", strings.TrimSpace(cardTitle))
+		} else {
+			sourceLabel = "CARD: Materi"
+		}
+	} else if req.ReferenceMaterialID != nil && strings.TrimSpace(*req.ReferenceMaterialID) != "" {
+		refID := strings.TrimSpace(*req.ReferenceMaterialID)
+		if refID != material.ID {
+			refMaterial, refErr := h.MaterialService.GetMaterialByID(refID)
+			if refErr != nil {
+				log.Printf("ERROR: Failed to get reference material %s for auto-generate metadata: %v", refID, refErr)
+				if refErr.Error() == "material not found" {
+					respondWithError(w, http.StatusNotFound, "Reference material not found")
+					return
+				}
+				respondWithError(w, http.StatusInternalServerError, "Failed to retrieve reference material")
+				return
+			}
+			if refMaterial.ClassID != material.ClassID {
+				respondWithError(w, http.StatusBadRequest, "Reference material must be from the same class")
+				return
+			}
+			materialTitle = refMaterial.Judul
+			plainContent = normalizeMaterialToPlainText(refMaterial.IsiMateri)
+			sourceLabel = fmt.Sprintf("SECTION: %s", strings.TrimSpace(refMaterial.Judul))
+		}
+		if strings.TrimSpace(plainContent) == "" {
+			respondWithError(w, http.StatusBadRequest, "Materi acuan terpilih belum memiliki isi materi")
+			return
+		}
+		plainContent = clampTextForAIPrompt(plainContent, maxSingleMaterialChars)
+	} else {
+		if strings.TrimSpace(plainContent) == "" {
+			respondWithError(w, http.StatusBadRequest, "Materi ini belum memiliki isi yang bisa dijadikan acuan")
+			return
+		}
+		plainContent = clampTextForAIPrompt(plainContent, maxSingleMaterialChars)
+	}
+
+	rubricType := strings.ToLower(strings.TrimSpace(req.RubricType))
+	if rubricType != "holistik" && rubricType != "analitik" {
+		rubricType = "analitik"
+	}
+	targetLevel := strings.ToUpper(strings.TrimSpace(func() string {
+		if req.LevelKognitif == nil {
+			return ""
+		}
+		return *req.LevelKognitif
+	}()))
+	if targetLevel != "" && targetLevel != "C1" && targetLevel != "C2" && targetLevel != "C3" && targetLevel != "C4" {
+		respondWithError(w, http.StatusBadRequest, "level_kognitif harus C1, C2, C3, atau C4")
+		return
+	}
+
+	teachingModuleContext := ""
+	log.Printf("INFO: Auto-generate metadata source resolved. material_id=%s title=%q chars=%d level=%q", materialID, materialTitle, len([]rune(strings.TrimSpace(plainContent))), targetLevel)
+	if len([]rune(strings.TrimSpace(plainContent))) < 20 {
+		respondWithError(w, http.StatusBadRequest, "Konten materi acuan terlalu pendek. Tambahkan isi materi lebih lengkap sebelum generate.")
+		return
+	}
+
+	draft, err := h.AIService.GenerateEssayQuestionMetadataFromMaterial(materialTitle, plainContent, req.TeksSoal, rubricType, targetLevel, teachingModuleContext)
+	if err != nil {
+		log.Printf("ERROR: Failed generating essay metadata for material %s: %v", materialID, err)
+		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to auto-generate metadata: %v", err))
+		return
+	}
+	draft.TeksSoal = strings.TrimSpace(req.TeksSoal)
+	draft.SourceLabel = sourceLabel
+	draft.SourceChars = len([]rune(strings.TrimSpace(plainContent)))
+	draft.SourcePreview = clampTextForAIPrompt(strings.TrimSpace(plainContent), 280)
+
+	respondWithJSON(w, http.StatusOK, draft)
+}

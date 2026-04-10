@@ -82,7 +82,17 @@ type AutoGenerateEssayQuestionRequest struct {
 	RubricType             string  `json:"rubric_type,omitempty"`               // "analitik" atau "holistik"
 	ReferenceMaterialID    *string `json:"reference_material_id,omitempty"`     // Acuan materi untuk RAG.
 	ReferenceSectionCardID *string `json:"reference_section_card_id,omitempty"` // Acuan card materi spesifik di dalam section aktif.
-	LevelKognitif          *string `json:"level_kognitif,omitempty"`            // Target level kognitif (C1/C2/C3) jika dipilih guru.
+	LevelKognitif          *string `json:"level_kognitif,omitempty"`            // Target level kognitif (C1/C2/C3/C4) jika dipilih guru.
+}
+
+// AutoGenerateEssayMetadataRequest adalah payload untuk generate metadata (rubrik, jawaban ideal, dll)
+// berdasarkan teks soal yang sudah ada.
+type AutoGenerateEssayMetadataRequest struct {
+	TeksSoal               string  `json:"teks_soal"`                           // Teks soal yang sudah ditulis guru.
+	RubricType             string  `json:"rubric_type,omitempty"`               // "analitik" atau "holistik"
+	ReferenceMaterialID    *string `json:"reference_material_id,omitempty"`     // Acuan materi untuk RAG.
+	ReferenceSectionCardID *string `json:"reference_section_card_id,omitempty"` // Acuan card materi spesifik di dalam section aktif.
+	LevelKognitif          *string `json:"level_kognitif,omitempty"`            // Target level kognitif (C1/C2/C3/C4) jika dipilih guru.
 }
 
 // GeneratedDescriptor merepresentasikan satu baris skor rubrik dari AI.
