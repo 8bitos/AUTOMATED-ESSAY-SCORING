@@ -781,7 +781,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 	promptBuilder.WriteString("You are an expert instructional designer for LMS essay assessments.\n")
 	promptBuilder.WriteString("Domain constraint: This system is ONLY for Sejarah (History), especially Indonesian history context.\n")
 	promptBuilder.WriteString("Target audience: Sekolah menengah kelas 10. Use very simple vocabulary, avoid multi-step reasoning, and keep questions short and straightforward.\n")
-	promptBuilder.WriteString("Difficulty level: easy. Question should target C1-C3 only, and never require deep analysis or synthesis.\n")
+	promptBuilder.WriteString("Difficulty level: easy. Question should target C1-C4 only, and never require deep analysis or synthesis.\n")
 	promptBuilder.WriteString("Generate exactly one essay question draft based only on the material.\n")
 	promptBuilder.WriteString("Return ONLY JSON. No markdown.\n\n")
 	promptBuilder.WriteString(fmt.Sprintf("MATERIAL TITLE:\n%s\n\n", materialTitle))
@@ -818,7 +818,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 		promptBuilder.WriteString(fmt.Sprintf("TARGET COGNITIVE LEVEL (MANDATORY): %s\n\n", strings.TrimSpace(targetLevel)))
 	}
 	promptBuilder.WriteString("Return this exact JSON schema:\n")
-	promptBuilder.WriteString("{\"teks_soal\":\"...\",\"level_kognitif\":\"C1|C2|C3\",\"keywords\":[\"...\"],\"ideal_answer\":\"...\",\"weight\":10,\"rubric_type\":\"analitik|holistik\",\"rubrics\":[{\"nama_aspek\":\"...\",\"descriptors\":[{\"score\":0,\"description\":\"...\"},{\"score\":1,\"description\":\"...\"},{\"score\":2,\"description\":\"...\"},{\"score\":3,\"description\":\"...\"}]}]}\n")
+	promptBuilder.WriteString("{\"teks_soal\":\"...\",\"level_kognitif\":\"C1|C2|C3|C4\",\"keywords\":[\"...\"],\"ideal_answer\":\"...\",\"weight\":10,\"rubric_type\":\"analitik|holistik\",\"rubrics\":[{\"nama_aspek\":\"...\",\"descriptors\":[{\"score\":0,\"description\":\"...\"},{\"score\":1,\"description\":\"...\"},{\"score\":2,\"description\":\"...\"},{\"score\":3,\"description\":\"...\"}]}]}\n")
 	promptBuilder.WriteString("Rules:\n")
 	promptBuilder.WriteString("1) Question must be answerable from material only.\n")
 	promptBuilder.WriteString("1a) If teaching module context exists, align terms/timeline with it, but never contradict material content.\n")
@@ -828,13 +828,13 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 	if strings.TrimSpace(targetLevel) != "" {
 		promptBuilder.WriteString(fmt.Sprintf("3) Cognitive level MUST be exactly %s.\n", strings.TrimSpace(targetLevel)))
 	} else {
-		promptBuilder.WriteString("3) Cognitive level target MUST be only C1-C3 (remember/understand/apply). Avoid C4-C6 complexity.\n")
-		promptBuilder.WriteString("3b) Choose one level randomly among C1/C2/C3 and output it in level_kognitif.\n")
+		promptBuilder.WriteString("3) Cognitive level target MUST be only C1-C4 (remember/understand/apply/analyze). Avoid C5-C6 complexity.\n")
+		promptBuilder.WriteString("3b) Choose one level randomly among C1/C2/C3/C4 and output it in level_kognitif.\n")
 	}
 	promptBuilder.WriteString("3c) If level_kognitif is C1, rubric_type SHOULD be holistik with one aspect based on keyword recall coverage.\n")
 	promptBuilder.WriteString("3a) Aim for vocabulary and structure that a tenth-grader can understand on first read. No compound conditions.\n")
 	promptBuilder.WriteString("4) Keep question short and simple: single prompt, max 30 words, no multi-part questions. ended with ? or ! mark\n")
-	promptBuilder.WriteString("4a) Assign weights according to cognitive level: 5 points for C1, 10 for C2, 15 for C3.\n")
+	promptBuilder.WriteString("4a) Assign weights according to cognitive level: 5 points for C1, 10 for C2, 15 for C3, 20 for C4.\n")
 	promptBuilder.WriteString("5) ideal_answer must be concise: 5-50 words, easy to understand, no long essay answer required.\n")
 	promptBuilder.WriteString("6) keywords must be concise and relevant (3-6 items).\n")
 	promptBuilder.WriteString("7) weight must be positive number.\n")
@@ -871,7 +871,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 	if targetLevel != "" {
 		draft.LevelKognitif = strings.ToUpper(strings.TrimSpace(targetLevel))
 	}
-	if draft.LevelKognitif != "C1" && draft.LevelKognitif != "C2" && draft.LevelKognitif != "C3" {
+	if draft.LevelKognitif != "C1" && draft.LevelKognitif != "C2" && draft.LevelKognitif != "C3" && draft.LevelKognitif != "C4" {
 		draft.LevelKognitif = "C2"
 	}
 	if draft.Weight == nil || *draft.Weight <= 0 {
@@ -879,6 +879,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 			"C1": 5,
 			"C2": 10,
 			"C3": 15,
+			"C4": 20,
 		}
 		v := defaultByLevel[draft.LevelKognitif]
 		if v <= 0 {

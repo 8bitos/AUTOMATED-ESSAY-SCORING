@@ -474,8 +474,8 @@ func (h *EssayQuestionHandlers) AutoGenerateEssayQuestionHandler(w http.Response
 		}
 		return *req.LevelKognitif
 	}()))
-	if targetLevel != "" && targetLevel != "C1" && targetLevel != "C2" && targetLevel != "C3" {
-		respondWithError(w, http.StatusBadRequest, "level_kognitif harus C1, C2, atau C3")
+	if targetLevel != "" && targetLevel != "C1" && targetLevel != "C2" && targetLevel != "C3" && targetLevel != "C4" {
+		respondWithError(w, http.StatusBadRequest, "level_kognitif harus C1, C2, C3, atau C4")
 		return
 	}
 

@@ -224,6 +224,7 @@ const FormModal = ({
                 <option value="C2">C2</option>
                 <option value="C3">C3</option>
                 <option value="C4">C4</option>
+                <option value="C4">C4</option>
               </select>
             </div>
             <div>
