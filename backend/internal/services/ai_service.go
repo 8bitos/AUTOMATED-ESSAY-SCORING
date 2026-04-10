@@ -9,7 +9,9 @@ import (
 	"encoding/hex"
 	"encoding/json" // Mengimpor package encoding/json untuk bekerja dengan JSON.
 	"fmt"           // Mengimpor package fmt untuk format string dan error.
+	"io"
 	"log"           // Mengimpor package log untuk logging.
+	"net/http"
 	"os"            // Mengimpor package os untuk berinteraksi dengan sistem operasi (variabel lingkungan).
 	"strconv"
 	"strings" // Mengimpor package strings untuk normalisasi aspek.
@@ -20,9 +22,68 @@ import (
 	"google.golang.org/api/option"             // Mengimpor package option untuk konfigurasi klien Google API.
 )
 
+type aiProvider string
+
+const (
+	aiProviderGemini  aiProvider = "gemini"
+	aiProviderLiteLLM aiProvider = "litellm"
+)
+
+type aiUsage struct {
+	PromptTokens    int64
+	CandidateTokens int64
+	TotalTokens     int64
+}
+
+type aiRawResponse struct {
+	Text  string
+	Usage aiUsage
+}
+
+type liteLLMClient struct {
+	baseURL    string
+	apiKey     string
+	httpClient *http.Client
+}
+
+type openAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openAIResponseFormat struct {
+	Type string `json:"type"`
+}
+
+type openAIChatRequest struct {
+	Model          string              `json:"model"`
+	Messages       []openAIMessage     `json:"messages"`
+	Temperature    float64             `json:"temperature,omitempty"`
+	ResponseFormat *openAIResponseFormat `json:"response_format,omitempty"`
+}
+
+type openAIChatResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int64 `json:"prompt_tokens"`
+		CompletionTokens int64 `json:"completion_tokens"`
+		TotalTokens      int64 `json:"total_tokens"`
+	} `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	} `json:"error,omitempty"`
+}
+
 // AIService menangani logika untuk berinteraksi dengan model AI Gemini.
 type AIService struct {
-	client          *genai.GenerativeModel // Klien model Gemini yang akan digunakan untuk generate konten.
+	provider        aiProvider
+	geminiClient    *genai.GenerativeModel // Klien model Gemini yang akan digunakan untuk generate konten.
+	liteLLMClient   *liteLLMClient
 	db              *sql.DB
 	modelName       string
 	dailyTokenLimit int64
@@ -32,21 +93,13 @@ type AIService struct {
 	aiMinInterval   time.Duration
 }
 
-// NewAIService membuat instance baru dari AIService, menginisialisasi klien Gemini.
-// Ini membaca GEMINI_API_KEY dari variabel lingkungan.
+// NewAIService membuat instance baru dari AIService.
+// Konfigurasi provider dan model dibaca dari variabel lingkungan.
 func NewAIService(db *sql.DB) (*AIService, error) {
-	// Mendapatkan GEMINI_API_KEY dari variabel lingkungan.
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+	modelName := strings.TrimSpace(os.Getenv("AI_MODEL"))
+	if modelName == "" {
+		modelName = "gemini-2.5-flash"
 	}
-
-	modelName := "gemini-2.5-flash"
-	model, err := buildGeminiModel(apiKey, modelName)
-	if err != nil {
-		return nil, err
-	}
-
 	dailyLimit := int64(0)
 	if value := strings.TrimSpace(os.Getenv("GEMINI_DAILY_TOKEN_LIMIT")); value != "" {
 		if parsed, parseErr := strconv.ParseInt(value, 10, 64); parseErr == nil && parsed > 0 {
@@ -61,7 +114,11 @@ func NewAIService(db *sql.DB) (*AIService, error) {
 	}
 	minInterval := time.Minute / time.Duration(rpmLimit)
 
-	return &AIService{client: model, db: db, modelName: modelName, dailyTokenLimit: dailyLimit, aiMinInterval: minInterval}, nil
+	service := &AIService{db: db, modelName: modelName, dailyTokenLimit: dailyLimit, aiMinInterval: minInterval}
+	if err := service.RefreshFromEnv(); err != nil {
+		return nil, err
+	}
+	return service, nil
 }
 
 func buildGeminiModel(apiKey, modelName string) (*genai.GenerativeModel, error) {
@@ -86,7 +143,65 @@ func (s *AIService) UpdateAPIKey(apiKey string) error {
 	}
 
 	s.modelMu.Lock()
-	s.client = model
+	s.geminiClient = model
+	s.modelMu.Unlock()
+	return nil
+}
+
+func (s *AIService) RefreshFromEnv() error {
+	providerRaw := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
+	if providerRaw == "" {
+		providerRaw = string(aiProviderGemini)
+	}
+	var provider aiProvider
+	switch providerRaw {
+	case string(aiProviderGemini):
+		provider = aiProviderGemini
+	case string(aiProviderLiteLLM):
+		provider = aiProviderLiteLLM
+	default:
+		return fmt.Errorf("unsupported AI_PROVIDER: %s", providerRaw)
+	}
+
+	modelName := strings.TrimSpace(os.Getenv("AI_MODEL"))
+	if modelName == "" {
+		modelName = "gemini-2.5-flash"
+	}
+
+	var geminiModel *genai.GenerativeModel
+	var liteClient *liteLLMClient
+	switch provider {
+	case aiProviderGemini:
+		apiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+		if apiKey == "" {
+			return fmt.Errorf("GEMINI_API_KEY environment variable not set")
+		}
+		model, err := buildGeminiModel(apiKey, modelName)
+		if err != nil {
+			return err
+		}
+		geminiModel = model
+	case aiProviderLiteLLM:
+		baseURL := strings.TrimSpace(os.Getenv("LITELLM_BASE_URL"))
+		apiKey := strings.TrimSpace(os.Getenv("LITELLM_API_KEY"))
+		if baseURL == "" {
+			return fmt.Errorf("LITELLM_BASE_URL environment variable not set")
+		}
+		if apiKey == "" {
+			return fmt.Errorf("LITELLM_API_KEY environment variable not set")
+		}
+		liteClient = &liteLLMClient{
+			baseURL:    baseURL,
+			apiKey:     apiKey,
+			httpClient: &http.Client{Timeout: 60 * time.Second},
+		}
+	}
+
+	s.modelMu.Lock()
+	s.provider = provider
+	s.modelName = modelName
+	s.geminiClient = geminiModel
+	s.liteLLMClient = liteClient
 	s.modelMu.Unlock()
 	return nil
 }
@@ -156,7 +271,7 @@ func (s *AIService) waitForAIRateSlot() {
 	s.lastRequestAt = time.Now()
 }
 
-func (s *AIService) generateContentWithRetry(prompt string) (*genai.GenerateContentResponse, error) {
+func (s *AIService) generateContentWithRetry(prompt string) (*aiRawResponse, error) {
 	ctx := context.Background()
 	backoffs := []time.Duration{0, 2 * time.Second, 5 * time.Second}
 	var lastErr error
@@ -166,18 +281,110 @@ func (s *AIService) generateContentWithRetry(prompt string) (*genai.GenerateCont
 		}
 		s.waitForAIRateSlot()
 		s.modelMu.RLock()
-		model := s.client
+		provider := s.provider
+		modelName := s.modelName
+		gemini := s.geminiClient
+		lite := s.liteLLMClient
 		s.modelMu.RUnlock()
-		if model == nil {
-			return nil, fmt.Errorf("AI model is unavailable")
+
+		switch provider {
+		case aiProviderGemini:
+			if gemini == nil {
+				return nil, fmt.Errorf("AI model is unavailable")
+			}
+			resp, err := gemini.GenerateContent(ctx, genai.Text(prompt))
+			if err == nil {
+				text, parseErr := extractGeminiText(resp)
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				return &aiRawResponse{
+					Text: text,
+					Usage: aiUsage{
+						PromptTokens:    int64(resp.UsageMetadata.PromptTokenCount),
+						CandidateTokens: int64(resp.UsageMetadata.CandidatesTokenCount),
+						TotalTokens:     int64(resp.UsageMetadata.TotalTokenCount),
+					},
+				}, nil
+			}
+			lastErr = err
+		case aiProviderLiteLLM:
+			if lite == nil {
+				return nil, fmt.Errorf("AI model is unavailable")
+			}
+			text, usage, err := lite.generate(ctx, modelName, prompt)
+			if err == nil {
+				return &aiRawResponse{Text: text, Usage: usage}, nil
+			}
+			lastErr = err
+		default:
+			return nil, fmt.Errorf("unsupported AI provider")
 		}
-		resp, err := model.GenerateContent(ctx, genai.Text(prompt))
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
 	}
 	return nil, lastErr
+}
+
+func extractGeminiText(resp *genai.GenerateContentResponse) (string, error) {
+	if resp == nil || len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("received an empty response from AI service")
+	}
+	part := resp.Candidates[0].Content.Parts[0]
+	text, ok := part.(genai.Text)
+	if !ok {
+		return "", fmt.Errorf("unexpected response type from AI service")
+	}
+	return string(text), nil
+}
+
+func (c *liteLLMClient) generate(ctx context.Context, modelName, prompt string) (string, aiUsage, error) {
+	base := strings.TrimRight(c.baseURL, "/")
+	reqBody := openAIChatRequest{
+		Model:       modelName,
+		Messages:    []openAIMessage{{Role: "user", Content: prompt}},
+		Temperature: 0,
+		ResponseFormat: &openAIResponseFormat{Type: "json_object"},
+	}
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", aiUsage{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return "", aiUsage{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(c.apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.apiKey))
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", aiUsage{}, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", aiUsage{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", aiUsage{}, fmt.Errorf("liteLLM error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var parsed openAIChatResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", aiUsage{}, err
+	}
+	if parsed.Error != nil && strings.TrimSpace(parsed.Error.Message) != "" {
+		return "", aiUsage{}, fmt.Errorf("liteLLM error: %s", parsed.Error.Message)
+	}
+	if len(parsed.Choices) == 0 || strings.TrimSpace(parsed.Choices[0].Message.Content) == "" {
+		return "", aiUsage{}, fmt.Errorf("received an empty response from AI service")
+	}
+	return parsed.Choices[0].Message.Content, aiUsage{
+		PromptTokens:    parsed.Usage.PromptTokens,
+		CandidateTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:     parsed.Usage.TotalTokens,
+	}, nil
 }
 
 // --- Struktur Internal untuk Parsing Rubrik dan Respons AI ---
@@ -372,7 +579,7 @@ func (s *AIService) GradeEssay(req models.GradeEssayRequest) (*models.GradeEssay
 	}
 
 	prompt := buildPrompt(req, formattedRubric) // Membangun prompt lengkap.
-	log.Println("--- SENDING PROMPT TO GEMINI API ---")
+	log.Println("--- SENDING PROMPT TO AI API ---")
 
 	log.Println("DEBUG: Calling s.client.GenerateContent now...")
 	// Memanggil Gemini API untuk generate konten berdasarkan prompt.
@@ -386,15 +593,14 @@ func (s *AIService) GradeEssay(req models.GradeEssayRequest) (*models.GradeEssay
 	}
 
 	if err != nil {
-		log.Printf("ERROR: Gemini API call failed: %v", err)
+		log.Printf("ERROR: AI API call failed: %v", err)
 		s.logAPIUsage("grade_essay", "error", detectAIErrorType(err), err.Error(), 0, 0, 0, time.Since(startedAt).Milliseconds())
 		return nil, fmt.Errorf("failed to generate content from AI service")
 	}
 
-	aiResponse, err := parseAIResponse(resp) // Mem-parsing respons mentah dari AI.
+	aiResponse, err := parseAIResponse(resp.Text) // Mem-parsing respons mentah dari AI.
 	if err != nil {
-		promptTokens, candidateTokens, totalTokens := extractUsageMetadata(resp)
-		s.logAPIUsage("grade_essay", "error", "parse", err.Error(), promptTokens, candidateTokens, totalTokens, time.Since(startedAt).Milliseconds())
+		s.logAPIUsage("grade_essay", "error", "parse", err.Error(), resp.Usage.PromptTokens, resp.Usage.CandidateTokens, resp.Usage.TotalTokens, time.Since(startedAt).Milliseconds())
 		return nil, err
 	}
 
@@ -423,17 +629,9 @@ func (s *AIService) GradeEssay(req models.GradeEssayRequest) (*models.GradeEssay
 			log.Printf("WARNING: failed to upsert grade essay cache: %v", cacheErr)
 		}
 	}
-	promptTokens, candidateTokens, totalTokens := extractUsageMetadata(resp)
-	s.logAPIUsage("grade_essay", "success", "", "", promptTokens, candidateTokens, totalTokens, time.Since(startedAt).Milliseconds())
+	s.logAPIUsage("grade_essay", "success", "", "", resp.Usage.PromptTokens, resp.Usage.CandidateTokens, resp.Usage.TotalTokens, time.Since(startedAt).Milliseconds())
 
 	return finalResponse, nil
-}
-
-func extractUsageMetadata(resp *genai.GenerateContentResponse) (int64, int64, int64) {
-	if resp == nil || resp.UsageMetadata == nil {
-		return 0, 0, 0
-	}
-	return int64(resp.UsageMetadata.PromptTokenCount), int64(resp.UsageMetadata.CandidatesTokenCount), int64(resp.UsageMetadata.TotalTokenCount)
 }
 
 func trimToWordLimit(value string, maxWords int) string {
@@ -446,6 +644,35 @@ func trimToWordLimit(value string, maxWords int) string {
 		return trimmed
 	}
 	return strings.Join(words[:maxWords], " ") + "..."
+}
+
+// TestConnection melakukan ping ringan ke provider AI aktif untuk memastikan koneksi berhasil.
+func (s *AIService) TestConnection() (int64, error) {
+	startedAt := time.Now()
+	prompt := `Return ONLY JSON: {"ok": true}`
+	resp, err := s.generateContentWithRetry(prompt)
+	if err != nil {
+		s.logAPIUsage("ai_test", "error", detectAIErrorType(err), err.Error(), 0, 0, 0, time.Since(startedAt).Milliseconds())
+		return 0, fmt.Errorf("failed to reach AI provider: %v", err)
+	}
+	if err := assertValidJSON(resp.Text); err != nil {
+		s.logAPIUsage("ai_test", "error", "parse", err.Error(), resp.Usage.PromptTokens, resp.Usage.CandidateTokens, resp.Usage.TotalTokens, time.Since(startedAt).Milliseconds())
+		return 0, err
+	}
+	s.logAPIUsage("ai_test", "success", "", "", resp.Usage.PromptTokens, resp.Usage.CandidateTokens, resp.Usage.TotalTokens, time.Since(startedAt).Milliseconds())
+	return time.Since(startedAt).Milliseconds(), nil
+}
+
+func assertValidJSON(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("empty response")
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return fmt.Errorf("invalid JSON response")
+	}
+	return nil
 }
 
 // buildPrompt menyusun prompt lengkap yang akan dikirim ke model AI Gemini.
@@ -517,24 +744,16 @@ func buildPrompt(req models.GradeEssayRequest, formattedRubric string) string {
 
 // parseAIResponse mem-parsing respons dari model AI Gemini.
 // Ia mengekstrak bagian teks dari respons dan mencoba mendekode JSON-nya.
-func parseAIResponse(resp *genai.GenerateContentResponse) (*AIResponse, error) {
-	// Memeriksa apakah respons tidak kosong.
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+func parseAIResponse(aiResponseJSON string) (*AIResponse, error) {
+	trimmed := strings.TrimSpace(aiResponseJSON)
+	if trimmed == "" {
 		return nil, fmt.Errorf("received an empty response from AI service")
-	}
-
-	// Mengambil bagian konten dari respons AI.
-	aiResponsePart := resp.Candidates[0].Content.Parts[0]
-	// Memastikan bagian konten adalah teks.
-	aiResponseJSON, ok := aiResponsePart.(genai.Text)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type from AI service")
 	}
 
 	var parsedResponse AIResponse
 	// Mendekode respons JSON dari AI ke dalam struktur AIResponse.
-	if err := json.Unmarshal([]byte(aiResponseJSON), &parsedResponse); err != nil {
-		log.Printf("ERROR: Failed to unmarshal AI JSON response: %v. Raw response: %s", err, aiResponseJSON)
+	if err := json.Unmarshal([]byte(trimmed), &parsedResponse); err != nil {
+		log.Printf("ERROR: Failed to unmarshal AI JSON response: %v. Raw response: %s", err, trimmed)
 		return nil, fmt.Errorf("failed to parse JSON response from AI")
 	}
 
@@ -630,25 +849,17 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 		return nil, fmt.Errorf("failed to generate essay question draft: %w", err)
 	}
 
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+	if strings.TrimSpace(resp.Text) == "" {
 		return nil, fmt.Errorf("received an empty response from AI service")
-	}
-	aiResponsePart := resp.Candidates[0].Content.Parts[0]
-	aiResponseJSON, ok := aiResponsePart.(genai.Text)
-	if !ok {
-		promptTokens, candidateTokens, totalTokens := extractUsageMetadata(resp)
-		s.logAPIUsage("auto_generate_question", "error", "response_type", "unexpected response type from AI service", promptTokens, candidateTokens, totalTokens, time.Since(startedAt).Milliseconds())
-		return nil, fmt.Errorf("unexpected response type from AI service")
 	}
 
 	var draft models.AutoGeneratedEssayQuestion
-	if err := json.Unmarshal([]byte(aiResponseJSON), &draft); err != nil {
-		log.Printf("ERROR: Failed to unmarshal generated question JSON: %v. Raw response: %s", err, aiResponseJSON)
-		promptTokens, candidateTokens, totalTokens := extractUsageMetadata(resp)
-		s.logAPIUsage("auto_generate_question", "error", "parse", err.Error(), promptTokens, candidateTokens, totalTokens, time.Since(startedAt).Milliseconds())
+	if err := json.Unmarshal([]byte(resp.Text), &draft); err != nil {
+		log.Printf("ERROR: Failed to unmarshal generated question JSON: %v. Raw response: %s", err, resp.Text)
+		s.logAPIUsage("auto_generate_question", "error", "parse", err.Error(), resp.Usage.PromptTokens, resp.Usage.CandidateTokens, resp.Usage.TotalTokens, time.Since(startedAt).Milliseconds())
 		return nil, fmt.Errorf("failed to parse generated question from AI")
 	}
-	if strings.TrimSpace(draft.TeksSoal) == "" && strings.Contains(strings.ToUpper(string(aiResponseJSON)), "MATERI_BUKAN_SEJARAH") {
+	if strings.TrimSpace(draft.TeksSoal) == "" && strings.Contains(strings.ToUpper(resp.Text), "MATERI_BUKAN_SEJARAH") {
 		log.Printf("WARNING: AI flagged material as non-history. Using safe fallback draft. title=%q chars=%d", materialTitle, len([]rune(strings.TrimSpace(materialContent))))
 		draft.TeksSoal = "Jelaskan secara singkat peristiwa sejarah utama yang dibahas pada materi ini!"
 		draft.IdealAnswer = "Siswa menjelaskan peristiwa utama, tokoh/kelompok terkait, serta konteks waktu secara ringkas sesuai materi."
@@ -763,8 +974,7 @@ func (s *AIService) GenerateEssayQuestionFromMaterial(
 			},
 		}
 	}
-	promptTokens, candidateTokens, totalTokens := extractUsageMetadata(resp)
-	s.logAPIUsage("auto_generate_question", "success", "", "", promptTokens, candidateTokens, totalTokens, time.Since(startedAt).Milliseconds())
+	s.logAPIUsage("auto_generate_question", "success", "", "", resp.Usage.PromptTokens, resp.Usage.CandidateTokens, resp.Usage.TotalTokens, time.Since(startedAt).Milliseconds())
 
 	return &draft, nil
 }

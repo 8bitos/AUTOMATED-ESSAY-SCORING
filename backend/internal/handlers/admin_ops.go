@@ -181,29 +181,48 @@ func (h *AdminOpsHandlers) AdminQueueStopHandler(w http.ResponseWriter, r *http.
 	respondWithJSON(w, http.StatusOK, result)
 }
 
-func getBackendEnvPath() string {
-	return filepath.Join(".", ".env")
+func getEnvPaths() []string {
+	paths := []string{
+		filepath.Join(".", ".env"),
+		filepath.Join(".", "backend", ".env"),
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[abs]; ok {
+			continue
+		}
+		seen[abs] = struct{}{}
+		out = append(out, abs)
+	}
+	return out
 }
 
-func readGeminiKeyFromEnvFile() (string, error) {
-	path := getBackendEnvPath()
-	content, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
+func readEnvVarFromEnvFile(key string) (string, error) {
+	paths := getEnvPaths()
+	for _, path := range paths {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", err
 		}
-		return "", err
-	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "GEMINI_API_KEY=") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "GEMINI_API_KEY=")), nil
+		scanner := bufio.NewScanner(bytes.NewReader(content))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, key+"=") {
+				return strings.TrimSpace(strings.TrimPrefix(line, key+"=")), nil
+			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", err
+		if err := scanner.Err(); err != nil {
+			return "", err
+		}
 	}
 	return "", nil
 }
@@ -219,45 +238,50 @@ func maskAPIKey(value string) string {
 	return value[:4] + strings.Repeat("*", len(value)-8) + value[len(value)-4:]
 }
 
-func writeGeminiKeyToEnvFile(newKey string) error {
-	path := getBackendEnvPath()
-	newKey = strings.TrimSpace(newKey)
-	if newKey == "" {
-		return fmt.Errorf("api key cannot be empty")
+func writeEnvVarToEnvFile(key, newValue string) error {
+	newValue = strings.TrimSpace(newValue)
+	if newValue == "" {
+		return fmt.Errorf("value cannot be empty")
 	}
 
-	content, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
+	paths := getEnvPaths()
+	for _, path := range paths {
+		content, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
 
-	lines := []string{}
-	if len(content) > 0 {
-		lines = strings.Split(string(content), "\n")
-	}
+		lines := []string{}
+		if len(content) > 0 {
+			lines = strings.Split(string(content), "\n")
+		}
 
-	updated := false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "GEMINI_API_KEY=") {
-			lines[i] = "GEMINI_API_KEY=" + newKey
-			updated = true
-			break
+		updated := false
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, key+"=") {
+				lines[i] = key + "=" + newValue
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			lines = append(lines, key+"="+newValue)
+		}
+
+		output := strings.Join(lines, "\n")
+		if !strings.HasSuffix(output, "\n") {
+			output += "\n"
+		}
+		if writeErr := os.WriteFile(path, []byte(output), 0o600); writeErr != nil {
+			return writeErr
 		}
 	}
-	if !updated {
-		lines = append(lines, "GEMINI_API_KEY="+newKey)
-	}
-
-	output := strings.Join(lines, "\n")
-	if !strings.HasSuffix(output, "\n") {
-		output += "\n"
-	}
-	return os.WriteFile(path, []byte(output), 0o600)
+	return nil
 }
 
 func (h *AdminOpsHandlers) AdminGetGeminiKeyMaskedHandler(w http.ResponseWriter, r *http.Request) {
-	key, err := readGeminiKeyFromEnvFile()
+	key, err := readEnvVarFromEnvFile("GEMINI_API_KEY")
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to read GEMINI_API_KEY")
 		return
@@ -287,7 +311,7 @@ func (h *AdminOpsHandlers) AdminRevealGeminiKeyHandler(w http.ResponseWriter, r 
 		return
 	}
 
-	key, err := readGeminiKeyFromEnvFile()
+	key, err := readEnvVarFromEnvFile("GEMINI_API_KEY")
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to read GEMINI_API_KEY")
 		return
@@ -320,7 +344,7 @@ func (h *AdminOpsHandlers) AdminUpdateGeminiKeyHandler(w http.ResponseWriter, r 
 		respondWithError(w, http.StatusUnauthorized, "Password admin tidak valid")
 		return
 	}
-	if err := writeGeminiKeyToEnvFile(payload.APIKey); err != nil {
+	if err := writeEnvVarToEnvFile("GEMINI_API_KEY", payload.APIKey); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update .env GEMINI_API_KEY")
 		return
 	}
@@ -339,6 +363,227 @@ func (h *AdminOpsHandlers) AdminUpdateGeminiKeyHandler(w http.ResponseWriter, r 
 	respondWithJSON(w, http.StatusOK, map[string]string{
 		"message":    "GEMINI_API_KEY berhasil diperbarui",
 		"masked_key": maskAPIKey(payload.APIKey),
+	})
+}
+
+func (h *AdminOpsHandlers) AdminGetLiteLLMConfigHandler(w http.ResponseWriter, r *http.Request) {
+	key, err := readEnvVarFromEnvFile("LITELLM_API_KEY")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to read LITELLM_API_KEY")
+		return
+	}
+	baseURL, err := readEnvVarFromEnvFile("LITELLM_BASE_URL")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to read LITELLM_BASE_URL")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"masked_key": maskAPIKey(key),
+		"base_url":   baseURL,
+	})
+}
+
+func (h *AdminOpsHandlers) AdminRevealLiteLLMKeyHandler(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("userID").(string)
+	if strings.TrimSpace(userID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	var payload struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if err := h.AuthService.VerifyPassword(userID, payload.Password); err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Password admin tidak valid")
+		return
+	}
+
+	key, err := readEnvVarFromEnvFile("LITELLM_API_KEY")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to read LITELLM_API_KEY")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"api_key": key,
+	})
+}
+
+func (h *AdminOpsHandlers) AdminUpdateLiteLLMConfigHandler(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("userID").(string)
+	if strings.TrimSpace(userID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	var payload struct {
+		Password string `json:"password"`
+		APIKey   string `json:"api_key"`
+		BaseURL  string `json:"base_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(payload.APIKey) == "" && strings.TrimSpace(payload.BaseURL) == "" {
+		respondWithError(w, http.StatusBadRequest, "api_key or base_url is required")
+		return
+	}
+	if err := h.AuthService.VerifyPassword(userID, payload.Password); err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Password admin tidak valid")
+		return
+	}
+
+	if strings.TrimSpace(payload.APIKey) != "" {
+		if err := writeEnvVarToEnvFile("LITELLM_API_KEY", payload.APIKey); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to update .env LITELLM_API_KEY")
+			return
+		}
+		if setErr := os.Setenv("LITELLM_API_KEY", strings.TrimSpace(payload.APIKey)); setErr != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to refresh LITELLM_API_KEY")
+			return
+		}
+	}
+	if strings.TrimSpace(payload.BaseURL) != "" {
+		if err := writeEnvVarToEnvFile("LITELLM_BASE_URL", payload.BaseURL); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to update .env LITELLM_BASE_URL")
+			return
+		}
+		if setErr := os.Setenv("LITELLM_BASE_URL", strings.TrimSpace(payload.BaseURL)); setErr != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to refresh LITELLM_BASE_URL")
+			return
+		}
+	}
+	if h.AIService != nil {
+		if err := h.AIService.RefreshFromEnv(); err != nil {
+			respondWithError(w, http.StatusBadRequest, "Gagal validasi konfigurasi LiteLLM")
+			return
+		}
+	}
+
+	_ = h.AuditService.LogAction(userID, "update_litellm_config", "ai_config", nil, nil)
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"message":    "Konfigurasi LiteLLM berhasil diperbarui",
+		"masked_key": maskAPIKey(payload.APIKey),
+	})
+}
+
+func (h *AdminOpsHandlers) AdminGetAIProviderHandler(w http.ResponseWriter, r *http.Request) {
+	provider := strings.TrimSpace(os.Getenv("AI_PROVIDER"))
+	if provider == "" {
+		provider = "gemini"
+	}
+	model := strings.TrimSpace(os.Getenv("AI_MODEL"))
+	if model == "" {
+		model = "gemini-2.5-flash"
+	}
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"provider": provider,
+		"model":    model,
+	})
+}
+
+func (h *AdminOpsHandlers) AdminUpdateAIProviderHandler(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("userID").(string)
+	if strings.TrimSpace(userID) == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	var payload struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(payload.Provider))
+	if provider != "gemini" && provider != "litellm" {
+		respondWithError(w, http.StatusBadRequest, "provider harus gemini atau litellm")
+		return
+	}
+	model := strings.TrimSpace(payload.Model)
+	if model == "" {
+		respondWithError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if provider == "gemini" {
+		key := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+		if key == "" {
+			key, _ = readEnvVarFromEnvFile("GEMINI_API_KEY")
+		}
+		if key == "" {
+			respondWithError(w, http.StatusBadRequest, "GEMINI_API_KEY belum diatur")
+			return
+		}
+	}
+	if provider == "litellm" {
+		baseURL := strings.TrimSpace(os.Getenv("LITELLM_BASE_URL"))
+		if baseURL == "" {
+			baseURL, _ = readEnvVarFromEnvFile("LITELLM_BASE_URL")
+		}
+		apiKey := strings.TrimSpace(os.Getenv("LITELLM_API_KEY"))
+		if apiKey == "" {
+			apiKey, _ = readEnvVarFromEnvFile("LITELLM_API_KEY")
+		}
+		if baseURL == "" || apiKey == "" {
+			respondWithError(w, http.StatusBadRequest, "LITELLM_BASE_URL atau LITELLM_API_KEY belum diatur")
+			return
+		}
+	}
+
+	if err := writeEnvVarToEnvFile("AI_PROVIDER", provider); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update .env AI_PROVIDER")
+		return
+	}
+	if err := writeEnvVarToEnvFile("AI_MODEL", model); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to update .env AI_MODEL")
+		return
+	}
+	if setErr := os.Setenv("AI_PROVIDER", provider); setErr != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to refresh AI_PROVIDER")
+		return
+	}
+	if setErr := os.Setenv("AI_MODEL", model); setErr != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to refresh AI_MODEL")
+		return
+	}
+	if h.AIService != nil {
+		if err := h.AIService.RefreshFromEnv(); err != nil {
+			respondWithError(w, http.StatusBadRequest, "Gagal validasi konfigurasi AI")
+			return
+		}
+	}
+
+	_ = h.AuditService.LogAction(userID, "update_ai_provider", "ai_config", nil, map[string]interface{}{
+		"provider": provider,
+		"model":    model,
+	})
+	respondWithJSON(w, http.StatusOK, map[string]string{
+		"message":  "Konfigurasi AI berhasil diperbarui",
+		"provider": provider,
+		"model":    model,
+	})
+}
+
+func (h *AdminOpsHandlers) AdminTestAIConnectionHandler(w http.ResponseWriter, r *http.Request) {
+	if h.AIService == nil {
+		respondWithError(w, http.StatusServiceUnavailable, "AI service is unavailable")
+		return
+	}
+	latencyMs, err := h.AIService.TestConnection()
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"status":      "ok",
+		"latency_ms":  latencyMs,
 	})
 }
 
