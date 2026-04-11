@@ -114,9 +114,19 @@ func buildRubricWorkbook(items []models.RubricTemplateRow, scoreMap map[string]m
 		}
 	}
 
+	studentAnswerMap := map[string]map[string]string{}
+	for _, item := range items {
+		if _, ok := studentAnswerMap[item.StudentID]; !ok {
+			studentAnswerMap[item.StudentID] = map[string]string{}
+		}
+		if _, exists := studentAnswerMap[item.StudentID][item.QuestionID]; !exists {
+			studentAnswerMap[item.StudentID][item.QuestionID] = item.StudentAnswer
+		}
+	}
+
 	if len(questionOrder) == 0 {
 		sheet := file.GetSheetName(0)
-		headers := []string{"Nama", "Soal", "Nilai final"}
+		headers := []string{"Nama", "Jawaban", "Nilai final"}
 		for idx, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
 			_ = file.SetCellValue(sheet, cell, header)
@@ -147,7 +157,7 @@ func buildRubricWorkbook(items []models.RubricTemplateRow, scoreMap map[string]m
 		if weight <= 0 {
 			weight = 1
 		}
-		headers := []string{"Nama", "Soal"}
+		headers := []string{"Nama", "Jawaban"}
 		for _, aspect := range aspects {
 			headers = append(headers, fmt.Sprintf("Skor %s", aspect.Name))
 		}
@@ -155,8 +165,35 @@ func buildRubricWorkbook(items []models.RubricTemplateRow, scoreMap map[string]m
 
 		_ = file.SetCellValue(sheetName, "A1", "Bobot Soal")
 		_ = file.SetCellValue(sheetName, "B1", weight)
-		_ = file.SetCellValue(sheetName, "C1", "Max Skor")
+		_ = file.SetCellValue(sheetName, "C1", "Max Total Skor Rubrik")
 		_ = file.SetCellValue(sheetName, "D1", maxSum)
+		_ = file.SetCellValue(sheetName, "E1", "Soal")
+		_ = file.SetCellValue(sheetName, "F1", questionText[qid])
+
+		blueStyle, _ := file.NewStyle(&excelize.Style{
+			Font:      &excelize.Font{Bold: true, Color: "FFFFFF"},
+			Fill:      excelize.Fill{Type: "pattern", Color: []string{"#6B7FA1"}, Pattern: 1},
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		})
+		greenStyle, _ := file.NewStyle(&excelize.Style{
+			Font:      &excelize.Font{Bold: true},
+			Fill:      excelize.Fill{Type: "pattern", Color: []string{"#B7D7A8"}, Pattern: 1},
+			Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		})
+		yellowStyle, _ := file.NewStyle(&excelize.Style{
+			Font:      &excelize.Font{Bold: true},
+			Fill:      excelize.Fill{Type: "pattern", Color: []string{"#FFF2CC"}, Pattern: 1},
+			Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center"},
+		})
+		soalWrapStyle, _ := file.NewStyle(&excelize.Style{
+			Font:      &excelize.Font{Bold: true},
+			Fill:      excelize.Fill{Type: "pattern", Color: []string{"#FFF2CC"}, Pattern: 1},
+			Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center", WrapText: true},
+		})
+		_ = file.SetCellStyle(sheetName, "A1", "B1", blueStyle)
+		_ = file.SetCellStyle(sheetName, "C1", "D1", greenStyle)
+		_ = file.SetCellStyle(sheetName, "E1", "E1", yellowStyle)
+		_ = file.SetCellStyle(sheetName, "F1", "F1", soalWrapStyle)
 
 		for idx, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(idx+1, 2)
@@ -170,12 +207,25 @@ func buildRubricWorkbook(items []models.RubricTemplateRow, scoreMap map[string]m
 			endAspectCol, _ := excelize.ColumnNumberToName(2 + len(aspects))
 			_ = file.SetColWidth(sheetName, startAspectCol, endAspectCol, 30)
 		}
+		endAspectIdx := 2 + len(aspects)
+		if endAspectIdx < 5 {
+			_ = file.SetColWidth(sheetName, "E", "E", 12)
+		}
+		if endAspectIdx < 6 {
+			_ = file.SetColWidth(sheetName, "F", "F", 80)
+		}
 		lastCol, _ := excelize.ColumnNumberToName(len(headers))
 		_ = file.SetColWidth(sheetName, lastCol, lastCol, 15)
 
 		for rowIdx, student := range studentOrder {
 			row := rowIdx + 3
-			values := []interface{}{student.Name, questionText[qid]}
+			studentAnswer := ""
+			if byStudent, ok := studentAnswerMap[student.ID]; ok {
+				if answer, ok := byStudent[qid]; ok {
+					studentAnswer = answer
+				}
+			}
+			values := []interface{}{student.Name, studentAnswer}
 			for _, aspect := range aspects {
 				var scoreValue interface{} = ""
 				if scoreMap != nil {
@@ -238,7 +288,8 @@ func buildRubricWorkbook(items []models.RubricTemplateRow, scoreMap map[string]m
 			Alignment: &excelize.Alignment{WrapText: true, Vertical: "top"},
 		})
 		endCell, _ := excelize.CoordinatesToCellName(len(headers), len(studentOrder)+2)
-		_ = file.SetCellStyle(sheetName, "A1", endCell, styleID)
+		// Apply wrap style to data/header row (row 2+) so colored header row stays intact.
+		_ = file.SetCellStyle(sheetName, "A2", endCell, styleID)
 	}
 
 	summarySheet := "Rekap Nilai"

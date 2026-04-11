@@ -63,47 +63,48 @@ type ClassStudentSubmissionSummary = MaterialStudentSubmissionSummary
 type ClassStudentSubmissionSummaryListResponse = MaterialStudentSubmissionSummaryListResponse
 
 type QWKExportRow struct {
-	ClassID        string
-	ClassName      string
-	MaterialID     string
-	MaterialTitle  string
-	SectionCardID  string
-	SectionTitle   string
-	QuestionID     string
-	QuestionText   string
-	StudentID      string
-	StudentName    string
-	StudentEmail   string
-	SubmissionID   string
-	SubmittedAt    time.Time
-	AIScore        *float64
-	RevisedScore   *float64
-	AIStatus       string
-	RubricScores   *string
+	ClassID       string
+	ClassName     string
+	MaterialID    string
+	MaterialTitle string
+	SectionCardID string
+	SectionTitle  string
+	QuestionID    string
+	QuestionText  string
+	StudentID     string
+	StudentName   string
+	StudentEmail  string
+	SubmissionID  string
+	SubmittedAt   time.Time
+	AIScore       *float64
+	RevisedScore  *float64
+	AIStatus      string
+	RubricScores  *string
 }
 
 type QuestionExportRow struct {
-	ClassID         string
-	ClassName       string
-	MaterialID      string
-	MaterialTitle   string
-	SectionCardID   string
-	SectionTitle    string
-	QuestionID      string
-	QuestionText    string
-	TotalSubmissions int
+	ClassID             string
+	ClassName           string
+	MaterialID          string
+	MaterialTitle       string
+	SectionCardID       string
+	SectionTitle        string
+	QuestionID          string
+	QuestionText        string
+	TotalSubmissions    int
 	ReviewedSubmissions int
-	AvgAIScore      *float64
-	AvgRevisedScore *float64
-	AvgFinalScore   *float64
+	AvgAIScore          *float64
+	AvgRevisedScore     *float64
+	AvgFinalScore       *float64
 }
 
 type RubricTemplateRow struct {
-	StudentID    string
-	StudentName  string
-	QuestionID   string
-	QuestionText string
-	AspectName   string
+	StudentID      string
+	StudentName    string
+	StudentAnswer  string
+	QuestionID     string
+	QuestionText   string
+	AspectName     string
 	AspectMaxScore int
 	QuestionWeight *float64
 }

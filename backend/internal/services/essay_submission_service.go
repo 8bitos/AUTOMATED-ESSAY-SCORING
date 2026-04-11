@@ -52,10 +52,10 @@ type EssaySubmissionService struct {
 }
 
 type essayGradingJob struct {
-	SubmissionID string
-	QuestionID   string
-	StudentID    string
-	TeksJawaban  string
+	SubmissionID  string
+	QuestionID    string
+	StudentID     string
+	TeksJawaban   string
 	ScoringMethod string
 }
 
@@ -87,9 +87,9 @@ func (e *AttemptCooldownError) Error() string {
 }
 
 type quizAttemptConfig struct {
-	AttemptLimit     int
-	CooldownMinutes  int
-	AttemptScoring   string
+	AttemptLimit    int
+	CooldownMinutes int
+	AttemptScoring  string
 }
 
 func defaultQuizAttemptConfig() quizAttemptConfig {
@@ -382,11 +382,11 @@ func (s *EssaySubmissionService) buildGradeRequest(questionID, teksJawaban strin
 	}
 
 	gradeReq := &models.GradeEssayRequest{
-		Essay:      teksJawaban,
-		Question:   question.TeksSoal,
+		Essay:       teksJawaban,
+		Question:    question.TeksSoal,
 		IdealAnswer: idealAnswer,
-		Keywords:   keywords,
-		RubricMode: "effective_question_rubric",
+		Keywords:    keywords,
+		RubricMode:  "effective_question_rubric",
 	}
 
 	groundingContext, groundingSource, groundingErr := s.buildQuestionGroundingContext(question, teksJawaban)
@@ -2082,10 +2082,10 @@ func (s *EssaySubmissionService) ListClassRubricTemplateRows(classID, teacherID,
 	questions := make([]questionRow, 0)
 	for questionRows.Next() {
 		var (
-			qid      string
-			qtext    string
+			qid       string
+			qtext     string
 			rawRubric []byte
-			weight   sql.NullFloat64
+			weight    sql.NullFloat64
 		)
 		if err := questionRows.Scan(&qid, &qtext, &rawRubric, &weight); err != nil {
 			return nil, fmt.Errorf("failed to scan question for rubric template: %w", err)
@@ -2138,16 +2138,28 @@ func (s *EssaySubmissionService) ListClassRubricTemplateRows(classID, teacherID,
 		return nil, fmt.Errorf("failed during question iteration for rubric template: %w", err)
 	}
 
+	answerMap, err := s.listClassRubricAnswerMap(classID, teacherID, materialID, questionIDs, studentID)
+	if err != nil {
+		return nil, err
+	}
+
 	items := make([]models.RubricTemplateRow, 0)
 	for _, student := range students {
 		for _, question := range questions {
+			studentAnswer := ""
+			if byStudent, ok := answerMap[student.ID]; ok {
+				if answer, ok := byStudent[question.ID]; ok {
+					studentAnswer = answer
+				}
+			}
 			for _, aspect := range question.Aspects {
 				items = append(items, models.RubricTemplateRow{
-					StudentID:    student.ID,
-					StudentName:  student.Name,
-					QuestionID:   question.ID,
-					QuestionText: question.Text,
-					AspectName:   aspect.Name,
+					StudentID:      student.ID,
+					StudentName:    student.Name,
+					StudentAnswer:  studentAnswer,
+					QuestionID:     question.ID,
+					QuestionText:   question.Text,
+					AspectName:     aspect.Name,
 					AspectMaxScore: aspect.MaxScore,
 					QuestionWeight: question.Weight,
 				})
@@ -2157,12 +2169,81 @@ func (s *EssaySubmissionService) ListClassRubricTemplateRows(classID, teacherID,
 	return items, nil
 }
 
+func (s *EssaySubmissionService) listClassRubricAnswerMap(classID, teacherID, materialID string, questionIDs []string, studentID string) (map[string]map[string]string, error) {
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2", "es.submission_type = 'essay'"}
+	args := []interface{}{classID, teacherID}
+	argPos := 3
+	if strings.TrimSpace(materialID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("m.id = $%d", argPos))
+		args = append(args, materialID)
+		argPos++
+	}
+	if len(questionIDs) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("eq.id = ANY($%d)", argPos))
+		args = append(args, pq.Array(questionIDs))
+		argPos++
+	}
+	if strings.TrimSpace(studentID) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("es.siswa_id = $%d", argPos))
+		args = append(args, studentID)
+		argPos++
+	}
+
+	querySQL := `
+		WITH ranked AS (
+			SELECT DISTINCT ON (es.soal_id, es.siswa_id)
+				es.soal_id,
+				es.siswa_id,
+				es.teks_jawaban,
+				CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END AS reviewed,
+				es.submitted_at
+			FROM essay_submissions es
+			JOIN essay_questions eq ON eq.id = es.soal_id
+			JOIN materials m ON m.id = eq.material_id
+			JOIN classes c ON c.id = m.class_id
+			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
+			WHERE ` + strings.Join(whereClauses, " AND ") + `
+			ORDER BY es.soal_id, es.siswa_id, reviewed DESC, es.submitted_at DESC
+		)
+		SELECT soal_id, siswa_id, teks_jawaban
+		FROM ranked
+	`
+
+	rows, err := s.db.Query(querySQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rubric answers: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]map[string]string{}
+	for rows.Next() {
+		var questionID string
+		var studentID string
+		var answer sql.NullString
+		if err := rows.Scan(&questionID, &studentID, &answer); err != nil {
+			return nil, fmt.Errorf("failed to scan rubric answers: %w", err)
+		}
+		if _, ok := out[studentID]; !ok {
+			out[studentID] = map[string]string{}
+		}
+		if answer.Valid {
+			out[studentID][questionID] = answer.String
+		} else {
+			out[studentID][questionID] = ""
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during rubric answer iteration: %w", err)
+	}
+	return out, nil
+}
+
 func (s *EssaySubmissionService) ListClassRubricScoreMap(classID, teacherID, materialID string, questionIDs []string, studentID string) (map[string]map[string]map[string]int, error) {
 	if strings.TrimSpace(classID) == "" || strings.TrimSpace(teacherID) == "" {
 		return nil, fmt.Errorf("class ID and teacher ID are required")
 	}
 
-	whereClauses := []string{"c.id = $1", "c.teacher_id = $2"}
+	whereClauses := []string{"c.id = $1", "c.teacher_id = $2", "es.submission_type = 'essay'"}
 	args := []interface{}{classID, teacherID}
 	argPos := 3
 	if strings.TrimSpace(materialID) != "" {
@@ -2187,13 +2268,15 @@ func (s *EssaySubmissionService) ListClassRubricScoreMap(classID, teacherID, mat
 				es.id,
 				es.soal_id,
 				es.siswa_id,
-				es.submitted_at
+				es.submitted_at,
+				CASE WHEN tr.revised_score IS NOT NULL OR COALESCE(TRIM(tr.teacher_feedback), '') <> '' THEN 1 ELSE 0 END AS reviewed
 			FROM essay_submissions es
 			JOIN essay_questions eq ON eq.id = es.soal_id
 			JOIN materials m ON m.id = eq.material_id
 			JOIN classes c ON c.id = m.class_id
+			LEFT JOIN teacher_reviews tr ON tr.submission_id = es.id
 			WHERE ` + strings.Join(whereClauses, " AND ") + `
-			ORDER BY es.soal_id, es.siswa_id, es.submitted_at DESC
+			ORDER BY es.soal_id, es.siswa_id, reviewed DESC, es.submitted_at DESC
 		)
 		SELECT latest.soal_id, latest.siswa_id, COALESCE(ar.rubric_scores::text, ar.logs_rag::text)
 		FROM latest
@@ -2306,14 +2389,14 @@ func (s *EssaySubmissionService) GetClassScoreDistribution(classID, teacherID, m
 	}
 
 	type distRow struct {
-		Total  int
-		Avg    sql.NullFloat64
-		Min    sql.NullFloat64
-		Max    sql.NullFloat64
-		B0_59  int
-		B60_69 int
-		B70_79 int
-		B80_89 int
+		Total   int
+		Avg     sql.NullFloat64
+		Min     sql.NullFloat64
+		Max     sql.NullFloat64
+		B0_59   int
+		B60_69  int
+		B70_79  int
+		B80_89  int
 		B90_100 int
 	}
 	var row distRow
