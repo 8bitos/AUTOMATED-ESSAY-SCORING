@@ -95,6 +95,7 @@ build/
 *.sql
 !backend/db/migration/*.sql
 *.backup
+dokumen
 dokumen/db/*.sql
 
 ### Build & Test ###
