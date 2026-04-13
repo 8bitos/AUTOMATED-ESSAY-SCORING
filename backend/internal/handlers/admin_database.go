@@ -1290,7 +1290,7 @@ func (h *AdminOpsHandlers) AdminDatabaseExportHandler(w http.ResponseWriter, r *
 			}
 
 			values := make([]string, 0, len(dest))
-			for i, val := range dest {
+			for _, val := range dest {
 				absVal := normalizeDatabaseValue(val)
 				if absVal == nil {
 					values = append(values, "NULL")
