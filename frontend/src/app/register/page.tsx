@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import NoticeDialog from '@/components/ui/NoticeDialog';
 import LoadingDialog from '@/components/ui/LoadingDialog';
 
@@ -96,8 +97,15 @@ export default function RegisterPage() {
 
         <section className="mx-auto w-full max-w-md sage-panel p-5 sm:p-8 md:mx-0 md:max-w-none md:p-10">
           <div className="mb-6">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--sage-700)] text-white">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4s1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z"/></svg>
+            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-transparent">
+              <Image 
+                src="/logo.png" 
+                alt="SAGE Logo" 
+                width={48} 
+                height={48} 
+                className="h-12 w-12 object-contain"
+                priority
+              />
             </div>
             <h2 className="text-xl font-semibold text-[color:var(--ink-900)] sm:text-2xl">Daftar Akun</h2>
             <p className="text-sm text-[color:var(--ink-500)]">Lengkapi data untuk akses LMS.</p>

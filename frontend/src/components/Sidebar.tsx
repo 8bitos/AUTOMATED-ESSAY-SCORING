@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'; // To highlight active link
 import { User } from '@/context/AuthContext'; // Import User type
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
   fetchStudentNotifications,
   hydrateStudentNotificationPrefs,
@@ -604,8 +605,15 @@ const Sidebar: React.FC<SidebarProps> = ({ sidebarOpen, setSidebarOpen, user }) 
             </svg>
           </button>
           <div className="hidden min-w-0 flex-1 items-center gap-3 md:flex">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold text-white dark:bg-slate-700 dark:text-slate-100">
-              S
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-transparent">
+              <Image 
+                src="/logo.png" 
+                alt="SAGE Logo" 
+                width={40} 
+                height={40} 
+                className="h-10 w-10 object-contain"
+                priority
+              />
             </div>
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">SAGE</p>

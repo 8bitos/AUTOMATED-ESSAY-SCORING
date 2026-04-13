@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { useTheme } from '@/context/ThemeContext';
+import Image from 'next/image';
 import {
   fetchStudentNotifications,
   hydrateStudentNotificationPrefs,
@@ -1031,7 +1032,7 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
         <div className="flex h-14 items-center justify-between gap-2 sm:h-16 -mb-px">
           {/* Header: Left side */}
           <div className="flex items-center">
-            {/* Mobile drawer button */}
+            {/* Mobile drawer button with logo */}
             <button
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-700 shadow-sm hover:bg-slate-50 md:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               aria-controls="sidebar"
@@ -1039,8 +1040,14 @@ const Topbar: React.FC<TopbarProps> = ({ sidebarOpen, setSidebarOpen }) => {
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
               <span className="sr-only">Buka sidebar</span>
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-900 text-xs font-semibold text-white dark:bg-slate-700">S</span>
-              <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-slate-200">SAGE</span>
+              <Image 
+                src="/logo.png" 
+                alt="SAGE Logo" 
+                width={28} 
+                height={28} 
+                className="h-7 w-7 rounded-md object-contain"
+                priority
+              />
             </button>
           </div>
 

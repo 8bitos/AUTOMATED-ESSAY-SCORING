@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 
 // --- SVG Icon Components ---
@@ -106,8 +107,15 @@ export default function LoginPage() {
 
         <section className="mx-auto w-full max-w-md sage-panel p-5 sm:p-8 md:mx-0 md:max-w-none md:p-10">
           <div className="mb-6">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--sage-700)] text-white">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 0 0-7.07 17.07A10 10 0 1 0 12 2m0 18a8 8 0 1 1 0-16a8 8 0 0 1 0 16Zm-1-7.5h2v2h-2Zm0-6h2v4h-2Z"/></svg>
+            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-transparent">
+              <Image 
+                src="/logo.png" 
+                alt="SAGE Logo" 
+                width={48} 
+                height={48} 
+                className="h-12 w-12 object-contain"
+                priority
+              />
             </div>
             <h2 className="text-xl font-semibold text-[color:var(--ink-900)] sm:text-2xl">Login</h2>
             <p className="text-sm text-[color:var(--ink-500)]">Masukkan kredensial akun kamu.</p>
