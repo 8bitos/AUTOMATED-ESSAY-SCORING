@@ -4718,23 +4718,6 @@ const StudentSubmissionsList = ({
           handleDeleteSubmission(confirmDeleteSubmissionId);
         }}
       />
-      <ConfirmDialog
-        isOpen={rubricOverwriteConfirm.open}
-        title="Timpa Rubrik?"
-        message="Rubrik saat ini akan diganti oleh hasil generate. Lanjutkan?"
-        confirmLabel="Timpa"
-        danger
-        onCancel={() => setRubricOverwriteConfirm({ open: false, action: null })}
-        onConfirm={() => {
-          const action = rubricOverwriteConfirm.action;
-          setRubricOverwriteConfirm({ open: false, action: null });
-          if (action === "auto") {
-            handleAutoGenerate(true);
-          } else if (action === "rubric") {
-            handleGenerateRubricsOnly(true);
-          }
-        }}
-      />
 
       <NoticeDialog
         isOpen={notice.open}
