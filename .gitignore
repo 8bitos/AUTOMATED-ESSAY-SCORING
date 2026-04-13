@@ -1,10 +1,14 @@
-### Global ###
+### Global OS Files ###
 .DS_Store
 Thumbs.db
 *.log
 *.swp
+*.swo
+*~
+.AppleDouble
+.LSOverride
 
-### Node/Next ###
+### Node/NPM/Yarn ###
 /frontend/node_modules/
 /frontend/.next/
 /web-frontend/node_modules/
@@ -14,6 +18,7 @@ node_modules/
 .yarn/
 package-lock.json
 yarn.lock
+**/node_modules/
 
 ### Go ###
 /backend/bin/
@@ -21,11 +26,27 @@ yarn.lock
 .gocache
 *.exe
 *.out
+*.o
+*.a
+*.so
+**/*.go.sum.lock
 
-### Environment ###
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.Python
+
+### Environment & Config ###
 .env
 .env.*
 config.local.json
+.env.local
+.env.*.local
+config.*.json
 
 ### Docker ###
 /docker-compose.override.yml
@@ -33,30 +54,86 @@ config.local.json
 Dockerfile*
 !/backend/Dockerfile
 !/frontend/Dockerfile
-
+.dockerignore
 
 ### IDE ###
 .idea/
 .vscode/
 *.iml
+*.swp
+.project
+.classpath
+.c9/
+*.launch
+.sublime-workspace
+.sublime-project
+.DS_Store
+.AppleDouble
+.LSOverride
+.codex-backups/
+.codex_hash_temp.go
+*.code-workspace
 
-### Uploads & generated ###
+### Uploads & Generated ### 
 /backend/uploads/
 /frontend/public/uploads/
 /web-frontend/public/uploads/
 *.mp4
+*.avi
+*.mov
+*.wmv
 *.tmp
+*.temp
+vendor/
+dist/
+build/
 
 ### Database ###
 *.sqlite
+*.sqlite3
 *.db
 *.sql
 !backend/db/migration/*.sql
+*.backup
+dokumen/db/*.sql
 
-### Misc ###
-/tmp/
-/.sass-cache/
+### Build & Test ###
 coverage/
 dist/
 build/
 *.tgz
+*.tar.gz
+.nyc_output/
+test-results/
+google*.html
+
+### Cache & Temporary ###
+/tmp/
+/.sass-cache/
+.cache/
+.next/
+out/
+*.cache
+
+### Development Tools ###
+.vscode/settings.json
+.vscode/extensions.json
+*.code-workspace
+.DS_Store
+
+### System & OS Files ###
+Thumbs.db
+.windows-build-tools
+.parcel-cache
+.turbo/
+
+### Documentation - Generated/Temporary ###
+dokumen/archives/
+dokumen/notes/
+dokumen/db/*.sql
+*.drawio~
+*.bak
+dbdiagram_relations/
+docs/
+scripts/
+parse_check.js

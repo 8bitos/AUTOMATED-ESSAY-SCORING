@@ -1,5 +1,52 @@
-# Ignore uploaded files
+# Ignore uploaded files & assets
 /uploads/
+*.mp4
+*.avi
+*.mov
 
 # Ignore environment variables file
 .env
+.env.*
+.env.local
+
+# Go build outputs
+bin/
+*.exe
+*.out
+*.o
+*.a
+*.so
+*.exe~
+*.test
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+.DS_Store
+Thumbs.db
+
+# Build & Cache
+.cache/
+.gocache
+vendor/
+coverage/
+*.pprof
+*.prof
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Logs
+*.log
+
+# Database backups
+*.sql
+*.backup
+*.sqlite
+*.db

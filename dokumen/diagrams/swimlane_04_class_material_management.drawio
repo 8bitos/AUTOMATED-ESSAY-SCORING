@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-12T10:00:00.000Z" agent="5.0" etag="swimlane" version="1.0" type="device">
+  <diagram id="class-material-swimlane" name="Class &amp; Material Management">
+    <mxGraphModel dx="1200" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1200" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        
+        <!-- Title -->
+        <mxCell id="title" value="Class &amp; Material Management Flow" style="text;html=1;fontSize=16;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="0" y="10" width="850" height="30" as="geometry"/>
+        </mxCell>
+        
+        <!-- Swimlanes -->
+        <mxCell id="user-swim" value="Teacher" style="swimlane;html=1;startSize=30;fillColor:#ffffff;strokeColor:#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="50" width="380" height="1100" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="system-swim" value="System" style="swimlane;html=1;startSize=30;fillColor:#f5f5f5;strokeColor:#000000;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="50" width="400" height="1100" as="geometry"/>
+        </mxCell>
+        
+        <!-- Teacher Side -->
+        <mxCell id="start" value="Start" style="ellipse;whiteSpace=wrap;html=1;fillColor:#000000;strokeColor:#000000;fontColor=#ffffff;" vertex="1" parent="user-swim">
+          <mxGeometry x="130" y="40" width="60" height="40" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="access-dashboard" value="Access Teacher&#10;Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#ffffff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="90" y="110" width="140" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="choose-action" value="Choose Action" style="rhombus;whiteSpace=wrap;html=1;fillColor:#ffffff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="110" y="220" width="100" height="80" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="create-class" value="Create New Class" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#fff9e6;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="30" y="350" width="100" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="fill-class-form" value="Fill Class Details&#10;(name, code, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#ffffff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="30" y="460" width="100" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="submit-class" value="Submit Class" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#e6f3ff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="30" y="590" width="100" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="create-material" value="Create Material" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#fff9e6;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="160" y="350" width="100" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="upload-material" value="Upload/Input&#10;Material Content" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#ffffff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="160" y="460" width="100" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="set-rubric" value="Set Rubric &amp;&#10;Essay Questions" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#ffffff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="160" y="590" width="100" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="submit-material" value="Submit Material" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#e6f3ff;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="160" y="710" width="100" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="success" value="Class/Material&#10;Created Successfully" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6ffe6;strokeColor:#000000;" vertex="1" parent="user-swim">
+          <mxGeometry x="90" y="840" width="140" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="end-teacher" value="End" style="ellipse;whiteSpace=wrap;html=1;fillColor:#000000;strokeColor:#000000;fontColor=#ffffff;" vertex="1" parent="user-swim">
+          <mxGeometry x="130" y="1000" width="60" height="40" as="geometry"/>
+        </mxCell>
+        
+        <!-- System Side -->
+        <mxCell id="display-form" value="Display Create&#10;Class Form" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#f0f0f0;strokeColor:#000000;" vertex="1" parent="system-swim">
+          <mxGeometry x="120" y="350" width="140" height="70" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="receive-class" value="Receive Class Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#fff9cc;strokeColor:#000000;" vertex="1" parent="system-swim">
+          <mxGeometry x="120" y="490" width="140" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="validate-class" value="Validate Class Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#fff9cc;strokeColor:#000000;" vertex="1" parent="system-swim">
+          <mxGeometry x="120" y="600" width="140" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="store-class" value="Store Class in DB&#10;Generate Code" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#e6f3ff;strokeColor:#000000;" vertex="1" parent="system-swim">
+          <mxGeometry x="120" y="710" width="140" height="60" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="receive-material" value="Receive Material Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#fff9cc;strokeColor:#000000;" vertex="1" parent="system-swim">
+          <mxGeometry x="120" y="830" width="140" height="50" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="store-material" value="Store Material &amp;&#10;Essay Questions" style="rounded=1;whiteSpace=wrap;html=1;fillColor:#e6f3ff;strokeColor:#000000;" vertex="1" parent="system-swim">
+          <mxGeometry x="120" y="940" width="140" height="60" as="geometry"/>
+        </mxCell>
+        
+        <!-- Edges Teacher Side -->
+        <mxCell id="edge1" edge="1" parent="user-swim" source="start" target="access-dashboard">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge2" edge="1" parent="user-swim" source="access-dashboard" target="choose-action">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge3a" edge="1" parent="user-swim" source="choose-action" target="create-class">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="110" y="300"/>
+            <mxPoint as="targetPoint" x="80" y="350"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge3b" edge="1" parent="user-swim" source="choose-action" target="create-material">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="210" y="300"/>
+            <mxPoint as="targetPoint" x="210" y="350"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge4" edge="1" parent="user-swim" source="create-class" target="fill-class-form">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge5" edge="1" parent="user-swim" source="fill-class-form" target="submit-class">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge6" edge="1" parent="user-swim" source="create-material" target="upload-material">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge7" edge="1" parent="user-swim" source="upload-material" target="set-rubric">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge8" edge="1" parent="user-swim" source="set-rubric" target="submit-material">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge9a" edge="1" parent="user-swim" source="submit-class" target="success">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="80" y="640"/>
+            <mxPoint as="targetPoint" x="160" y="840"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge9b" edge="1" parent="user-swim" source="submit-material" target="success">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="210" y="760"/>
+            <mxPoint as="targetPoint" x="160" y="840"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge10" edge="1" parent="user-swim" source="success" target="end-teacher">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Edges System Side -->
+        <mxCell id="edge11" edge="1" parent="system-swim" source="display-form" target="receive-class">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="190" y="420"/>
+            <mxPoint as="targetPoint" x="190" y="490"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge12" edge="1" parent="system-swim" source="receive-class" target="validate-class">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge13" edge="1" parent="system-swim" source="validate-class" target="store-class">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge14" edge="1" parent="system-swim" source="store-class" target="receive-material">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <mxCell id="edge15" edge="1" parent="system-swim" source="receive-material" target="store-material">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        
+        <!-- Cross-swimlane arrows -->
+        <mxCell id="cross1" edge="1" parent="1" source="choose-action" target="display-form">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="420" y="350"/>
+            <mxPoint as="targetPoint" x="420" y="350"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="cross2" edge="1" parent="1" source="submit-class" target="receive-class">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="420" y="515"/>
+            <mxPoint as="targetPoint" x="420" y="515"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="cross3" edge="1" parent="1" source="submit-material" target="receive-material">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="420" y="855"/>
+            <mxPoint as="targetPoint" x="420" y="855"/>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="cross4" edge="1" parent="1" source="store-material" target="success">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="sourcePoint" x="420" y="875"/>
+            <mxPoint as="targetPoint" x="420" y="875"/>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
