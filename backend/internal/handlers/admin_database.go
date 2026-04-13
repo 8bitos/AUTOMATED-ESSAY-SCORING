@@ -1237,6 +1237,100 @@ func (h *AdminOpsHandlers) AdminDatabaseResetHandler(w http.ResponseWriter, r *h
 	})
 }
 
+func (h *AdminOpsHandlers) AdminDatabaseExportHandler(w http.ResponseWriter, r *http.Request) {
+	tableNames, err := h.adminDatabaseListTables()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to load database tables")
+		return
+	}
+
+	var sqlContent strings.Builder
+	sqlContent.WriteString("-- Database Export\n")
+	sqlContent.WriteString(fmt.Sprintf("-- Exported at: %s\n", time.Now().Format(time.RFC3339)))
+	sqlContent.WriteString("-- Excludes: uploads/media files\n")
+	sqlContent.WriteString("\n")
+
+	for _, tableName := range tableNames {
+		columns, err := h.adminDatabaseGetColumns(tableName)
+		if err != nil {
+			continue
+		}
+
+		columnNames := make([]string, 0, len(columns))
+		columnQuoted := make([]string, 0, len(columns))
+		for _, col := range columns {
+			columnNames = append(columnNames, col.Name)
+			columnQuoted = append(columnQuoted, quoteAdminIdentifier(col.Name))
+		}
+
+		query := fmt.Sprintf(
+			"SELECT %s FROM %s ORDER BY %s",
+			strings.Join(columnQuoted, ", "),
+			quoteAdminIdentifier(tableName),
+			quoteAdminIdentifier(columnNames[0]),
+		)
+		rows, err := h.DB.Query(query)
+		if err != nil {
+			continue
+		}
+		defer rows.Close()
+
+		sqlContent.WriteString(fmt.Sprintf("\n-- Table: %s\n", tableName))
+
+		hasRows := false
+		for rows.Next() {
+			hasRows = true
+			dest := make([]any, len(columnNames))
+			destPtrs := make([]any, len(columnNames))
+			for i := range dest {
+				destPtrs[i] = &dest[i]
+			}
+			if err := rows.Scan(destPtrs...); err != nil {
+				continue
+			}
+
+			values := make([]string, 0, len(dest))
+			for i, val := range dest {
+				absVal := normalizeDatabaseValue(val)
+				if absVal == nil {
+					values = append(values, "NULL")
+				} else if b, ok := absVal.([]byte); ok {
+					values = append(values, "'"+strings.ReplaceAll(string(b), "'", "''")+"'")
+				} else if s, ok := absVal.(string); ok {
+					values = append(values, "'"+strings.ReplaceAll(s, "'", "''")+"'")
+				} else {
+					values = append(values, fmt.Sprintf("%v", absVal))
+				}
+			}
+
+			insertStmt := fmt.Sprintf(
+				"INSERT INTO %s (%s) VALUES (%s);\n",
+				quoteAdminIdentifier(tableName),
+				strings.Join(columnQuoted, ", "),
+				strings.Join(values, ", "),
+			)
+			sqlContent.WriteString(insertStmt)
+		}
+
+		if !hasRows {
+			sqlContent.WriteString(fmt.Sprintf("-- (No data in table %s)\n", tableName))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/sql")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=database_export_%s.sql", time.Now().Format("2006-01-02_15-04-05")))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(sqlContent.String())))
+	if _, err := w.Write([]byte(sqlContent.String())); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to write export file")
+		return
+	}
+
+	actorID, _ := r.Context().Value("userID").(string)
+	_ = h.AuditService.LogAction(actorID, "database_export", "database", nil, map[string]any{
+		"tables_count": len(tableNames),
+	})
+}
+
 func mapsKeys(values map[string]any) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {

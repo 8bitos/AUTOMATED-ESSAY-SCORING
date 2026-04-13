@@ -285,6 +285,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	adminRouter.HandleFunc("/media", adminOpsHandlers.AdminMediaListHandler).Methods("GET")
 	adminRouter.HandleFunc("/media", adminOpsHandlers.AdminMediaDeleteHandler).Methods("DELETE")
 	adminRouter.HandleFunc("/database/tables", adminOpsHandlers.AdminDatabaseTablesHandler).Methods("GET")
+	adminRouter.HandleFunc("/database/export", adminOpsHandlers.AdminDatabaseExportHandler).Methods("GET")
 	adminRouter.HandleFunc("/database/reset-analysis", adminOpsHandlers.AdminDatabaseResetAnalysisHandler).Methods("POST")
 	adminRouter.HandleFunc("/database/reset", adminOpsHandlers.AdminDatabaseResetHandler).Methods("POST")
 	adminRouter.HandleFunc("/database/{table}", adminOpsHandlers.AdminDatabaseRowsHandler).Methods("GET")

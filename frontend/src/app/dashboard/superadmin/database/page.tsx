@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiAlertTriangle, FiArrowDown, FiArrowUp, FiChevronDown, FiChevronRight, FiDatabase, FiEdit2, FiEye, FiEyeOff, FiFile, FiFilm, FiGrid, FiImage, FiInfo, FiList, FiMusic, FiPackage, FiPlus, FiRefreshCw, FiSearch, FiTrash2, FiX } from "react-icons/fi";
+import { FiAlertTriangle, FiArrowDown, FiArrowUp, FiChevronDown, FiChevronRight, FiDatabase, FiDownload, FiEdit2, FiEye, FiEyeOff, FiFile, FiFilm, FiGrid, FiImage, FiInfo, FiList, FiMusic, FiPackage, FiPlus, FiRefreshCw, FiSearch, FiTrash2, FiX } from "react-icons/fi";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import LoadingDialog from "@/components/ui/LoadingDialog";
 
@@ -148,6 +148,7 @@ export default function SuperadminDatabasePage() {
   const [tablesLoading, setTablesLoading] = useState(true);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -582,6 +583,42 @@ export default function SuperadminDatabasePage() {
     }
   };
 
+  const handleExportDatabase = async () => {
+    setExportLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/database/export", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Gagal export database");
+      }
+
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get("content-disposition");
+      let fileName = "database_export.sql";
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=([^;]+)/);
+        if (match) {
+          fileName = match[1].replace(/"/g, "");
+        }
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, "Gagal export database");
+      setError(message);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   const totalPages = rowsData ? Math.max(1, Math.ceil(rowsData.total / rowsData.size)) : 1;
 
   useEffect(() => {
@@ -602,17 +639,28 @@ export default function SuperadminDatabasePage() {
               Jelajahi semua tabel database, lihat tipe kolomnya, lalu lakukan create, update, dan delete langsung dari panel superadmin.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              void loadTables();
-              void loadRows();
-            }}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <FiRefreshCw />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void loadTables();
+                void loadRows();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <FiRefreshCw />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExportDatabase()}
+              disabled={exportLoading}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <FiDownload />
+              {exportLoading ? "Exporting..." : "Export"}
+            </button>
+          </div>
         </div>
       </section>
 
