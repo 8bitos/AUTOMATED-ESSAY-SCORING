@@ -1,0 +1,31 @@
+﻿Enum user_role {
+  student
+  teacher
+  superadmin
+}
+
+Table modules {
+  id uuid [pk]
+  material_id uuid
+  nama_modul varchar
+  file_url text
+  created_at timestamptz
+}
+
+Table essay_questions {
+  id uuid [pk]
+  material_id uuid
+  teks_soal text
+  created_at timestamptz
+  module_id uuid
+  level_kognitif text
+  ideal_answer text
+  keywords text[]
+  weight numeric
+  rubrics jsonb
+  updated_at timestamptz
+  round_score_to_5 boolean
+  round_score_step float8
+}
+
+Ref: essay_questions.module_id > modules.id

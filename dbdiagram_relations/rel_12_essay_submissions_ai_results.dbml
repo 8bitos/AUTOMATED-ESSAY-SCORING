@@ -1,0 +1,30 @@
+﻿Enum user_role {
+  student
+  teacher
+  superadmin
+}
+
+Table essay_submissions {
+  id uuid [pk]
+  soal_id uuid
+  siswa_id uuid
+  teks_jawaban text
+  submitted_at timestamptz
+  ai_grading_status text
+  ai_graded_at timestamptz
+  ai_grading_error text
+  submission_type text
+  attempt_count int4
+}
+
+Table ai_results {
+  id uuid [pk]
+  submission_id uuid
+  skor_ai numeric
+  umpan_balik_ai text
+  raw_response jsonb
+  generated_at timestamptz
+  logs_rag text
+}
+
+Ref: ai_results.submission_id > essay_submissions.id

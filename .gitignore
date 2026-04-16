@@ -1,140 +1,269 @@
-### Global OS Files ###
-.DS_Store
-Thumbs.db
-*.log
-*.swp
-*.swo
-*~
-.AppleDouble
-.LSOverride
+# ═══════════════════════════════════════════════════════════
+# GITIGNORE - AUTOMATED ESSAY SCORING SYSTEM
+# ═══════════════════════════════════════════════════════════
+# Only track source code, configurations, and essential files
+# ─────────────────────────────────────────────────────────
 
-### Node/NPM/Yarn ###
-/frontend/node_modules/
-/frontend/.next/
-/web-frontend/node_modules/
-/web-frontend/.next/
+### ⚙️ DEPENDENCIES & PACKAGES ###
 node_modules/
-.npm/
-.yarn/
+**/node_modules/
 package-lock.json
 yarn.lock
-**/node_modules/
+pnpm-lock.yaml
+.pnpm-store/
+vendor/
+composer.lock
 
-### Go ###
+### 🔧 NODE / NPM ###
+/frontend/node_modules/
+/frontend/.next/
+/frontend/.turbo/
+/frontend/dist/
+/frontend/build/
+/web-frontend/node_modules/
+/web-frontend/.next/
+**/.next/
+**/.nuxt/
+**/dist/
+**/build/
+.npm/
+.yarn/
+
+### 🐹 GO ###
 /backend/bin/
 /backend/.cache/
 .gocache
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 *.out
 *.o
 *.a
-*.so
-**/*.go.sum.lock
+*.obj
+*.test
+*.test.exe
 
-### Python ###
+### 🐍 PYTHON ###
 __pycache__/
 *.py[cod]
+*.py?[cod]
 *$py.class
+*.egg
 *.egg-info/
 dist/
 build/
+.eggs/
 .Python
+env/
+venv/
+ENV/
+develop-eggs/
+.tox/
+.coverage
+.coverage.*
+.pytest_cache/
 
-### Environment & Config ###
-.env
-.env.*
-config.local.json
-.env.local
-.env.*.local
-config.*.json
-
-### Docker ###
+### 📦 DOCKER ###
 /docker-compose.override.yml
 /docker-compose.*.yml
-Dockerfile*
+.dockerignore
+docker-compose.dev.yml
+docker-compose.prod.yml
 !/backend/Dockerfile
 !/frontend/Dockerfile
-.dockerignore
 
-### IDE ###
-.idea/
-.vscode/
-*.iml
-*.swp
-.project
-.classpath
-.c9/
-*.launch
-.sublime-workspace
-.sublime-project
-.DS_Store
-.AppleDouble
-.LSOverride
-.codex-backups/
-.codex_hash_temp.go
-*.code-workspace
+### 🔐 ENVIRONMENT & SECRETS ###
+.env
+.env.local
+.env.*.local
+.env.production.local
+.env.test.local
+.env.development.local
+.secrets/
+secrets.json
+config.local.json
+config.*.json
+*.pem
+*.key
+.htpasswd
 
-### Uploads & Generated ### 
-/backend/uploads/
-/frontend/public/uploads/
-/web-frontend/public/uploads/
-*.mp4
-*.avi
-*.mov
-*.wmv
-*.tmp
-*.temp
-vendor/
-dist/
-build/
-
-### Database ###
+### 💾 DATABASE ###
 *.sqlite
 *.sqlite3
 *.db
 *.sql
 !backend/db/migration/*.sql
+!dokumen/db/database_schema_only.sql
 *.backup
-dokumen/db/*.sql
+*.sql.bak
+*.sql.gz
 
-### Build & Test ###
-coverage/
+### 📂 OS FILES ###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+.AppleDouble
+.LSOverride
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+### 📝 EDITOR & IDE ###
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.c9/
+.settings/
+.springBeans
+.sts4-cache/
+*.swp
+*.swo
+*~
+.#*
+.netrwhist
+*.code-workspace
+
+### 🚀 BUILD & COMPILATION ###
 dist/
 build/
-*.tgz
-*.tar.gz
-.nyc_output/
-test-results/
-google*.html
-
-### Cache & Temporary ###
-/tmp/
-/.sass-cache/
-.cache/
-.next/
 out/
-*.cache
-
-### Development Tools ###
-.vscode/settings.json
-.vscode/extensions.json
-*.code-workspace
-.DS_Store
-
-### System & OS Files ###
-Thumbs.db
-.windows-build-tools
-.parcel-cache
+*.dev.js
+*.min.js
+*.min.css
+.cache/
 .turbo/
+.parcel-cache/
 
-### Documentation - Generated/Temporary ###
-dokumen/archives/
-dokumen/diagram/
-dokumen/notes/
-dokumen/db/*.sql
+### 📊 LOGS & TEMP FILES ###
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+*.tmp
+*.temp
+
+### 📤 UPLOADS & MEDIA ###
+/backend/uploads/*
+!/backend/uploads/.gitkeep
+/backend/public/uploads/*
+!/backend/public/uploads/.gitkeep
+/frontend/public/uploads/*
+!/frontend/public/uploads/.gitkeep
+/web-frontend/public/uploads/*
+!/web-frontend/public/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+media/*
+!media/.gitkeep
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.gif
+*.psd
+*.ai
+
+### 🧪 TEST & COVERAGE ###
+coverage/
+.coverage
+.coverage.*
+*.lcov
+htmlcov/
+.nyc_output/
+/test/coverage/
+/reports/
+test-results/
+
+### 🏗️ SYSTEM & RUNTIME ###
+venv/
+env/
+ENV/
+.venv/
+/.env.test
+.elixir_ls/
+
+### 📋 GENERATED & TEMPORARY ###
+_gen_*
+*_temp*
+*_generated*
+.generated/
+.temp/
+tmp/
+temp/
+*.gen.js
+
+### 🔍 PROJECT SPECIFIC ###
+.codex_hash_temp.go
+_gen_hash_temp.go
+.codex-backups/
+parse_check.js
+google*.html
 *.drawio~
 *.bak
-dbdiagram_relations/
-docs/
-scripts/
-parse_check.js
+
+### 🔒 BACKUP & SNAPSHOT ###
+*.backup
+*.bak
+[Ss]napshot/
+backups/
+.snapshot/
+
+### 🎨 ARCHIVE FILES ###
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.zip
+*.gz
+
+### 📱 IDE SPECIFIC - WHITELIST ###
+# Allow important config files
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.idea/vcs.xml
+
+### ⚡ MISC ###
+!.gitkeep
+!.keep
+.envrc
+.direnv
+Makefile.local
+**/.windows-build-tools
+
+# ─────────────────────────────────────────────────────────
+# EXCEPTIONS: Important files to track
+# ─────────────────────────────────────────────────────────
+!.gitignore
+!README.md
+!package.json
+!package-lock.json
+!tsconfig.json
+!next.config.js
+!postcss.config.mjs
+!tailwind.config.ts
+!Dockerfile
+!/backend/Dockerfile
+!/frontend/Dockerfile

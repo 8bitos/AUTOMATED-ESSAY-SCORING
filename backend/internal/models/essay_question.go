@@ -21,17 +21,17 @@ type EssayQuestion struct {
 	UpdatedAt      time.Time       `json:"updated_at"`                 // Timestamp terakhir kali pertanyaan diperbarui.
 
 	// Fields for student's submission data (denormalized for student view)
-	SubmissionID     *string                 `json:"submission_id,omitempty"`
-	SubmissionAttemptCount *int              `json:"submission_attempt_count,omitempty"`
-	SubmissionSubmittedAt  *time.Time        `json:"submission_submitted_at,omitempty"`
-	StudentEssayText *string                 `json:"student_essay_text,omitempty"`
-	AIGradingStatus  *string                 `json:"ai_grading_status,omitempty"`
-	AIGradingError   *string                 `json:"ai_grading_error,omitempty"`
-	SkorAI           *float64                `json:"skor_ai,omitempty"`
-	UmpanBalikAI     *string                 `json:"umpan_balik_ai,omitempty"`
-	RevisedScore     *float64                `json:"revised_score,omitempty"`
-	TeacherFeedback  *string                 `json:"teacher_feedback,omitempty"`
-	RubricScores     []GradeEssayAspectScore `json:"rubric_scores,omitempty"`
+	SubmissionID           *string                 `json:"submission_id,omitempty"`
+	SubmissionAttemptCount *int                    `json:"submission_attempt_count,omitempty"`
+	SubmissionSubmittedAt  *time.Time              `json:"submission_submitted_at,omitempty"`
+	StudentEssayText       *string                 `json:"student_essay_text,omitempty"`
+	AIGradingStatus        *string                 `json:"ai_grading_status,omitempty"`
+	AIGradingError         *string                 `json:"ai_grading_error,omitempty"`
+	SkorAI                 *float64                `json:"skor_ai,omitempty"`
+	UmpanBalikAI           *string                 `json:"umpan_balik_ai,omitempty"`
+	RevisedScore           *float64                `json:"revised_score,omitempty"`
+	TeacherFeedback        *string                 `json:"teacher_feedback,omitempty"`
+	RubricScores           []GradeEssayAspectScore `json:"rubric_scores,omitempty"`
 }
 
 // QuestionFromRequest digunakan untuk mendekode satu pertanyaan dari array yang

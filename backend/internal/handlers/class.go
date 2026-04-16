@@ -493,3 +493,32 @@ func (h *ClassHandlers) ReviewJoinRequestHandler(w http.ResponseWriter, r *http.
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Join request reviewed successfully"})
 	services.PublishNotificationInvalidation("join_request_reviewed", []string{"teacher", "student"}, nil)
 }
+
+// CancelPendingClassRequestHandler handles cancellation of a pending class join request by student.
+func (h *ClassHandlers) CancelPendingClassRequestHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	classID, ok := vars["classId"]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "Class ID is missing from URL")
+		return
+	}
+	studentID, ok := r.Context().Value("userID").(string)
+	if !ok || studentID == "" {
+		respondWithError(w, http.StatusUnauthorized, "User ID not found in context")
+		return
+	}
+
+	if err := h.Service.CancelPendingClassRequest(classID, studentID); err != nil {
+		log.Printf("ERROR: Failed to cancel pending request for student %s in class %s: %v", studentID, classID, err)
+		if err.Error() == "pending request not found" {
+			respondWithError(w, http.StatusNotFound, "Pending request not found")
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Failed to cancel pending request")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Permintaan bergabung berhasil dibatalkan"})
+	services.PublishNotificationInvalidation("join_request_cancelled", []string{"teacher", "student"}, nil)
+}
+

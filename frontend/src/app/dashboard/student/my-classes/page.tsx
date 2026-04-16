@@ -101,6 +101,7 @@ export default function StudentMyClassesPage() {
   const [classQuery, setClassQuery] = useState('');
   const [classSort, setClassSort] = useState<"updated_desc" | "name_asc" | "pending_desc">("updated_desc");
   const [pendingOpen, setPendingOpen] = useState(false);
+  const [cancelingRequestId, setCancelingRequestId] = useState<string | null>(null);
   const browseDialogRef = useRef<HTMLDivElement | null>(null);
   const browseSearchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -201,6 +202,26 @@ export default function StudentMyClassesPage() {
       setBrowseNotice({ type: "error", text: message });
     } finally {
       setJoiningCode(null);
+    }
+  };
+
+  const handleCancelPendingRequest = async (classId: string) => {
+    setCancelingRequestId(classId);
+    try {
+      const res = await fetch(`/api/student/pending-classes/${classId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Gagal membatalkan permintaan bergabung.');
+      setJoinNotice({ type: "success", text: data.message || 'Permintaan bergabung berhasil dibatalkan.' });
+      void fetchClasses();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Gagal membatalkan permintaan bergabung.";
+      setJoinNotice({ type: "error", text: message });
+    } finally {
+      setCancelingRequestId(null);
     }
   };
 
@@ -478,6 +499,14 @@ export default function StudentMyClassesPage() {
                       minute: "2-digit",
                     })}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => handleCancelPendingRequest(item.class_id)}
+                    disabled={cancelingRequestId === item.class_id}
+                    className="mt-3 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {cancelingRequestId === item.class_id ? "Membatalkan..." : "Batalkan Permohonan"}
+                  </button>
                 </div>
               ))}
             </div>

@@ -384,9 +384,9 @@ export default function Home() {
           </div>
 
           <h1 className="mt-6 max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl hero-title">
-            Skor Esai Cepat,{" "}
+            Penilaian{" "}
             <span className="bg-gradient-to-r from-emerald-500 via-teal-500 to-sky-500 bg-clip-text text-transparent">
-              Jelas Alasannya
+              Cerdas, Konsisten, Transparan
             </span>
           </h1>
 
@@ -421,20 +421,20 @@ export default function Home() {
                   </div>
                   <div className="space-y-2">
                     {[
-                      { aspect: "Isi & Argumentasi", score: 85, color: "bg-emerald-500" },
-                      { aspect: "Struktur & Organisasi", score: 78, color: "bg-sky-500" },
-                      { aspect: "Tata Bahasa", score: 92, color: "bg-violet-500" },
-                      { aspect: "Referensi", score: 70, color: "bg-amber-500" },
+                      { aspect: "Isi & Argumentasi", score: 4, max: 5, color: "bg-emerald-500" },
+                      { aspect: "Struktur & Organisasi", score: 4, max: 5, color: "bg-sky-500" },
+                      { aspect: "Tata Bahasa", score: 5, max: 5, color: "bg-violet-500" },
+                      { aspect: "Referensi", score: 2, max: 3, color: "bg-amber-500" },
                     ].map((item) => (
                       <div key={item.aspect} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
                           <span className="hero-inner-text">{item.aspect}</span>
-                          <span className="font-semibold hero-inner-score">{item.score}/100</span>
+                          <span className="font-semibold hero-inner-score">{item.score}/{item.max}</span>
                         </div>
                         <div className="h-2 w-full rounded-full hero-progress-bg overflow-hidden">
                           <div
                             className={`h-full rounded-full ${item.color} transition-all duration-1000`}
-                            style={{ width: `${item.score}%` }}
+                            style={{ width: `${(item.score / item.max) * 100}%` }}
                           />
                         </div>
                       </div>

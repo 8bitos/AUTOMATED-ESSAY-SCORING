@@ -939,6 +939,33 @@ func (s *ClassService) ReviewJoinRequest(classID, memberID, teacherID, action st
 	return nil
 }
 
+// CancelPendingClassRequest membatalkan permintaan join siswa yang sedang pending.
+func (s *ClassService) CancelPendingClassRequest(classID, studentID string) error {
+	var memberID string
+	err := s.db.QueryRowContext(
+		context.Background(),
+		"SELECT id FROM class_members WHERE class_id = $1 AND user_id = $2 AND status = 'pending'",
+		classID,
+		studentID,
+	).Scan(&memberID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("pending request not found")
+		}
+		return fmt.Errorf("error finding pending request: %w", err)
+	}
+
+	_, err = s.db.ExecContext(
+		context.Background(),
+		"DELETE FROM class_members WHERE id = $1",
+		memberID,
+	)
+	if err != nil {
+		return fmt.Errorf("error deleting pending request: %w", err)
+	}
+	return nil
+}
+
 // GetTeacherDashboardSummary mengambil ringkasan dashboard guru dalam satu query group.
 func (s *ClassService) GetTeacherDashboardSummary(teacherID string) (*models.TeacherDashboardSummary, error) {
 	summary := &models.TeacherDashboardSummary{}

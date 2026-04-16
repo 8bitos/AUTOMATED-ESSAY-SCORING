@@ -1,0 +1,13 @@
+sample_id,rubric_mode,question,teacher_name,teacher_final_score,teacher_aspect_notes,ai_final_score,ai_feedback_summary,score_gap,error_pattern,teacher_review_needed,notes
+CAL-001,per_question,"Jelaskan dua dampak politik dari Proklamasi Kemerdekaan Indonesia.",,,,,,,,,
+CAL-002,per_question,"Jelaskan dua dampak politik dari Proklamasi Kemerdekaan Indonesia.",,,,,,,,,
+CAL-003,global,"Mengapa BPUPKI dibentuk pada masa pendudukan Jepang?",,,,,,,,,
+CAL-004,global,"Mengapa BPUPKI dibentuk pada masa pendudukan Jepang?",,,,,,,,,
+CAL-005,per_question,"Apa perbedaan utama BPUPKI dan PPKI?",,,,,,,,,
+CAL-006,per_question,"Apa perbedaan utama BPUPKI dan PPKI?",,,,,,,,,
+CAL-007,global,"Mengapa peristiwa Rengasdengklok penting bagi Proklamasi?",,,,,,,,,
+CAL-008,global,"Mengapa peristiwa Rengasdengklok penting bagi Proklamasi?",,,,,,,,,
+CAL-009,per_question,"Sebutkan satu alasan bangsa Eropa datang ke Nusantara pada awal masa penjelajahan samudra.",,,,,,,,,
+CAL-010,per_question,"Sebutkan satu alasan bangsa Eropa datang ke Nusantara pada awal masa penjelajahan samudra.",,,,,,,,,
+CAL-011,global,"Jelaskan secara singkat makna Sumpah Pemuda bagi persatuan Indonesia.",,,,,,,,,
+CAL-012,global,"Jelaskan secara singkat makna Sumpah Pemuda bagi persatuan Indonesia.",,,,,,,,,

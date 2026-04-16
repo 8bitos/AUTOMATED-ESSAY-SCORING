@@ -110,6 +110,7 @@ func SetupRoutes(router *mux.Router, db *sql.DB, materialService *services.Mater
 	// Rute khusus siswa atau pengguna terotentikasi.
 	protectedRouter.HandleFunc("/student/join-class", classHandlers.JoinClassHandler).Methods("POST")
 	protectedRouter.HandleFunc("/student/my-classes", classHandlers.GetStudentClassesHandler).Methods("GET")
+	protectedRouter.HandleFunc("/student/pending-classes/{classId}", classHandlers.CancelPendingClassRequestHandler).Methods("DELETE")
 	protectedRouter.HandleFunc("/student/pending-classes", classHandlers.GetStudentPendingClassesHandler).Methods("GET")
 	protectedRouter.HandleFunc("/student/classes/{classId}", classHandlers.GetStudentClassByIDHandler).Methods("GET")
 	protectedRouter.HandleFunc("/student/classes/{classId}/materials/{materialId}/section-cards/{sectionCardId}/read", sectionHandlers.GetSectionCardReadStatusHandler).Methods("GET")

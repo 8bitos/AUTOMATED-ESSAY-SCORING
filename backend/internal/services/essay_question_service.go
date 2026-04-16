@@ -104,7 +104,7 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialID(materialID string) 
 		SELECT id, material_id, teks_soal, keywords, ideal_answer, weight, round_score_to_5, round_score_step, rubrics, created_at, updated_at
 		FROM essay_questions
 		WHERE material_id = $1
-		ORDER BY created_at ASC
+		ORDER BY created_at ASC, id ASC
 	`
 	rows, err := s.db.QueryContext(context.Background(), query, materialID)
 	if err != nil {
@@ -150,7 +150,7 @@ func (s *EssayQuestionService) GetEssayQuestionsByMaterialIDForStudent(materialI
 		LEFT JOIN ai_results ar ON es.id = ar.submission_id
 		LEFT JOIN teacher_reviews tr ON es.id = tr.submission_id
 		WHERE eq.material_id = $1
-		ORDER BY eq.created_at ASC
+		ORDER BY eq.created_at ASC, eq.id ASC
 	`
 	rows, err := s.db.QueryContext(context.Background(), query, materialID, studentID)
 	if err != nil {

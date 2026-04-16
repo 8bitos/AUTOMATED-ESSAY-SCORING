@@ -1,0 +1,50 @@
+﻿Enum user_role {
+  student
+  teacher
+  superadmin
+}
+
+Table users {
+  id uuid [pk]
+  nama_lengkap text
+  email text
+  password text
+  peran user_role
+  nomor_identitas text
+  username text
+  created_at timestamptz
+  foto_profil_url text
+  mata_pelajaran text
+  kelas_tingkat text
+  institusi text
+  bahasa text
+  notif_email boolean
+  notif_inapp boolean
+  last_login_at timestamptz
+  tanggal_lahir date
+  mata_pelajaran_tambahan text
+  pengalaman_mengajar int4
+  tingkat_ajar text
+  rombel_aktif text
+  is_wali_kelas boolean
+  no_whatsapp text
+  bio_singkat text
+  is_teacher_verified boolean
+  ui_preferences jsonb
+}
+
+Table materials {
+  id uuid [pk]
+  class_id uuid
+  uploader_id uuid
+  judul text
+  isi_materi text
+  file_url text
+  created_at timestamptz
+  capaian_pembelajaran text
+  kata_kunci text[]
+  updated_at timestamptz
+  display_order int4
+}
+
+Ref: materials.uploader_id > users.id

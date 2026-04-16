@@ -1,0 +1,35 @@
+﻿Enum user_role {
+  student
+  teacher
+  superadmin
+}
+
+Table essay_questions {
+  id uuid [pk]
+  material_id uuid
+  teks_soal text
+  created_at timestamptz
+  module_id uuid
+  level_kognitif text
+  ideal_answer text
+  keywords text[]
+  weight numeric
+  rubrics jsonb
+  updated_at timestamptz
+  round_score_to_5 boolean
+  round_score_step float8
+}
+
+Table rubrics {
+  id uuid [pk]
+  question_id uuid
+  nama_aspek text
+  deskripsi text
+  max_score int4
+  descriptors jsonb
+  bobot float8
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Ref: rubrics.question_id > essay_questions.id
