@@ -739,7 +739,9 @@ const resolveQuestionIdsForSectionCard = (
       : [];
     const validIds = explicitIds.filter((id) => questionById.has(id));
     if (validIds.length === 0) return;
-    resolvedByCardId.set(card.id, validIds);
+    // Preserve backend order (created_at ASC) by filtering questions, not using metadata order
+    const orderedIds = questions.filter((q) => validIds.includes(q.id)).map((q) => q.id);
+    resolvedByCardId.set(card.id, orderedIds);
     validIds.forEach((id) => usedIds.add(id));
   });
 

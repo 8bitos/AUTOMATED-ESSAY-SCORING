@@ -741,6 +741,7 @@ export function TeacherPenilaianView({ scopedClassIdOverride }: { scopedClassIdO
     const materialId = selectedContent.linkedMaterialId || selectedContent.sectionId;
     const pool = questionsByMaterialId[materialId] || [];
     if (selectedContent.questionIds && selectedContent.questionIds.length > 0) {
+      // Filter and preserve backend order (created_at ASC, id ASC)
       const explicit = pool.filter((q) => selectedContent.questionIds!.includes(q.id));
       return selectedContent.category === "tugas" ? explicit.slice(0, 1) : explicit;
     }
