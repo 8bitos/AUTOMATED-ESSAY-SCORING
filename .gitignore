@@ -213,13 +213,22 @@ temp/
 *.gen.js
 
 ### 🔍 PROJECT SPECIFIC ###
+# Local documentation & design files
+dokumen/
+!dokumen/db/database_schema_only.sql
+dbdiagram_relations/
+UseCase.drawio
+UseCase.drawio~
+*.drawio~
+
+# Generated & temporary files
 .codex_hash_temp.go
 _gen_hash_temp.go
 .codex-backups/
 parse_check.js
 google*.html
-*.drawio~
-*.bak
+Skripsi*.pdf
+*_Skripsi.pdf
 
 ### 🔒 BACKUP & SNAPSHOT ###
 *.backup
